@@ -22,7 +22,17 @@ final readonly class AlertConditions
         DiskFull $diskFull,
         CertificateExpiring $certificateExpiring,
         WafUnavailable $wafUnavailable,
+        IngressDown $ingressDown,
+        CertificateFailed $certificateFailed,
+        ServiceCrashed $serviceCrashed,
+        CronFailed $cronFailed,
+        ControlPlaneDegraded $controlPlaneDegraded,
+        QueueBacklog $queueBacklog,
+        ControlPlaneBackups $controlPlaneBackups,
     ) {
-        $this->all = [$serviceUnhealthy, $errorRateHigh, $cpuHigh, $memoryHigh, $diskFull, $certificateExpiring, $wafUnavailable];
+        $this->all = [
+            $serviceUnhealthy, $errorRateHigh, $cpuHigh, $memoryHigh, $diskFull, $certificateExpiring, $wafUnavailable,
+            $ingressDown, $certificateFailed, $serviceCrashed, $cronFailed, $controlPlaneDegraded, $queueBacklog, $controlPlaneBackups,
+        ];
     }
 }

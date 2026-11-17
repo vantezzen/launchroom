@@ -155,6 +155,7 @@ func (e *Engine) Info(ctx context.Context) (EngineInfo, error) {
 	return EngineInfo{
 		Version: res.Info.ServerVersion, CPUs: res.Info.NCPU, MemoryMB: int(res.Info.MemTotal >> 20),
 		OperatingSystem: res.Info.OperatingSystem, KernelVersion: res.Info.KernelVersion,
+		Name: res.Info.Name, OSType: res.Info.OSType, Architecture: NormalizeArch(res.Info.Architecture),
 	}, nil
 }
 
@@ -215,6 +216,7 @@ func fromInspect(r container.InspectResponse) Container {
 		c.ExitCode = s.ExitCode
 		c.StartedAt = parseDockerTime(s.StartedAt)
 		c.FinishedAt = parseDockerTime(s.FinishedAt)
+		c.Error = s.Error
 	}
 	for _, m := range r.Mounts {
 		if m.Type == mount.TypeVolume && m.Name != "" {
@@ -243,6 +245,11 @@ func fromInspect(r container.InspectResponse) Container {
 		}
 	}
 	return c
+}
+
+// UnixTimestamp renders t as Docker's "seconds.nanoseconds" query value.
+func UnixTimestamp(t time.Time) string {
+	return fmt.Sprintf("%d.%09d", t.Unix(), t.Nanosecond())
 }
 
 func parseDockerTime(s string) time.Time {
@@ -350,6 +357,9 @@ func (e *Engine) StreamLogs(ctx context.Context, id string, opts LogsOptions, fn
 	}
 	if !opts.Since.IsZero() {
 		lo.Since = strconv.FormatInt(opts.Since.Unix(), 10)
+	}
+	if !opts.Until.IsZero() {
+		lo.Until = UnixTimestamp(opts.Until)
 	}
 	rc, err := e.api.ContainerLogs(ctx, id, lo)
 	if err != nil {

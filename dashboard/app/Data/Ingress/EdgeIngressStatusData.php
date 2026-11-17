@@ -29,11 +29,18 @@ final class EdgeIngressStatusData extends Data
         /** Gets the install-wide certificate storage and DNS-01 token (an instance owner admitted it, docs/05 §5). */
         public bool $shared = false,
         public ?string $publicIpv6 = null,
+        /** Why it isn't serving, in words (IngressReportData::problem). */
+        public ?string $problemTitle = null,
+        public ?string $problemDetail = null,
+        /** The web server's last lines while it isn't serving. */
+        public ?string $output = null,
+        public ?string $failingSince = null,
     ) {}
 
     public static function fromServer(Server $server): self
     {
         $status = $server->ingress_status;
+        $problem = $status?->problem();
 
         return new self(
             id: $server->public_id,
@@ -49,6 +56,10 @@ final class EdgeIngressStatusData extends Data
             controlPlane: $server->is_control_plane,
             shared: $server->isSharedEdge(),
             publicIpv6: ServerAddress::ipv6($server->public_ipv6),
+            problemTitle: $problem['title'] ?? null,
+            problemDetail: $problem['detail'] ?? null,
+            output: $status !== null && $status->state !== 'applied' && $status->output !== [] ? implode("\n", $status->output) : null,
+            failingSince: $status?->failingSince,
         );
     }
 }

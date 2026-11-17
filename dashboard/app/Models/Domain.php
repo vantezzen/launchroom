@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Models;
 
 use App\Data\Domains\DnsCheckData;
+use App\Enums\CertFailureKind;
 use App\Enums\CertStatus;
 use App\Enums\DomainKind;
 use App\Models\Concerns\BelongsToTeam;
@@ -31,6 +32,8 @@ use Illuminate\Support\Carbon;
  * @property bool $cert_wildcard served by a DNS-01 wildcard certificate
  * @property string|null $cert_error last issuance/renewal error (Caddy's message)
  * @property Carbon|null $cert_error_at
+ * @property CertFailureKind|null $cert_failure_kind why the last attempt failed (Report.ingress.certificates[].failureKind)
+ * @property Carbon|null $cert_retry_after the certificate authority's next allowed attempt (rate limit)
  * @property Carbon|null $cert_checked_at
  * @property int|null $cert_server_id the edge that reported it
  * @property bool $hsts Strict-Transport-Security once the certificate is issued (custom domains)
@@ -69,6 +72,8 @@ final class Domain extends Model
             'cert_not_before' => 'datetime',
             'cert_wildcard' => 'boolean',
             'cert_error_at' => 'datetime',
+            'cert_failure_kind' => CertFailureKind::class,
+            'cert_retry_after' => 'datetime',
             'cert_checked_at' => 'datetime',
             'hsts' => 'boolean',
         ];

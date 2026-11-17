@@ -8,7 +8,12 @@
 //     touched, and images younger than MinImageAge are kept (a run_once task
 //     may have pulled one that is not in a NodeState yet);
 //   - the BuildKit cache by age and size (never everything);
-//   - one-off task containers (lr-run-*) left behind by a daemon crash.
+//   - one-off task containers (lr-run-*, and LeftoverPrefixes) left
+//     behind by a daemon crash.
+//
+// Besides the schedule and disk pressure, a cleanup runs when the dashboard
+// asks for one (task cleanup, "Free space now") and when a build ran out of
+// space (FreeSpace); both use the disk-pressure settings.
 //
 // Volumes are never pruned (that loses user data). Removal is never
 // forced: Docker itself refuses to delete an image a container uses.
@@ -61,8 +66,11 @@ type Options struct {
 	Keep            int
 	MinImageAge     time.Duration
 	LeftoverAge     time.Duration
-	Log             *slog.Logger
-	Now             func() time.Time
+	// LeftoverPrefixes are further name prefixes of task-labelled containers
+	// removed once stopped (recovery shells, lr-rec-*).
+	LeftoverPrefixes []string
+	Log              *slog.Logger
+	Now              func() time.Time
 }
 
 // Cleaner runs cleanups; Run may be called concurrently (runs are serialized).
@@ -70,6 +78,21 @@ type Cleaner struct {
 	o    Options
 	mu   sync.Mutex
 	last *state.CleanupResult
+}
+
+// freeSpaceGap is the shortest time between two FreeSpace cleanups: builds
+// failing on a full disk one after another get the last result.
+const freeSpaceGap = 5 * time.Minute
+
+// FreeSpace frees disk now with the disk-pressure settings, for a build
+// (or anything else) that ran out of space. Within freeSpaceGap of the last
+// pressure-level cleanup it returns that one's result instead of running
+// again.
+func (c *Cleaner) FreeSpace(ctx context.Context) state.CleanupResult {
+	if last := c.Last(); last != nil && last.Trigger != state.CleanupScheduled && c.o.Now().Sub(last.At) < freeSpaceGap {
+		return *last
+	}
+	return c.Run(ctx, state.CleanupDiskPressure)
 }
 
 // New returns a Cleaner.
@@ -124,7 +147,7 @@ func (c *Cleaner) Run(ctx context.Context, trigger state.CleanupTrigger) state.C
 	if c.o.PruneBuildCache != nil {
 		if prune := c.o.PruneBuildCache(ctx); prune != nil {
 			age, keep := DefaultBuildCacheAge, int64(DefaultBuildCacheKeep)
-			if trigger == state.CleanupDiskPressure {
+			if trigger == state.CleanupDiskPressure || trigger == state.CleanupManual {
 				age, keep = pressureBuildCacheAge, pressureBuildCacheKeep
 			}
 			b, err := prune(ctx, age, keep)
@@ -153,7 +176,7 @@ func (c *Cleaner) removeLeftovers(ctx context.Context) (int, error) {
 	removed := 0
 	var errs []error
 	for _, ct := range list {
-		if ct.Labels[names.LabelTask] == "" || !strings.HasPrefix(ct.Name, names.RunOncePrefix) {
+		if ct.Labels[names.LabelTask] == "" || !c.leftoverName(ct.Name) {
 			continue
 		}
 		switch ct.State {
@@ -175,6 +198,18 @@ func (c *Cleaner) removeLeftovers(ctx context.Context) (int, error) {
 		removed++
 	}
 	return removed, errors.Join(errs...)
+}
+
+func (c *Cleaner) leftoverName(name string) bool {
+	if strings.HasPrefix(name, names.RunOncePrefix) {
+		return true
+	}
+	for _, p := range c.o.LeftoverPrefixes {
+		if p != "" && strings.HasPrefix(name, p) {
+			return true
+		}
+	}
+	return false
 }
 
 func (c *Cleaner) removeImages(ctx context.Context) (int, int64, error) {

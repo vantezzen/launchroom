@@ -1,0 +1,100 @@
+{
+  "apiVersion": "launchroom.vantezzen.io/v1",
+  "kind": "TaskCompletion",
+  "attempt": 1,
+  "outcome": "succeeded",
+  "build": {
+    "image": "127.0.0.1:5000/apps/svc_01j9z8x7w6v5t4s3r2q1p0n9n2@sha256:863294e97f3d613949dbcb8bac8bc2f34d40fb4773c50c12679d99fdc95c2272",
+    "durationMs": 91000,
+    "summary": {
+      "builder": "dockerfile",
+      "builderReason": "dockerfile_detected",
+      "dockerfilePath": "Dockerfile",
+      "port": 3000,
+      "presets": [
+        {
+          "name": "rails",
+          "version": 1,
+          "scope": "runtime",
+          "decisions": [
+            {
+              "id": "rails-env",
+              "title": "Run in production mode"
+            }
+          ]
+        }
+      ],
+      "processes": [
+        {
+          "name": "jobs",
+          "args": [
+            "bin/jobs"
+          ],
+          "stopTimeout": "60s"
+        }
+      ],
+      "generatedSecrets": [
+        {
+          "name": "SECRET_KEY_BASE",
+          "length": 64,
+          "encoding": "hex"
+        },
+        {
+          "name": "NEXT_SERVER_ACTIONS_ENCRYPTION_KEY",
+          "length": 32,
+          "encoding": "base64",
+          "scope": "build",
+          "shared": "service"
+        }
+      ],
+      "envAliases": [
+        {
+          "name": "APP_URL",
+          "from": "PUBLIC_URL"
+        },
+        {
+          "name": "DJANGO_ALLOWED_HOSTS",
+          "from": "ALLOWED_HOSTS_LIST"
+        }
+      ],
+      "requiredSecrets": [
+        {
+          "name": "RAILS_MASTER_KEY",
+          "reason": "decrypts config/credentials.yml.enc"
+        }
+      ],
+      "volumeSuggestions": [
+        {
+          "path": "/rails/storage",
+          "reason": "The SQLite database and uploads live here"
+        }
+      ],
+      "workspace": {
+        "root": "apps",
+        "packageName": "@acme/web",
+        "manager": "pnpm",
+        "tool": "turbo",
+        "dependsOn": [
+          "packages/ui",
+          "packages/config"
+        ]
+      },
+      "phpDependencyExtensions": [
+        {
+          "name": "intl",
+          "for": "filament/support"
+        },
+        {
+          "name": "pcntl",
+          "for": "laravel/horizon"
+        }
+      ],
+      "image": {
+        "user": "rails",
+        "exposedPorts": [
+          3000
+        ]
+      }
+    }
+  }
+}

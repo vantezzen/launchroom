@@ -237,9 +237,12 @@ const (
 	IngressSecretCertStorage IngressSecretPurpose = "cert_storage"
 	// IngressSecretClientAuth is a route's clientAuth.edgeSecret (value "secret", D50).
 	IngressSecretClientAuth IngressSecretPurpose = "client_auth"
+	// IngressSecretFallbackChannel is system.watchdog.fallback.secret: "url"
+	// (webhook, slack, discord) or "password" and optional "username" (email).
+	IngressSecretFallbackChannel IngressSecretPurpose = "fallback_channel"
 )
 
-var ingressSecretPurposes = []string{string(IngressSecretDNS), string(IngressSecretCertStorage), string(IngressSecretClientAuth)}
+var ingressSecretPurposes = []string{string(IngressSecretDNS), string(IngressSecretCertStorage), string(IngressSecretClientAuth), string(IngressSecretFallbackChannel)}
 
 // ProtocolSchema implements SchemaDescriber.
 func (IngressSecretPurpose) ProtocolSchema() ScalarSchema { return enumSchema(ingressSecretPurposes) }
@@ -255,12 +258,15 @@ var ingressSecretKeys = map[IngressSecretPurpose]struct{ required, optional []st
 	IngressSecretDNS:         {optional: allDNSCredentialKeys()},
 	IngressSecretCertStorage: {required: []string{"password", "encryptionKey"}, optional: []string{"username"}},
 	IngressSecretClientAuth:  {required: []string{"secret"}},
+	// Which ones a channel needs depends on its kind (FallbackChannel.validateSecret).
+	IngressSecretFallbackChannel: {optional: []string{"url", "username", "password"}},
 }
 
 // IngressSecret is the plaintext of NodeState.ingress.*.credentials:
 // libsodium crypto_box_seal of this JSON object to the daemon's X25519 key.
 // ServerID and Purpose bind it to one field on one server (no re-targeting);
-// the dashboard seals it only into edge servers' NodeStates.
+// the dashboard seals it only into edge servers' NodeStates, and purpose
+// fallback_channel only into system.watchdog.
 type IngressSecret struct {
 	ServerID ServerID             `json:"serverId"`
 	Purpose  IngressSecretPurpose `json:"purpose"`
@@ -373,6 +379,10 @@ type CertificateStatus struct {
 	// (kept while a newer success has not been seen).
 	LastError   string     `json:"lastError,omitzero" jsonschema:"maxLength=1024"`
 	LastErrorAt *time.Time `json:"lastErrorAt,omitzero" jsonschema:"nullable"`
+	// FailureKind classifies LastError.
+	FailureKind CertFailureKind `json:"failureKind,omitzero"`
+	// RetryAfter is when the CA accepts the next attempt (rate_limited).
+	RetryAfter *time.Time `json:"retryAfter,omitzero" jsonschema:"nullable"`
 }
 
 // CertStorageState is where the edge's Caddy keeps certificates.
@@ -417,6 +427,9 @@ func (s *IngressStatus) validateCerts(e *errs) {
 		e.check(p+".state", c.State)
 		checkText(e, p+".issuer", c.Issuer, 256)
 		checkText(e, p+".lastError", c.LastError, 1024)
+		if c.FailureKind != "" {
+			e.check(p+".failureKind", c.FailureKind)
+		}
 		hosts = append(hosts, c.Host)
 	}
 	unique(e, "ingress.certificates.host", hosts)

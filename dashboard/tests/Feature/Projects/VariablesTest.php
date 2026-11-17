@@ -126,7 +126,9 @@ test('precedence: system < shared opt-in < connection < environment variable', f
     resolve(CreateVariable::class)->handle($project, $web, variableInput('DATABASE_URL', 'explicit', $production), null, AuditActor::system());
     resolve(CreateVariable::class)->handle($project, $web, variableInput('PORT', '9999', $production), null, AuditActor::system());
 
-    expect(resolvedEnv($project, $production, $web))->toMatchArray(['DATABASE_URL' => 'explicit', 'PORT' => '9999', 'HOST' => '0.0.0.0', 'LAUNCHROOM_SERVICE' => 'web']);
+    // HOST/HOSTNAME only where a preset asks (OD12, EffectiveDeploy).
+    expect(resolvedEnv($project, $production, $web))->toMatchArray(['DATABASE_URL' => 'explicit', 'PORT' => '9999', 'LAUNCHROOM_SERVICE' => 'web'])
+        ->and(resolvedEnv($project, $production, $web))->not->toHaveKey('HOST');
 });
 
 test('shared variables not opted into are reachable only by reference', function (): void {

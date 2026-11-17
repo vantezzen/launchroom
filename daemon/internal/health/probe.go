@@ -14,9 +14,11 @@ import (
 	"net"
 	"net/http"
 	"net/netip"
+	"regexp"
 	"strconv"
 	"strings"
 	"time"
+	"unicode"
 
 	"github.com/vantezzen/launchroom/daemon/internal/state"
 )
@@ -120,17 +122,149 @@ func probeHTTP(ctx context.Context, t Target) error {
 		return fmt.Errorf("invalid probe request: %w", err)
 	}
 	req.Header.Set("User-Agent", "launchroom-health/1")
+	if t.Spec.Host != "" {
+		// Ask as a visitor does (docs/04 §8): the app's own domain over
+		// HTTPS at the edge, so allowed-hosts checks and forced-HTTPS
+		// redirects answer the probe as they answer visitors.
+		req.Host = string(t.Spec.Host)
+		req.Header.Set("X-Forwarded-Proto", "https")
+		req.Header.Set("X-Forwarded-Host", string(t.Spec.Host))
+	}
 	resp, err := probeClient.Do(req)
 	if err != nil {
 		return simplify(err)
 	}
-	_, _ = io.Copy(io.Discard, io.LimitReader(resp.Body, 4096))
+	raw, _ := io.ReadAll(io.LimitReader(resp.Body, maxProbeRead))
 	_ = resp.Body.Close()
-	if resp.StatusCode < lo || resp.StatusCode > hi {
-		return fmt.Errorf("HTTP %d (expected %s)", resp.StatusCode, expect)
+	hint := classify(resp.StatusCode, raw)
+	inRange := resp.StatusCode >= lo && resp.StatusCode <= hi
+	// An app that refuses its own domain fails even where 4xx would pass
+	// (the implicit "/" accepts 2xx-4xx): every visitor gets that answer.
+	// Without a host the probe asked for the container address, which the
+	// app may refuse without refusing visitors.
+	if inRange && (hint != ProbeHostNotAllowed || t.Spec.Host == "") {
+		return nil
 	}
-	return nil
+	he := &HTTPError{Status: resp.StatusCode, Expect: expect, Hint: hint, Body: Snippet(raw, resp.Header.Get("Content-Type"))}
+	return he
 }
+
+// maxProbeRead bounds how much of an answer the probe reads.
+const maxProbeRead = 4096
+
+// ProbeHostNotAllowed is state.ProbeHostNotAllowed.
+const ProbeHostNotAllowed = state.ProbeHostNotAllowed
+
+// HTTPError is a failing HTTP answer: its status, what it means and the
+// start of its body (ProbeStatus.body/hint).
+type HTTPError struct {
+	Status int
+	Expect state.StatusRange
+	Hint   state.ProbeHint
+	// Body is the start of the answer as text (Snippet).
+	Body string
+}
+
+func (e *HTTPError) Error() string {
+	if e.Hint == ProbeHostNotAllowed {
+		return fmt.Sprintf("HTTP %d (expected %s): the app doesn't accept this domain as its host", e.Status, e.Expect)
+	}
+	return fmt.Sprintf("HTTP %d (expected %s)", e.Status, e.Expect)
+}
+
+// reHostNotAllowed matches the "host not allowed" pages of common
+// frameworks: Django (DisallowedHost, "Invalid HTTP_HOST header"), Rails
+// (Blocked hosts), ASP.NET/HTTP.sys ("Invalid Hostname"), Symfony and
+// Laravel ("Untrusted Host"), Vite and webpack dev servers.
+var reHostNotAllowed = regexp.MustCompile(`(?i)disallowedhost|invalid http_host header|blocked hosts?\b|invalid hostname|untrusted host|invalid host header|host .{0,80}is not allowed|this host .{0,80}not allowed|not an allowed host|allowed_hosts`)
+
+// classify names what a failing answer means ("" = nothing known).
+func classify(status int, body []byte) state.ProbeHint {
+	switch status {
+	case http.StatusMisdirectedRequest:
+		return ProbeHostNotAllowed
+	case http.StatusBadRequest, http.StatusForbidden:
+		if reHostNotAllowed.Match(body) {
+			return ProbeHostNotAllowed
+		}
+	}
+	return ""
+}
+
+// Snippet is the start of an answer body for the dashboard: HTML reduced
+// to its text, control characters and runs of whitespace collapsed, valid
+// UTF-8, at most state.MaxProbeBody bytes. The dashboard masks it like a
+// log line before it shows it.
+func Snippet(body []byte, contentType string) string {
+	text := string(body)
+	if strings.Contains(strings.ToLower(contentType), "html") || looksHTML(text) {
+		text = htmlText(text)
+	}
+	var b strings.Builder
+	space := false
+	for _, r := range strings.ToValidUTF8(text, "") {
+		if unicode.IsSpace(r) || unicode.IsControl(r) {
+			space = b.Len() > 0
+			continue
+		}
+		if space {
+			b.WriteByte(' ')
+			space = false
+		}
+		b.WriteRune(r)
+	}
+	return state.Clip(b.String(), state.MaxProbeBody)
+}
+
+func looksHTML(s string) bool {
+	head := strings.ToLower(strings.TrimSpace(s[:min(len(s), 256)]))
+	return strings.HasPrefix(head, "<!doctype html") || strings.HasPrefix(head, "<html")
+}
+
+// htmlText drops tags, comments, scripts and styles and decodes the common
+// entities: enough to show "Bad Request (400)" or a framework's error
+// title from an error page.
+func htmlText(s string) string {
+	var b strings.Builder
+	lower := strings.ToLower(s)
+	for i := 0; i < len(s); {
+		switch {
+		case strings.HasPrefix(lower[i:], "<!--"):
+			end := strings.Index(lower[i:], "-->")
+			if end < 0 {
+				return b.String()
+			}
+			i += end + 3
+		case strings.HasPrefix(lower[i:], "<script"), strings.HasPrefix(lower[i:], "<style"):
+			tag := "</script"
+			if strings.HasPrefix(lower[i:], "<style") {
+				tag = "</style"
+			}
+			end := strings.Index(lower[i:], tag)
+			if end < 0 {
+				return b.String()
+			}
+			i += end + len(tag)
+			if gt := strings.IndexByte(s[i:], '>'); gt >= 0 {
+				i += gt + 1
+			}
+			b.WriteByte(' ')
+		case s[i] == '<':
+			end := strings.IndexByte(s[i:], '>')
+			if end < 0 {
+				return b.String()
+			}
+			b.WriteByte(' ')
+			i += end + 1
+		default:
+			b.WriteByte(s[i])
+			i++
+		}
+	}
+	return htmlEntities.Replace(b.String())
+}
+
+var htmlEntities = strings.NewReplacer("&amp;", "&", "&lt;", "<", "&gt;", ">", "&quot;", `"`, "&#39;", "'", "&#x27;", "'", "&nbsp;", " ")
 
 // simplify turns network errors into short, stable messages for the UI.
 func simplify(err error) error {

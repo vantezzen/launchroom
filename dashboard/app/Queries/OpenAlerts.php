@@ -104,6 +104,12 @@ final class OpenAlerts
             AlertRule::BackupFailed => (BackupAlertKind::ofSubject($alert->subject_key) ?? BackupAlertKind::Failed)->label(),
             AlertRule::Vulnerability => 'Vulnerability',
             AlertRule::WafUnavailable => 'Firewall off',
+            AlertRule::IngressDown => 'Not serving',
+            AlertRule::CertificateFailed => 'Certificate failed',
+            AlertRule::ServiceCrashed => 'Crashed',
+            AlertRule::CronFailed => 'Cron failed',
+            AlertRule::ControlPlaneDegraded => 'launchroom degraded',
+            AlertRule::QueueBacklog => 'Jobs waiting',
         };
     }
 

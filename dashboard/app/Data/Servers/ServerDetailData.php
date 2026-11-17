@@ -51,6 +51,12 @@ final class ServerDetailData extends Data
          * @var list<OpenAlertData>
          */
         public array $openAlerts = [],
+        /**
+         * What happened to it, in sentences (refused, Docker, crashes, restarts).
+         *
+         * @var list<ServerNoticeData>
+         */
+        public array $notices = [],
     ) {}
 
     /**
@@ -81,6 +87,7 @@ final class ServerDetailData extends Data
             ServerSpecsData::fromServer($server),
             $canUpdateAppearance,
             $openAlerts,
+            ServerNoticeData::forServer($server, $canUpdateAppearance),
         );
     }
 }

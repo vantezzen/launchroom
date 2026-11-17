@@ -134,6 +134,12 @@ const (
 	// and processes for an investigation (docs/22 §7, docs/03 §13.2; daemon
 	// feature "containerInspection").
 	TaskInspectContainer TaskType = "inspect_container"
+	// TaskCleanup frees disk space now with the disk-pressure settings
+	// ("Free space now"; daemon feature "cleanupTask").
+	TaskCleanup TaskType = "cleanup"
+	// TaskCertRetry asks the edge to try obtaining certificates again for
+	// some hosts ("Retry now"; daemon feature "certificateRetry").
+	TaskCertRetry TaskType = "cert_retry"
 )
 
 var taskTypes = []string{
@@ -144,6 +150,7 @@ var taskTypes = []string{
 	string(TaskDbImport), string(TaskVolumeImport), string(TaskDbExport), string(TaskVolumeExport),
 	string(TaskAccess),
 	string(TaskInventory), string(TaskInspectContainer),
+	string(TaskCleanup), string(TaskCertRetry),
 }
 
 // TaskTypes returns all task types in protocol order.

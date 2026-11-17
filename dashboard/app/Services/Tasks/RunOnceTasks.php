@@ -6,6 +6,7 @@ namespace App\Services\Tasks;
 
 use App\Data\Protocol\V1\NetworkSpec;
 use App\Data\Protocol\V1\Resources;
+use App\Data\Protocol\V1\Tasks\RunOnceMount;
 use App\Data\Protocol\V1\Tasks\RunOnceProbe;
 use App\Data\Protocol\V1\Tasks\RunOnceSpec;
 use App\Data\Services\ScalingSettings;
@@ -45,8 +46,9 @@ final readonly class RunOnceTasks
      *
      * @param  list<string>  $command
      * @param  int|null  $deploymentId  the deployment the task belongs to (advanced when it finishes)
+     * @param  list<RunOnceMount>  $mounts  the service's volumes on $server (release commands, G62; feature `releaseMounts`)
      */
-    public function command(Deployment $deployment, ServiceSpec $spec, array $command, Server $server, DaemonTaskPurpose $purpose, ?int $deploymentId): ?DaemonTask
+    public function command(Deployment $deployment, ServiceSpec $spec, array $command, Server $server, DaemonTaskPurpose $purpose, ?int $deploymentId, array $mounts = []): ?DaemonTask
     {
         $deployment->loadMissing(['environment.project', 'serviceInstance.service', 'revision']);
 
@@ -71,6 +73,7 @@ final readonly class RunOnceTasks
                 command: $argv['command'],
                 args: $argv['args'],
                 maskEnv: $mask === [] ? null : array_slice($mask, 0, 1024),
+                mounts: $mounts === [] ? null : $mounts,
             ),
             $timeout + 120,
             pin: $server,

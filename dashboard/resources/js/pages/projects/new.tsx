@@ -25,6 +25,11 @@ import {
 } from '@/features/add-service/framework-logo';
 import { repositoryLogo } from '@/features/git/providers';
 import { DatabasePicker } from '@/features/new-project/database-picker';
+import {
+    fallbackApplies,
+    ImportPlanAsks,
+    laravelWithoutDatabase,
+} from '@/features/new-project/import-plan-asks';
 import type { DatabaseChoice } from '@/features/new-project/database-picker';
 import { NewProjectStart } from '@/features/new-project/new-project-start';
 import {
@@ -65,6 +70,8 @@ type AppChoice = {
     rootDirectory: string;
     name: string;
     selected: boolean;
+    /** Required secrets pasted here (RAILS_MASTER_KEY). */
+    secrets?: Record<string, string>;
 };
 
 function query(): URLSearchParams {
@@ -344,6 +351,21 @@ function AppCard({
                 </div>
             )}
 
+            {choice.selected && (
+                <ImportPlanAsks
+                    plan={plan}
+                    root={app.rootDirectory}
+                    secrets={choice.secrets ?? {}}
+                    onSecrets={(secrets) => onChange({ ...choice, secrets })}
+                    withoutDatabase={laravelWithoutDatabase(
+                        plan,
+                        databases,
+                        engines,
+                        app.rootDirectory,
+                    )}
+                />
+            )}
+
             {choice.selected && processes.length > 0 && (
                 <div className="flex flex-col gap-2 border-t pt-4">
                     <span className="type-label text-muted-foreground">
@@ -514,6 +536,10 @@ export default function ImportRepository({
             let next = current;
 
             for (const db of suggested) {
+                if (!fallbackApplies(db, next, engines, root)) {
+                    continue;
+                }
+
                 const apps = db.apps.length > 0 ? db.apps : [root];
                 const existing = next.find((item) => item.engine === db.engine);
 
@@ -589,6 +615,15 @@ export default function ImportRepository({
                         rootDirectory: app.rootDirectory || null,
                         port: plan?.port ?? null,
                         framework: plan?.framework ?? null,
+                        secrets: Object.fromEntries(
+                            Object.entries(app.secrets ?? {}).filter(
+                                ([key, value]) =>
+                                    value !== '' &&
+                                    (plan?.requiredSecrets ?? []).some(
+                                        (secret) => secret.name === key,
+                                    ),
+                            ),
+                        ),
                         // Suggested workers the user kept (each becomes a
                         // worker service).
                         processes: (

@@ -49,5 +49,9 @@ final class DeploymentSummaryData extends Data
         public ?string $commitAuthorAvatarUrl = null,
         /** The live deployment of a stopped service (D68): it runs nothing until Start. */
         public ?ServiceStoppedData $stopped = null,
+        /** Why launchroom rolled back by itself, on the rollback it created (probation, docs/04 §8); null: a person did. */
+        public ?string $rollbackReason = null,
+        /** Watched after going live until then; a crash loop rolls it back once (docs/04 §8). */
+        public ?CarbonInterface $probationUntil = null,
     ) {}
 }

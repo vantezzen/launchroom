@@ -300,29 +300,44 @@ func clientAuthPolicies(routes []Route, o Options) []any {
 // workloads receive traffic; serving ones are preferred and draining ones are
 // used only when no serving workload of the route is ready (better than a
 // 503 during a botched rollout). Address (mesh) upstreams are always used.
+// When nothing of a route is ready, it fails open (HEAL-10): running serving
+// replicas whose probe fails get the traffic (then running draining ones),
+// since a slow app answering some requests beats a 503 for every visitor.
+// Their health is still reported as it is.
 func ResolveRoutes(routes []state.RouteSpec, resolve ingress.Resolver) []Route {
 	out := make([]Route, 0, len(routes))
 	for _, r := range routes {
-		var serving, draining, remote []string
+		var serving, draining, remote, unreadyServing, unreadyDraining []string
 		for _, u := range r.Upstreams {
 			if u.Address != "" {
 				remote = append(remote, string(u.Address))
 				continue
 			}
 			ep, ok := resolve(u.Workload)
-			if !ok || !ep.Ready || !ep.Addr.IsValid() {
+			if !ok || !ep.Addr.IsValid() || !ep.Ready && !ep.Running {
 				continue
 			}
 			dial := netip.AddrPortFrom(ep.Addr, uint16(u.Port)).String() //nolint:gosec // validated 1-65535
-			if ep.Serving {
+			switch {
+			case ep.Ready && ep.Serving:
 				serving = append(serving, dial)
-			} else {
+			case ep.Ready:
 				draining = append(draining, dial)
+			case ep.Serving:
+				unreadyServing = append(unreadyServing, dial)
+			default:
+				unreadyDraining = append(unreadyDraining, dial)
 			}
 		}
 		local := serving
 		if len(local) == 0 {
 			local = draining
+		}
+		if len(local) == 0 && len(remote) == 0 {
+			local = unreadyServing
+			if len(local) == 0 {
+				local = unreadyDraining
+			}
 		}
 		dial := append(local, remote...)
 		if r.LoadBalancing == state.LBPreferLocal && len(local) > 0 {
@@ -631,19 +646,26 @@ func appRoutes(r Route) []any {
 		},
 		"health_checks": obj{"passive": obj{"fail_duration": "10s", "max_fails": 1, "unhealthy_status": []int{502, 503, 504}}},
 	}
+	// X-Real-IP is the visitor's address, for apps and middlewares that read
+	// it instead of X-Forwarded-For. Set, so whatever a client sent is
+	// overwritten, like X-Forwarded-For (no trusted proxies are configured,
+	// so client_ip is the connection's address).
+	set := obj{RealIPHeader: []string{"{http.vars.client_ip}"}}
 	if r.Spec.ClientAuth != nil {
 		// The verified identity and the edge secret for the dashboard
 		// (docs/03 §4.3); set, so whatever a client sent is overwritten.
-		proxy["headers"] = obj{"request": obj{"set": obj{
-			state.ClientCertHeader: []string{"{http.vars." + clientAuthVar + "}"},
-			state.EdgeSecretHeader: []string{"{file." + r.EdgeSecretFile + "}"},
-		}}}
+		set[state.ClientCertHeader] = []string{"{http.vars." + clientAuthVar + "}"}
+		set[state.EdgeSecretHeader] = []string{"{file." + r.EdgeSecretFile + "}"}
 	}
+	proxy["headers"] = obj{"request": obj{"set": set}}
 	return append(sub,
 		obj{"handle": []any{obj{"handler": "encode", "encodings": obj{"zstd": obj{}, "gzip": obj{}}, "prefer": []string{"zstd", "gzip"}}}},
 		obj{"handle": []any{proxy}},
 	)
 }
+
+// RealIPHeader carries the visitor's address to the app (docs/05 §4).
+const RealIPHeader = "X-Real-IP"
 
 // EdgeSecretFile is the container path of a route's clientAuth edge secret.
 func EdgeSecretFile(id state.RouteID) string {

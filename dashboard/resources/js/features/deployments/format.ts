@@ -90,11 +90,39 @@ export function startedBy(
         start: 'started',
     };
 
+    // Probation rolled it back (docs/04 §8): no person did.
+    if (deployment.trigger === 'rollback' && deployment.rollbackReason) {
+        return 'rolled back automatically';
+    }
+
     return who
         ? `${verb[deployment.trigger]} by ${who}`
         : deployment.trigger === 'config'
           ? 'configuration change'
           : verb[deployment.trigger];
+}
+
+/** "Watching until 14:32": a live deployment in probation after going live (docs/04 §8). */
+export function probationLine(
+    deployment: App.Data.Deployments.DeploymentSummaryData,
+    now = Date.now(),
+): string | null {
+    if (deployment.status !== 'active' || !deployment.probationUntil) {
+        return null;
+    }
+
+    const until = new Date(deployment.probationUntil);
+
+    if (Number.isNaN(until.getTime()) || until.getTime() <= now) {
+        return null;
+    }
+
+    const time = until.toLocaleTimeString([], {
+        hour: '2-digit',
+        minute: '2-digit',
+    });
+
+    return `Watching for problems until ${time}. If it keeps crashing, launchroom rolls back once.`;
 }
 
 /** Total seconds so far for a running deployment, else the recorded duration. */

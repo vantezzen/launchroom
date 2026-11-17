@@ -53,5 +53,9 @@ final class BlueprintService extends Data
         public array $files = [],
         public array $provides = [],
         public ?VolumeConsistency $backupConsistency = null,
+        /** Compose `stop_grace_period` (1 to 300 s); null: launchroom's default. */
+        public ?int $stopTimeoutSeconds = null,
+        /** Compose `stop_signal` when not SIGTERM. */
+        public ?string $stopSignal = null,
     ) {}
 }

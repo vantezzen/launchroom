@@ -4,6 +4,11 @@ declare(strict_types=1);
 
 use Illuminate\Support\Str;
 
+// The long lane's worker timeout: the longest job there (a control-plane
+// update: the backup timeout plus 5 min) with a margin, below the
+// `redis-long` connection's retry_after (backup timeout + 15 min).
+$longTimeout = (int) env('LAUNCHROOM_BACKUP_TIMEOUT', 6 * 3600) + 600;
+
 return [
 
     /*
@@ -102,6 +107,8 @@ return [
 
     'waits' => [
         'redis:default' => 60,
+        'redis:alerts' => 60,
+        'redis-long:long' => 900,
     ],
 
     /*
@@ -214,6 +221,35 @@ return [
             'timeout' => 60,
             'nice' => 0,
         ],
+        // launchroom: job lanes (config/queue.php `routes`). Notifications
+        // never wait behind other jobs; long jobs (backups, updates, feed
+        // syncs, image copies) never hold up deploys.
+        'supervisor-alerts' => [
+            'connection' => 'redis',
+            'queue' => ['alerts'],
+            'balance' => 'auto',
+            'autoScalingStrategy' => 'time',
+            'maxProcesses' => 1,
+            'maxTime' => 0,
+            'maxJobs' => 0,
+            'memory' => 128,
+            'tries' => 1,
+            'timeout' => 60,
+            'nice' => 0,
+        ],
+        'supervisor-long' => [
+            'connection' => 'redis-long',
+            'queue' => ['long'],
+            'balance' => 'auto',
+            'autoScalingStrategy' => 'time',
+            'maxProcesses' => 1,
+            'maxTime' => 0,
+            'maxJobs' => 0,
+            'memory' => 256,
+            'tries' => 1,
+            'timeout' => $longTimeout,
+            'nice' => 0,
+        ],
     ],
 
     'environments' => [
@@ -223,11 +259,23 @@ return [
                 'balanceMaxShift' => 1,
                 'balanceCooldown' => 3,
             ],
+            'supervisor-alerts' => [
+                'maxProcesses' => 2,
+            ],
+            'supervisor-long' => [
+                'maxProcesses' => 4,
+            ],
         ],
 
         'local' => [
             'supervisor-1' => [
                 'maxProcesses' => 3,
+            ],
+            'supervisor-alerts' => [
+                'maxProcesses' => 1,
+            ],
+            'supervisor-long' => [
+                'maxProcesses' => 2,
             ],
         ],
     ],

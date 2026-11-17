@@ -2,6 +2,19 @@
 
 declare(strict_types=1);
 
+use App\Jobs\Alerts\DeliverAlertJob;
+use App\Jobs\Audit\VerifyAuditLogJob;
+use App\Jobs\Backups\RunBackupMaintenanceJob;
+use App\Jobs\Backups\RunControlPlaneBackupJob;
+use App\Jobs\Backups\TestBackupDestinationJob;
+use App\Jobs\Dockerfiles\DraftDockerfileJob;
+use App\Jobs\Moves\PrepareHandoverJob;
+use App\Jobs\Registry\CopyPrivateImageJob;
+use App\Jobs\Security\EvaluateSecurityFindingsJob;
+use App\Jobs\Security\SyncAdvisoriesJob;
+use App\Jobs\Security\SyncFeedsJob;
+use App\Jobs\Updates\RunControlPlaneUpdateJob;
+
 return [
 
     /*
@@ -66,11 +79,30 @@ return [
             'after_commit' => false,
         ],
 
+        // launchroom: a reserved job comes back to another worker once
+        // `retry_after` passes, while the first worker still runs it (it is
+        // then failed with MaxAttemptsExceeded, or runs twice). So
+        // retry_after stays above the longest job timeout on each
+        // connection: up to 300 s here (AdvancePreviewsJob); longer jobs
+        // go to `redis-long` through the routes below.
         'redis' => [
             'driver' => 'redis',
             'connection' => env('REDIS_QUEUE_CONNECTION', 'default'),
             'queue' => env('REDIS_QUEUE', 'default'),
-            'retry_after' => (int) env('REDIS_QUEUE_RETRY_AFTER', 90),
+            'retry_after' => (int) env('REDIS_QUEUE_RETRY_AFTER', 360),
+            'block_for' => null,
+            'after_commit' => false,
+        ],
+
+        // Backups, control-plane updates and hand-overs (up to the backup
+        // timeout, 6 h, plus 5 min for updates), security feed syncs and
+        // private image copies: their own Horizon supervisor, so they never
+        // hold up deploys, and a retry_after above the longest of them.
+        'redis-long' => [
+            'driver' => 'redis',
+            'connection' => env('REDIS_QUEUE_CONNECTION', 'default'),
+            'queue' => 'long',
+            'retry_after' => (int) env('LAUNCHROOM_BACKUP_TIMEOUT', 6 * 3600) + 900,
             'block_for' => null,
             'after_commit' => false,
         ],
@@ -103,6 +135,35 @@ return [
     | connection and table which has been defined by your application.
     |
     */
+
+    /*
+    |--------------------------------------------------------------------------
+    | Job Lanes (launchroom)
+    |--------------------------------------------------------------------------
+    |
+    | Job class => [connection, queue], registered in bootstrap/app.php.
+    | `long`: jobs whose timeout is above the `redis` connection's
+    | retry_after. `alerts`: notifications, so a backlog of other jobs never
+    | delays them. Horizon runs one supervisor per lane (config/horizon.php).
+    | When the default connection isn't Redis (tests run `sync`), only the
+    | queue name applies.
+    |
+    */
+
+    'routes' => [
+        RunControlPlaneBackupJob::class => ['redis-long', 'long'],
+        RunBackupMaintenanceJob::class => ['redis-long', 'long'],
+        TestBackupDestinationJob::class => ['redis-long', 'long'],
+        PrepareHandoverJob::class => ['redis-long', 'long'],
+        RunControlPlaneUpdateJob::class => ['redis-long', 'long'],
+        VerifyAuditLogJob::class => ['redis-long', 'long'],
+        DraftDockerfileJob::class => ['redis-long', 'long'],
+        SyncAdvisoriesJob::class => ['redis-long', 'long'],
+        SyncFeedsJob::class => ['redis-long', 'long'],
+        EvaluateSecurityFindingsJob::class => ['redis-long', 'long'],
+        CopyPrivateImageJob::class => ['redis-long', 'long'],
+        DeliverAlertJob::class => ['redis', 'alerts'],
+    ],
 
     'batching' => [
         'database' => env('DB_CONNECTION', 'pgsql'),

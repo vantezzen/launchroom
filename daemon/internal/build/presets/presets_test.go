@@ -59,18 +59,23 @@ func TestPresetTable(t *testing.T) {
 				if r.Port != 3000 || r.Framework != "next" {
 					t.Fatalf("port %d framework %s", r.Port, r.Framework)
 				}
-				if !slices.Contains(warningCodes(r), "server-actions-key") {
-					t.Fatal("missing server actions key warning")
+				// ^15.3.0 without a lockfile is below 15.4: no adapter, the deployment id instead.
+				if ids := decisionIDs(r); !slices.Contains(ids, "server-actions-key") || !slices.Contains(ids, NextDeploymentIDDecision) || slices.Contains(ids, NextAdapterDecision) {
+					t.Fatalf("decisions = %v", ids)
 				}
 			},
 		},
 		{
 			repo: "nextjs-plain", info: Info{Provider: "node"}, buildEnv: []string{"NEXT_SERVER_ACTIONS_ENCRYPTION_KEY"}, preset: "nextjs",
 			check: func(t *testing.T, r *Result) {
-				if r.Plan.StartCommand != "" || slices.Contains(decisionIDs(r), "standalone") || slices.Contains(decisionIDs(r), NextAdapterDecision) {
-					t.Fatalf("next 16.1 without standalone must keep next start: %+v", r.Plan)
+				// Next 15.4 to 16.1 read NEXT_ADAPTER_PATH too.
+				if ids := decisionIDs(r); !slices.Contains(ids, NextAdapterDecision) || slices.Contains(ids, NextDeploymentIDDecision) {
+					t.Fatalf("next 16.1 gets the adapter: %v", ids)
 				}
-				if codes := warningCodes(r); !slices.Contains(codes, "standalone-off") || slices.Contains(codes, "server-actions-key") {
+				if slices.Contains(decisionIDs(r), "server-actions-key") || r.GeneratedSecrets != nil {
+					t.Fatalf("the app sets its own key: %v %+v", decisionIDs(r), r.GeneratedSecrets)
+				}
+				if codes := warningCodes(r); slices.Contains(codes, "standalone-off") {
 					t.Fatalf("warnings = %v", codes)
 				}
 			},
@@ -81,7 +86,7 @@ func TestPresetTable(t *testing.T) {
 				if !slices.Contains(decisionIDs(r), NextAdapterDecision) || slices.Contains(decisionIDs(r), "standalone") {
 					t.Fatalf("decisions = %v", decisionIDs(r))
 				}
-				if r.Applied.Version != 2 {
+				if r.Applied.Version != 3 {
 					t.Fatalf("nextjs preset version %d", r.Applied.Version)
 				}
 				bv := r.Plan.BuildVariables
@@ -103,7 +108,7 @@ func TestPresetTable(t *testing.T) {
 				if r.RuntimeEnv["HOSTNAME"] != "0.0.0.0" {
 					t.Fatalf("runtime env = %v", r.RuntimeEnv)
 				}
-				if codes := warningCodes(r); slices.Contains(codes, "standalone-off") || !slices.Contains(codes, "server-actions-key") || !slices.Contains(codes, "isr-cache-warning") {
+				if codes := warningCodes(r); slices.Contains(codes, "standalone-off") || slices.Contains(codes, "server-actions-key") || !slices.Contains(codes, "isr-cache-warning") {
 					t.Fatalf("warnings = %v", codes)
 				}
 			},

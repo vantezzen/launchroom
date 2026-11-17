@@ -432,3 +432,26 @@ test('a file that lists a service staged for removal keeps it and cancels the re
         ->and($instance->refresh()->removed_at)->toBeNull()
         ->and($request->refresh()->status)->toBe(DeletionRequestStatus::Cancelled);
 });
+
+test('stop, rollout, overlap and restart settings round trip through the file', function (): void {
+    $content = (string) json_encode(['version' => 1, 'services' => ['web' => ['kind' => 'app', 'deploy' => [
+        'rolloutTimeoutSeconds' => 900,
+        'healthTimeoutSeconds' => 120,
+        'stopTimeoutSeconds' => 45,
+        'stopSignal' => 'SIGINT',
+        'overlapOnVolumes' => true,
+        'healthcheck' => ['restartAfterSeconds' => 600],
+    ]]], 'environments' => ['previews' => ['services' => ['web' => ['deploy' => ['stopTimeoutSeconds' => null, 'healthcheck' => ['restartAfterSeconds' => null]]]]]]]);
+
+    $outcome = cfApply($this->production, $content);
+    $deploy = cfInstance($this->production, $this->web)->refresh()->deploy;
+
+    expect($outcome->invalid())->toBeFalse()
+        ->and($deploy->rolloutTimeoutSeconds)->toBe(900)
+        ->and($deploy->stopTimeoutSeconds)->toBe(45)
+        ->and($deploy->stopSignal)->toBe('SIGINT')
+        ->and($deploy->overlapOnVolumes)->toBeTrue()
+        ->and($deploy->healthcheck->restartAfterSeconds)->toBe(600);
+
+    expect(cfApply($this->production, (string) json_encode(['version' => 1, 'services' => ['web' => ['kind' => 'app', 'deploy' => ['stopSignal' => 'SIGKILL']]]]))->invalid())->toBeTrue();
+});

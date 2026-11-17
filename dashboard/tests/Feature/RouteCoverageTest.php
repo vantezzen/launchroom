@@ -39,6 +39,8 @@ const PUBLIC_ROUTES = [
     'GET up',
     // Build version for the client's reconnect probe (no session, throttled).
     'GET up/version',
+    // Readiness for launchroomd's watchdog and the doctor (database and cache answer; constant body).
+    'GET up/ready',
     // WebAuthn discovery document (static links only).
     'GET .well-known/passkey-endpoints',
 

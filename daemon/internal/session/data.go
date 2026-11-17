@@ -54,11 +54,13 @@ type SchemaGroup struct {
 	Rows *int64 `json:"rows,omitzero"`
 }
 
-// SchemaItem is one table-like object with its row estimate.
+// SchemaItem is one table-like object with its row count; Estimate marks
+// a catalog estimate instead of an exact count.
 type SchemaItem struct {
-	Name string `json:"name"`
-	Kind string `json:"kind"`
-	Rows *int64 `json:"rows,omitzero"`
+	Name     string `json:"name"`
+	Kind     string `json:"kind"`
+	Rows     *int64 `json:"rows,omitzero"`
+	Estimate bool   `json:"estimate,omitzero"`
 }
 
 // KeyPage is one SCAN page.
@@ -86,10 +88,15 @@ type KeyValue struct {
 	Entries   [][]string `json:"entries,omitzero"`
 }
 
-// worker runs data commands one at a time.
+// worker runs data commands one at a time. Once ctx ends (the session
+// ended) the queued commands are skipped: the dashboard records them as
+// never answered.
 func (s *run) worker(ctx context.Context) {
 	defer s.workerWG.Done()
 	for cmd := range s.commands {
+		if ctx.Err() != nil {
+			continue
+		}
 		started := s.o.Now()
 		cctx, cancel := context.WithTimeout(ctx, commandTimeout)
 		res := s.engine.run(cctx, cmd)

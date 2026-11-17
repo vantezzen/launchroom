@@ -13,8 +13,8 @@ export type ServiceRef = {
 };
 
 /**
- * The panel's data; polled while an access is starting or open. A volume
- * access (D67) names its volume.
+ * The panel's data; polled while an access is starting, open or ending. A
+ * volume access (D67) names its volume.
  */
 export const remoteAccessKeys = {
     kind: (kind: AccessKind) => ['remote-access', kind] as const,
@@ -56,6 +56,12 @@ export function usePanel(
 
             if (!live || live.length === 0) {
                 return false;
+            }
+
+            // Ending: the server closes it within a few seconds; show the
+            // result as soon as it has.
+            if (live.some((a) => a.ending)) {
+                return 1000;
             }
 
             return live.some((a) => a.port === null) ? 2000 : 5000;

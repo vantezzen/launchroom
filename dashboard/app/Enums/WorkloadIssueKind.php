@@ -13,6 +13,8 @@ enum WorkloadIssueKind: string
     case CrashLoop = 'crash_loop';
     case LoopbackOnly = 'loopback_only';
     case WrongPort = 'wrong_port';
+    /** launchroomd restarted a serving replica 3 times in an hour for failing its health check and leaves it alone now (HealthSpec.restartAfter). */
+    case Unresponsive = 'unresponsive';
 
     public function portHint(): ?PortHint
     {

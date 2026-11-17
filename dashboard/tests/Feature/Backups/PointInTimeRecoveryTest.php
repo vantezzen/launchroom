@@ -26,6 +26,7 @@ use App\Enums\DaemonTaskType;
 use App\Enums\TeamRole;
 use App\Models\Alerts\Alert;
 use App\Models\Backups\BackupRun;
+use App\Models\Backups\BackupSchedule;
 use App\Models\Backups\BackupVerification;
 use App\Models\Backups\RestoreRun;
 use App\Models\Backups\WalArchive;
@@ -325,6 +326,9 @@ test('with point-in-time recovery the newest base backup is verified together wi
 test('scheduled verification runs weekly at the instance’s minute, once it has a backup', function (): void {
     [$server, , $instance, $owner] = pitrPostgres();
     $noon = CarbonImmutable::now()->utc()->setTime(12, 0);
+    // The daily backup's slot (01:00–06:59) must not be owed during these
+    // ticks (CatchUp), whatever time the suite runs at.
+    BackupSchedule::query()->update(['last_run_at' => $noon->addHours(2)]);
     // Every minute of an hour: the instance's minute is somewhere in it.
     $tickHour = static function () use ($noon): void {
         for ($minute = 0; $minute < 60; $minute++) {

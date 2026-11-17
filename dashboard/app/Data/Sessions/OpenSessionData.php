@@ -11,7 +11,7 @@ use Spatie\LaravelData\Attributes\Validation\Min;
 use Spatie\LaravelData\Data;
 
 /**
- * Opening an authorized Console or Data session.
+ * Opening an authorized Console, Data or recovery session.
  */
 final class OpenSessionData extends Data
 {
@@ -26,5 +26,7 @@ final class OpenSessionData extends Data
         public int $cols = 80,
         #[Min(2), Max(200)]
         public int $rows = 24,
+        /** Recovery shells: mount the volumes writable (audited). Read-only otherwise. */
+        public bool $allowChanges = false,
     ) {}
 }

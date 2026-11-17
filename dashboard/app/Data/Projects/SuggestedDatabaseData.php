@@ -20,5 +20,7 @@ final class SuggestedDatabaseData extends Data
         public DatabaseEngine $engine,
         public string $reason,
         public array $apps,
+        /** Only when the app has no database of the same kind yet (Postgres for a Laravel app on SQLite). */
+        public bool $fallback = false,
     ) {}
 }

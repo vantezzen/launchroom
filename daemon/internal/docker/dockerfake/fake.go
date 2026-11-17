@@ -4,10 +4,14 @@
 package dockerfake
 
 import (
+	"archive/tar"
+	"bytes"
 	"context"
 	"crypto/rand"
 	"encoding/hex"
+	"errors"
 	"fmt"
+	"io"
 	"maps"
 	"net/netip"
 	"slices"
@@ -19,6 +23,7 @@ import (
 	"github.com/moby/moby/api/types/mount"
 
 	"github.com/vantezzen/launchroom/daemon/internal/docker"
+	"github.com/vantezzen/launchroom/daemon/internal/names"
 )
 
 // Fake is an in-memory Docker daemon.
@@ -62,6 +67,16 @@ type Fake struct {
 	// ImageLabels are an image's own labels, merged into the labels of
 	// containers created from it (like Docker).
 	ImageLabels map[string]map[string]string
+	// Images are image configs returned by ImageConfig (missing: empty config).
+	Images map[string]docker.ImageConfig
+	// Arch is the host architecture Info reports ("": unknown).
+	Arch string
+	// StartErr makes StartContainer fail for a container name (the container
+	// stays created with State.Error set, like Docker).
+	StartErr map[string]error
+
+	waiters map[string][]chan docker.ExitResult
+	roots   map[string]*VolumeRoot
 }
 
 type entry struct {
@@ -85,6 +100,9 @@ func New(serverID string) *Fake {
 		ExitOnStart: map[string]int{},
 		Logs:        map[string][]docker.LogLine{},
 		Stats:       map[string]docker.ContainerStats{},
+		Images:      map[string]docker.ImageConfig{},
+		StartErr:    map[string]error{},
+		waiters:     map[string][]chan docker.ExitResult{},
 		pid:         1000,
 	}
 }
@@ -208,7 +226,94 @@ func (f *Fake) SetStats(id string, s docker.ContainerStats) {
 
 // Info implements docker.Client.
 func (f *Fake) Info(context.Context) (docker.EngineInfo, error) {
-	return docker.EngineInfo{Version: "29.0.0-fake", CPUs: 4, MemoryMB: 8192}, nil
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return docker.EngineInfo{Version: "29.0.0-fake", CPUs: 4, MemoryMB: 8192, OSType: "linux", Architecture: f.Arch}, nil
+}
+
+var (
+	_ docker.ExitOps  = (*Fake)(nil)
+	_ docker.ImageOps = (*Fake)(nil)
+)
+
+// WaitNextExit implements docker.ExitOps: it returns at the container's
+// next exit (Exit, StopContainer, ExitOnStart).
+func (f *Fake) WaitNextExit(ctx context.Context, id string) (docker.ExitResult, error) {
+	f.mu.Lock()
+	if _, err := f.get(id); err != nil {
+		f.mu.Unlock()
+		return docker.ExitResult{}, err
+	}
+	ch := make(chan docker.ExitResult, 1)
+	f.waiters[id] = append(f.waiters[id], ch)
+	f.mu.Unlock()
+	select {
+	case res, ok := <-ch:
+		if !ok {
+			return docker.ExitResult{}, fmt.Errorf("container %s removed: %w", id, docker.ErrNotFound)
+		}
+		return res, nil
+	case <-ctx.Done():
+		f.mu.Lock()
+		f.waiters[id] = slices.DeleteFunc(f.waiters[id], func(c chan docker.ExitResult) bool { return c == ch })
+		f.mu.Unlock()
+		return docker.ExitResult{}, ctx.Err()
+	}
+}
+
+// Waiting reports how many exit waits are pending for a container.
+func (f *Fake) Waiting(id string) int {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return len(f.waiters[id])
+}
+
+// exitedLocked wakes the exit waiters of a container (f.mu held).
+func (f *Fake) exitedLocked(id string, code int) {
+	for _, ch := range f.waiters[id] {
+		ch <- docker.ExitResult{Code: code}
+	}
+	delete(f.waiters, id)
+}
+
+// Exit simulates the container's process exiting: with restarting set,
+// Docker's restart policy is about to start it again (state restarting,
+// restart count incremented by Restarted).
+func (f *Fake) Exit(id string, code int, oom, restarting bool) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	e, ok := f.containers[id]
+	if !ok {
+		return
+	}
+	e.c.State, e.c.Pid, e.c.ExitCode, e.c.OOMKilled, e.c.FinishedAt = docker.StateExited, 0, code, oom, f.now().UTC()
+	if restarting {
+		e.c.State = docker.StateRestarting
+	}
+	f.exitedLocked(id, code)
+}
+
+// Restarted simulates Docker's restart policy starting an exited container again.
+func (f *Fake) Restarted(id string) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	e, ok := f.containers[id]
+	if !ok {
+		return
+	}
+	f.pid++
+	e.c.State, e.c.Pid, e.c.StartedAt, e.c.ExitCode, e.c.OOMKilled = docker.StateRunning, f.pid, f.now().UTC(), 0, false
+	e.c.RestartCount++
+}
+
+// ImageConfig implements docker.ImageOps.
+func (f *Fake) ImageConfig(_ context.Context, ref string) (docker.ImageConfig, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if !f.images[ref] {
+		return docker.ImageConfig{}, fmt.Errorf("no such image %s: %w", ref, docker.ErrNotFound)
+	}
+	return f.Images[ref], nil
 }
 
 // ListContainers implements docker.Client.
@@ -366,8 +471,12 @@ func (f *Fake) StartContainer(ctx context.Context, id string) error {
 	if e, err = f.get(id); err != nil {
 		return err
 	}
+	if err := f.StartErr[e.c.Name]; err != nil {
+		e.c.Error, e.c.ExitCode = err.Error(), 127
+		return err
+	}
 	f.pid++
-	e.c.State, e.c.Pid, e.c.StartedAt, e.c.ExitCode = "running", f.pid, f.now().UTC(), 0
+	e.c.State, e.c.Pid, e.c.StartedAt, e.c.ExitCode, e.c.Error = "running", f.pid, f.now().UTC(), 0, ""
 	e.c.HostPorts = nil
 	if hc := e.create.HostConfig; hc != nil && !f.Unbound[e.c.Name] {
 		for _, bs := range hc.PortBindings {
@@ -380,6 +489,7 @@ func (f *Fake) StartContainer(ctx context.Context, id string) error {
 	}
 	if code, ok := f.ExitOnStart[e.c.Name]; ok {
 		e.c.State, e.c.Pid, e.c.ExitCode, e.c.FinishedAt = "exited", 0, code, f.now().UTC()
+		f.exitedLocked(id, code)
 	}
 	f.record("start %s", e.c.Name)
 	return nil
@@ -393,7 +503,12 @@ func (f *Fake) StopContainer(_ context.Context, id string, grace time.Duration) 
 	if err != nil {
 		return err
 	}
+	wasRunning := e.c.Running()
 	e.c.State, e.c.Pid, e.c.FinishedAt, e.c.HostPorts = "exited", 0, f.now().UTC(), nil
+	if wasRunning {
+		e.c.ExitCode = 143
+		f.exitedLocked(id, 143)
+	}
 	f.record("stop %s %s", e.c.Name, grace)
 	return nil
 }
@@ -407,6 +522,10 @@ func (f *Fake) RemoveContainer(_ context.Context, id string) error {
 		return err
 	}
 	delete(f.containers, id)
+	for _, ch := range f.waiters[id] {
+		close(ch)
+	}
+	delete(f.waiters, id)
 	f.record("remove %s", e.c.Name)
 	return nil
 }
@@ -427,6 +546,9 @@ func (f *Fake) StreamLogs(ctx context.Context, id string, opts docker.LogsOption
 		if !opts.Since.IsZero() && l.Time.Before(opts.Since) {
 			continue
 		}
+		if !opts.Until.IsZero() && l.Time.After(opts.Until) {
+			continue
+		}
 		if err := ctx.Err(); err != nil {
 			return nil
 		}
@@ -435,7 +557,18 @@ func (f *Fake) StreamLogs(ctx context.Context, id string, opts docker.LogsOption
 		}
 	}
 	if opts.Follow {
-		<-ctx.Done()
+		// Like Docker, a follow ends when the followed process exits.
+		ch := make(chan docker.ExitResult, 1)
+		f.mu.Lock()
+		f.waiters[id] = append(f.waiters[id], ch)
+		f.mu.Unlock()
+		select {
+		case <-ctx.Done():
+			f.mu.Lock()
+			f.waiters[id] = slices.DeleteFunc(f.waiters[id], func(c chan docker.ExitResult) bool { return c == ch })
+			f.mu.Unlock()
+		case <-ch:
+		}
 	}
 	return nil
 }
@@ -600,5 +733,152 @@ func (f *Fake) PullImage(ctx context.Context, ref string) error {
 		return err
 	}
 	f.images[ref] = true
+	return nil
+}
+
+// ---- Volume helpers (docker.VolumeOps) ----
+
+// VolumeRoot is the simulated top folder of a volume.
+type VolumeRoot struct {
+	UID, GID int
+	Mode     int64
+	// Files are the names inside it (top level only).
+	Files []string
+}
+
+var _ docker.VolumeOps = (*Fake)(nil)
+
+// SetVolumeRoot sets a volume's top folder.
+func (f *Fake) SetVolumeRoot(name string, root VolumeRoot) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if f.roots == nil {
+		f.roots = map[string]*VolumeRoot{}
+	}
+	f.roots[name] = &root
+}
+
+// VolumeRootOf returns a volume's top folder (zero: root-owned, empty, 0755).
+func (f *Fake) VolumeRootOf(name string) VolumeRoot {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if r := f.roots[name]; r != nil {
+		return *r
+	}
+	return VolumeRoot{Mode: 0o755}
+}
+
+// PauseContainer implements docker.VolumeOps.
+func (f *Fake) PauseContainer(_ context.Context, id string) error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	e, err := f.get(id)
+	if err != nil {
+		return err
+	}
+	e.c.State = docker.StatePaused
+	return nil
+}
+
+// UnpauseContainer implements docker.VolumeOps.
+func (f *Fake) UnpauseContainer(_ context.Context, id string) error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	e, err := f.get(id)
+	if err != nil {
+		return err
+	}
+	e.c.State = docker.StateRunning
+	return nil
+}
+
+// helperVolumeLocked is the volume a helper mounts at /data (f.mu held).
+func (f *Fake) helperVolumeLocked(id string) (string, error) {
+	e, err := f.get(id)
+	if err != nil {
+		return "", err
+	}
+	if e.create.HostConfig != nil {
+		for _, m := range e.create.HostConfig.Mounts {
+			if m.Target == "/data" {
+				return m.Source, nil
+			}
+		}
+	}
+	return "", fmt.Errorf("container %s mounts nothing at /data", e.c.Name)
+}
+
+// StreamFromContainer implements docker.VolumeOps for "/data" of a helper:
+// the folder's header and one empty file per name.
+func (f *Fake) StreamFromContainer(_ context.Context, id, src string) (io.ReadCloser, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	vol, err := f.helperVolumeLocked(id)
+	if err != nil {
+		return nil, err
+	}
+	if src != "/data" {
+		return nil, fmt.Errorf("fake: only /data can be read, not %s", src)
+	}
+	root := VolumeRoot{Mode: 0o755}
+	if r := f.roots[vol]; r != nil {
+		root = *r
+	}
+	var buf bytes.Buffer
+	tw := tar.NewWriter(&buf)
+	_ = tw.WriteHeader(&tar.Header{Typeflag: tar.TypeDir, Name: "data/", Mode: root.Mode, Uid: root.UID, Gid: root.GID})
+	for _, n := range root.Files {
+		_ = tw.WriteHeader(&tar.Header{Typeflag: tar.TypeReg, Name: "data/" + n, Mode: 0o644})
+	}
+	_ = tw.Close()
+	return io.NopCloser(&buf), nil
+}
+
+// StreamToContainer implements docker.VolumeOps: a "data/" folder entry
+// sets the volume's owner and mode, files are added.
+func (f *Fake) StreamToContainer(_ context.Context, id, dst string, r io.Reader) error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	e, err := f.get(id)
+	if err != nil {
+		return err
+	}
+	vol, _ := f.helperVolumeLocked(id)
+	tr := tar.NewReader(r)
+	for {
+		h, err := tr.Next()
+		if errors.Is(err, io.EOF) {
+			break
+		}
+		if err != nil {
+			return err
+		}
+		f.record("put %s %s%s uid=%d gid=%d", e.c.Name, dst, h.Name, h.Uid, h.Gid)
+		if vol == "" || dst != "/" {
+			continue
+		}
+		if f.roots == nil {
+			f.roots = map[string]*VolumeRoot{}
+		}
+		root := f.roots[vol]
+		if root == nil {
+			root = &VolumeRoot{Mode: 0o755}
+			f.roots[vol] = root
+		}
+		switch {
+		case h.Typeflag == tar.TypeDir && strings.TrimSuffix(h.Name, "/") == "data":
+			root.UID, root.GID, root.Mode = h.Uid, h.Gid, h.Mode
+		case strings.HasPrefix(h.Name, "data/"):
+			root.Files = append(root.Files, strings.TrimPrefix(h.Name, "data/"))
+		}
+	}
+	return nil
+}
+
+// EnsureHelperImage implements docker.VolumeOps.
+func (f *Fake) EnsureHelperImage(context.Context) error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.images[names.VolumeHelperImage] = true
 	return nil
 }

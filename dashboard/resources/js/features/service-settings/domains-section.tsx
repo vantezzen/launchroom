@@ -21,6 +21,7 @@ import type { StatusState } from '@/components/status';
 import { StatusIcon, StatusPill } from '@/components/status';
 import { TimeAgo } from '@/components/time-ago';
 import { Button } from '@/components/ui/button';
+import { CertificateProblem } from '@/features/domains/certificate-problem';
 import {
     Dialog,
     DialogContent,
@@ -687,6 +688,14 @@ function DomainCard({
                     { label: 'Traffic', step: edge },
                 ]}
             />
+
+            {!needsDns && (
+                <CertificateProblem
+                    certificate={domain.certificate}
+                    route={route}
+                    canRetry={context.canUpdate}
+                />
+            )}
 
             {needsDns && (
                 <div className="flex flex-col gap-4 border-t bg-recessed px-5 py-4">

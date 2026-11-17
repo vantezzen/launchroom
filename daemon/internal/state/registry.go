@@ -2,6 +2,7 @@ package state
 
 import (
 	"encoding/json/v2"
+	"regexp"
 	"slices"
 	"strings"
 	"time"
@@ -44,7 +45,11 @@ func checkScopes(e *errs, path string, scopes []RegistryScope) {
 // RegistryTokenRequest asks the dashboard for a short-lived registry token:
 // POST /daemon/v1/registry-token. The dashboard grants all scopes or answers
 // 403 (no partial grants):
-//   - pull on "mirror/…" for any approved server;
+//   - pull on "mirror/<registry>/…" (public upstream images) for any approved server;
+//   - pull on "mirror/team_<team id lowercased>/<registry>/…" (private
+//     upstream images, synced with that team's registry credentials) only
+//     for a server whose current NodeState runs an image of that repository,
+//     or with Task set to a task it holds that names one (TeamMirrorRepository);
 //   - pull on "apps/<service>" whose images are in the server's current NodeState;
 //   - pull and push on "apps/<service>" and "cache/<service>" only with Task set
 //     to a build task currently leased by this server for that service.
@@ -132,6 +137,29 @@ func (t *RegistryToken) Covers(want []RegistryScope) bool {
 		}
 	}
 	return true
+}
+
+// Private upstream images (private registries through Zot's sync): Zot
+// mirrors them with a team's credentials under a team prefix, so one team's
+// private images are never served under another team's or the public mirror
+// path. Public mirror paths start with a registry host, which always has a
+// dot ("docker.io"), so they never look like a team prefix.
+
+// TeamMirrorPrefix starts every team mirror repository.
+const TeamMirrorPrefix = "mirror/team_"
+
+var reTeamMirrorRepo = regexp.MustCompile(`^mirror/team_[0-7][0-9a-hjkmnp-tv-z]{25}/[a-z0-9-]+(?:\.[a-z0-9-]+)+(?:/[a-z0-9]+(?:(?:\.|_|__|-+)[a-z0-9]+)*)+$`)
+
+// TeamMirrorRepository returns the team public id ("team_<ULID>") of a
+// team mirror repository ("mirror/team_01j…/ghcr.io/acme/api"), and whether
+// repo is one. A repository that starts with the team prefix but doesn't
+// match the grammar is not one (the dashboard refuses it).
+func TeamMirrorRepository(repo RegistryRepository) (team string, ok bool) {
+	if !reTeamMirrorRepo.MatchString(string(repo)) {
+		return "", false
+	}
+	id, _, _ := strings.Cut(strings.TrimPrefix(string(repo), "mirror/"), "/")
+	return "team_" + strings.ToUpper(strings.TrimPrefix(id, "team_")), true
 }
 
 // ScopeString renders scopes in Docker token-spec form ("repository:x:pull,push").

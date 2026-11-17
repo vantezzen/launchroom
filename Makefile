@@ -45,7 +45,8 @@ IN_DASHBOARD = if [ -n "$$($(COMPOSE) ps -q --status running dashboard 2>/dev/nu
 .PHONY: go-image test-db test-dashboard-pest check-dashboard lint-templates help up up-multi down nuke logs ps shell artisan composer npm migrate seed restart-workers \
 	up-backups test test-dashboard lint lint-dashboard test-daemon test-daemon-integration test-daemon-integration-rootless go lint-daemon lint-deploy gen-installers test-server-sh test-install-sh test-cli-sh lint-workflows test-install test-update test-move dev-daemon \
 	dev-enroll-2 dev-enroll-3 test-failover gen gen-protocol gen-types gen-openapi gen-cli design-tools-image device-art world-map fixtures test-next-adapter next-adapter caddy-image caddy-image-load caddy-image-pin \
-	site-install site-dev site-build site-preview site-format lint-site test-cli lint-cli cli test-cli-e2e up-forgejo test-git-e2e
+	site-install site-dev site-build site-preview site-format lint-site test-cli lint-cli cli test-cli-e2e up-forgejo test-git-e2e \
+	test-apps fixture-gen
 
 help: ## Show this help
 	@awk 'BEGIN {FS = ":.*## "; printf "Usage: make <target> [SVC=...] [ARGS=...]\n\n"} \
@@ -326,7 +327,8 @@ SHELL_SCRIPTS = deploy/install/install.sh deploy/install/server.sh deploy/instal
 	deploy/test/server-sh-test.sh deploy/test/install-sh-test.sh deploy/test/cli-sh-test.sh \
 	deploy/release/build-bundle.sh deploy/release/check-pinned-images.sh deploy/release/check-pins.sh \
 	release.sh daemon/build.sh dev/bin/compose.sh dev/bin/enroll.sh dev/bin/checks.sh dev/bin/heavy-lock.sh \
-	dev/cli-e2e.sh dev/git-e2e.sh dev/go/fetch-restic.sh
+	dev/cli-e2e.sh dev/git-e2e.sh dev/go/fetch-restic.sh \
+	dev/apps-e2e.sh dev/apps-e2e/fixture-gen.sh dev/apps-e2e/lib.sh $(wildcard dev/apps-e2e/gen/*.sh dev/apps-e2e/cases/*.sh)
 
 lint-deploy: ## Install bundle and tooling: shellcheck, installer lib splice, pin copies, digest-pinned release Dockerfiles
 	docker run --rm --label launchroom.dev=true -v "$(CURDIR):/repo:ro" -w /repo $(SHELLCHECK_IMAGE) -s sh -x $(SHELL_SCRIPTS)
@@ -499,4 +501,12 @@ fixtures: dev/.env ## List fixture apps with their git-fixtures clone URLs and S
 		ls -1 dev/fixtures | grep -v README.md | sed 's/^/  /'; \
 		echo "(start the dev stack to serve them over git: make up)"; \
 	fi
+
+fixture-gen: ## Generate a pristine sample app with its framework's generator into dev/fixtures/NAME (NAME=all: every recipe in dev/apps-e2e/gen; pinned in deploy/pins.env)
+	@test -n "$(NAME)" || { echo "usage: make fixture-gen NAME=<name>|all" >&2; exit 2; }
+	sh dev/apps-e2e/fixture-gen.sh $(NAME)
+
+test-apps: dev/.env ## Sample apps end to end: import each fixture with no settings, deploy, assert from outside, pr-1 preview (APPS="next16-stock …"|all; make up + dev-daemon)
+	@test -n "$(APPS)" || { echo "usage: make test-apps APPS=\"<fixture> …\"|all" >&2; exit 2; }
+	APPS="$(APPS)" sh dev/apps-e2e.sh
 

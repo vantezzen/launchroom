@@ -19,6 +19,7 @@ use App\Exceptions\UnresolvedReferences;
 use App\Models\Deployment;
 use App\Models\Environment;
 use App\Models\Project;
+use App\Models\Service;
 use App\Models\Variable;
 use App\Queries\CurrentEnvironmentSpec;
 use App\Services\Crypto\ProjectKeyring;
@@ -26,6 +27,7 @@ use App\Services\Deployments\DeploymentSnapshots;
 use App\Services\Environments\EnvironmentRevisions;
 use App\Services\Variables\SpecVariableResolver;
 use App\Services\Variables\VariableStore;
+use App\Support\Variables\GeneratedValues;
 
 /**
  * Creates the runtime secrets a deployment's build summary declares
@@ -48,6 +50,18 @@ use App\Services\Variables\VariableStore;
  *   last applied revision, also one another deployment created meanwhile.
  * - The project row lock (the variable write path's) plus re-checking
  *   under it keep concurrent deploys from creating two values.
+ *
+ * Build-scoped secrets (`scope: build`, Next.js's
+ * NEXT_SERVER_ACTIONS_ENCRYPTION_KEY, OD5) are part of the image: the build
+ * that declared them ran without, so they are created for the **next**
+ * build. They stay a staged change and never enter this deployment's env.
+ * With `shared: service` every non-fork environment of the service gets the
+ * same value (copied from the service's existing row, else a fresh one,
+ * stored as a value so environment copies keep it): "build once, promote
+ * everywhere" keeps one build key, and server action ids stay valid across
+ * deploys and build servers. Fork previews never get secrets (docs/09 R20),
+ * so their builds make their own. Workers and crons run their app's image
+ * and get nothing.
  */
 final readonly class GenerateDeclaredSecrets
 {
@@ -101,6 +115,14 @@ final readonly class GenerateDeclaredSecrets
                     continue;
                 }
 
+                if ($secret->scope === 'build') {
+                    if (! $environment->secrets_withheld && ! $own->kind->requiresParent()) {
+                        $this->createForNextBuild($project, $environment, $deployment, $service, $secret);
+                    }
+
+                    continue;
+                }
+
                 if ($own->kind->requiresParent()) {
                     if (! $parent instanceof ServiceSpec || ! $this->sees($parent, $intent, $secret->name)) {
                         continue;
@@ -133,6 +155,10 @@ final readonly class GenerateDeclaredSecrets
             // applied, this snapshot predates it): every deployment runs
             // with the one value.
             foreach ($missing as $secret) {
+                if ($secret->scope === 'build') {
+                    continue;
+                }
+
                 $value = $this->valueOf($project, $applied, $service->public_id, $secret->name, $created[$secret->name] ?? null);
 
                 if ($value !== null && $value !== '') {
@@ -151,6 +177,42 @@ final readonly class GenerateDeclaredSecrets
 
             return $added;
         });
+    }
+
+    /**
+     * A build-scoped secret for the service's next build in $environment
+     * (staged, see the class doc). `shared: service` reuses the value the
+     * service already has in another environment.
+     */
+    private function createForNextBuild(Project $project, Environment $environment, Deployment $deployment, Service $service, GeneratedSecret $secret): void
+    {
+        $value = $secret->expression();
+
+        if ($secret->shared === 'service') {
+            $existing = Variable::query()
+                ->where('project_id', $project->id)
+                ->where('service_id', $service->id)
+                ->whereNull('connection_id')
+                ->where('key', $secret->name)
+                ->where('type', VariableType::Secret->value)
+                ->oldest('id')
+                ->first();
+            // A value, not the generator: copies to new environments keep it.
+            $value = $existing instanceof Variable ? $this->store->plaintext($project, $existing) : GeneratedValues::evaluate($value);
+        }
+
+        $variable = $this->store->create($project, $service, $secret->name, $value, VariableType::Secret, [VariableTargetRow::environment($environment->id)]);
+
+        $this->audit->handle(new AuditEntryData(
+            action: AuditAction::VariableCreated,
+            actor: AuditActor::system(),
+            teamId: $project->team_id,
+            subjectType: 'variable',
+            subjectId: $variable->public_id,
+            meta: ['key' => $variable->key, 'type' => $variable->type->value, 'service' => $service->public_id, 'generated' => true, 'deployment' => $deployment->public_id, 'scope' => 'build', 'shared' => $secret->shared ?? 'environment'],
+        ));
+
+        CanvasChanged::forProject($project);
     }
 
     /**

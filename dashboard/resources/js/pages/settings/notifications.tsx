@@ -23,6 +23,9 @@ type Props = {
     canManage: boolean;
     mailConfigured: boolean;
     defaultEmail: string;
+    /** Instance owners of the main server's team: the fallback channel (OD7). */
+    canSetFallback: boolean;
+    fallbackEmailAvailable: boolean;
 };
 
 type Kind = App.Enums.Alerts.AlertChannelKind;
@@ -149,6 +152,8 @@ export default function NotificationSettings({
     canManage,
     mailConfigured,
     defaultEmail,
+    canSetFallback,
+    fallbackEmailAvailable,
 }: Props) {
     const [adding, setAdding] = useState(false);
     const [kind, setKind] = useState<Kind | null>(null);
@@ -238,6 +243,10 @@ export default function NotificationSettings({
                         <ChannelRow
                             key={channel.id}
                             channel={channel}
+                            fallback={{
+                                canSet: canSetFallback,
+                                emailAvailable: fallbackEmailAvailable,
+                            }}
                             highlight={
                                 channel.id === created &&
                                 channel.lastDeliveryAt === null

@@ -28,6 +28,12 @@ case "$*" in
 "compose version") printf 'Docker Compose version v2.40.0\n' ;;
 "ps -q"*) ;;
 *"bootstrap-key --check"*) exit 1 ;;
+info) [ "${STUB_INFO_FAIL:-}" != 1 ] ;;
+"image inspect "*) [ "${STUB_IMAGE:-}" = 1 ] ;;
+"run --rm --network none "*"update-local --probe") [ "${STUB_PROBE:-}" = 1 ] || exit 2 ;;
+"run --rm -i"*" update-local --dir "*) exit "${STUB_UPDATE_EXIT:-0}" ;;
+"run --rm -i"*" doctor --dir "*) ;;
+"compose exec -T postgres psql"*) [ "${STUB_PSQL_FAIL:-}" != 1 ] || exit 1; printf 'srv_01 online\n' ;;
 "compose"*) ;;
 *) printf 'unexpected: docker %s\n' "$*" >&2; exit 1 ;;
 esac
@@ -517,6 +523,90 @@ has "$WORK/channel-stable/lr/.env" '^LR_PUBLIC_IP_DETECT=off$'
 # …except in an update, where launchroomd's supervisor passes the flag.
 LR_BUNDLE_VERIFIED=1 run update-ip --bundle "$BUNDLE_DIR"
 lacks "$WORK/update-ip/lr/.env" 'LR_PUBLIC_IP_DETECT'
+
+# --- low disk and an unsynchronised clock: warnings, never a stop ---------
+# shellcheck disable=SC2016 # the stub expands $STUB_NTP itself
+printf '#!/bin/sh\nprintf "%%s\\n" "${STUB_NTP:-yes}"\n' >"$STUBS/timedatectl"
+chmod +x "$STUBS/timedatectl"
+STUB_DF_KB=2000000 STUB_NTP=no run host-health --bundle /missing
+checked host-health
+has "$WORK/host-health.out" 'only 1953 MB of disk space is free here'
+has "$WORK/host-health.out" "clock isn't synchronised"
+run host-health-ok --bundle /missing
+lacks "$WORK/host-health-ok.out" 'disk space is free'
+lacks "$WORK/host-health-ok.out" 'synchronised'
+LR_BUNDLE_VERIFIED=1 STUB_DF_KB=2000000 STUB_NTP=no run host-health-update --bundle /missing
+lacks "$WORK/host-health-update.out" 'disk space is free'
+
+# --- re-running on an existing install hands over to the update supervisor
+existing() {
+	mkdir -p "$WORK/$1/lr/data/daemon"
+	printf 'APP_KEY=base64:keep\nLR_DAEMON_IMAGE=ghcr.io/vantezzen/launchroomd@sha256:%s\n' \
+		0000000000000000000000000000000000000000000000000000000000000000 >"$WORK/$1/lr/.env"
+	printf 'services: {}\n' >"$WORK/$1/lr/daemon-compose.yml"
+	printf '{}\n' >"$WORK/$1/lr/data/daemon/enrollment.json"
+}
+existing supervised
+STUB_IMAGE=1 STUB_PROBE=1 LR_CADDY_IMAGE=ghcr.io/vantezzen/launchroom-caddy@sha256:1111111111111111111111111111111111111111111111111111111111111111 \
+	run supervised --bundle "$BUNDLE_DIR"
+[ "$STATUS" = 0 ] || fail "supervised exited $STATUS: $(cat "$WORK/supervised.out")"
+has "$WORK/supervised/log" "update-local --dir $WORK/supervised/lr --bundle $BUNDLE_DIR --env LR_CADDY_IMAGE=ghcr.io/vantezzen/launchroom-caddy@sha256:1111"
+has "$WORK/supervised/log" "-- --domain test.example.com --no-public-ip-detect"
+has "$WORK/supervised/log" "-v /var/run/docker.sock:/var/run/docker.sock -v $WORK/supervised/lr:$WORK/supervised/lr -v $BUNDLE_DIR:$BUNDLE_DIR:ro"
+has "$WORK/supervised.out" 'backed up first'
+[ ! -e "$WORK/supervised/lr/compose.yml" ] || fail "supervised: the installer wrote the folder itself"
+has "$WORK/supervised/lr/.env" '^APP_KEY=base64:keep$'
+
+# A failed supervised update stops the installer.
+existing supervised-fail
+STUB_IMAGE=1 STUB_PROBE=1 STUB_UPDATE_EXIT=1 run supervised-fail --bundle "$BUNDLE_DIR"
+refused supervised-fail 'the update did not finish'
+[ ! -e "$WORK/supervised-fail/lr/compose.yml" ] || fail "supervised-fail went on by itself"
+
+# A launchroomd without the supervisor's manual mode: the old path, with a warning.
+existing old-daemon
+STUB_IMAGE=1 run old-daemon --bundle "$BUNDLE_DIR"
+has "$WORK/old-daemon.out" "can't take a backup before updating"
+[ -e "$WORK/old-daemon/lr/compose.yml" ] || fail "old-daemon: the installer did not update the folder"
+
+# Run by the supervisor itself: never hands over again.
+existing inner
+STUB_IMAGE=1 STUB_PROBE=1 LR_BUNDLE_VERIFIED=1 LR_INSTALL_SUPERVISED=1 run inner --bundle "$BUNDLE_DIR"
+lacks "$WORK/inner/log" 'update-local'
+has "$WORK/inner.out" 'updating from the bundle the installer checked'
+has "$WORK/inner/lr/.env" '^LR_PUBLIC_IP_DETECT=off$'
+lacks "$WORK/inner.out" 'the control plane is running'
+
+# --- the helper: ./launchroom doctor and status ---------------------------
+helper() {
+	name="$1"
+	shift
+	mkdir -p "$WORK/$name/lr/data"
+	cp "$BUNDLE_DIR/control-plane/launchroom" "$WORK/$name/lr/launchroom"
+	printf 'LR_DAEMON_IMAGE=ghcr.io/vantezzen/launchroomd@sha256:%s\nAPP_URL=https://dash.example.com\n' \
+		0000000000000000000000000000000000000000000000000000000000000000 >"$WORK/$name/lr/.env"
+	STATUS=0
+	(cd "$WORK/$name" && PATH="$STUBS:/bin:/usr/bin" STUB_LOG="$WORK/$name/log" sh "$WORK/$name/lr/launchroom" "$@") \
+		>"$WORK/$name.out" 2>&1 </dev/null || STATUS=$?
+	touch "$WORK/$name/log"
+}
+STUB_INFO_FAIL=1 helper doctor-down doctor
+refused doctor-down "Docker isn't running"
+lacks "$WORK/doctor-down/log" 'doctor --dir'
+
+STUB_IMAGE=1 helper doctor-run doctor --fix start:valkey
+[ "$STATUS" = 0 ] || fail "doctor-run exited $STATUS: $(cat "$WORK/doctor-run.out")"
+has "$WORK/doctor-run/log" "run --rm -i --label launchroom.managed=true --label launchroom.role=doctor --network host --pid host"
+has "$WORK/doctor-run/log" "-v $WORK/doctor-run/lr:$WORK/doctor-run/lr -v /:/host:ro"
+has "$WORK/doctor-run/log" "--entrypoint /usr/local/bin/launchroomd ghcr.io/vantezzen/launchroomd@sha256:0000000000000000000000000000000000000000000000000000000000000000 doctor --dir $WORK/doctor-run/lr --fix start:valkey"
+
+STUB_IMAGE=1 STUB_DF_KB=500000 helper doctor-full doctor
+has "$WORK/doctor-full.out" 'the disk is almost full'
+
+STUB_PSQL_FAIL=1 helper status-db-down status
+has "$WORK/status-db-down.out" "launchroomd: unknown (the database isn't answering"
+helper status-ok status
+has "$WORK/status-ok.out" 'launchroomd: srv_01 online'
 
 rm -rf "$WORK"
 if [ "$FAILED" != 0 ]; then

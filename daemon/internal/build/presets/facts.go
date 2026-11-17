@@ -7,8 +7,6 @@
 package presets
 
 import (
-	"bufio"
-	"encoding/json"
 	"io"
 	"io/fs"
 	"path"
@@ -43,49 +41,17 @@ type Facts struct {
 	EnvRefs []string
 	// BuildEnv are the names of the build-scoped variables of this build.
 	BuildEnv []string
-}
-
-// PackageJSON is the subset of package.json the presets use.
-type PackageJSON struct {
-	Name    string            `json:"name"`
-	Main    string            `json:"main"`
-	Scripts map[string]string `json:"scripts"`
-	// Deps merges dependencies and devDependencies (name → version range).
-	Deps map[string]string `json:"-"`
-}
-
-// Dep returns the version range of a dependency and whether it exists.
-func (p *PackageJSON) Dep(name string) (string, bool) {
-	if p == nil {
-		return "", false
-	}
-	v, ok := p.Deps[name]
-	return v, ok
-}
-
-// DjangoFacts are found in the project's settings module.
-type DjangoFacts struct {
-	// Project is the package containing settings.py ("mysite").
-	Project string
-	// WSGI and ASGI are WSGI_APPLICATION / ASGI_APPLICATION ("mysite.wsgi.application").
-	WSGI       string
-	ASGI       string
-	StaticRoot bool
-	// SecretKeyEnv is the variable SECRET_KEY is read from ("DJANGO_SECRET_KEY"), if the settings read it from the environment.
-	SecretKeyEnv string
-}
-
-// PythonApp is an app object like `app = FastAPI()` in a module.
-type PythonApp struct {
-	File      string // "app/main.py"
-	Variable  string // "app"
-	Framework string // "fastapi", "flask", "litestar"
-}
-
-// Listener is a hard-coded listen port in a source file.
-type Listener struct {
-	File string
-	Port string
+	// JS are facts from JavaScript framework config files and lockfiles.
+	JS JSFacts
+	// PHP, Ruby, Elixir, JVM, DotNet and Rust are the server ecosystems' facts.
+	PHP    PHPFacts
+	Ruby   RubyFacts
+	Elixir ElixirFacts
+	JVM    JVMFacts
+	DotNet DotNetFacts
+	Rust   RustFacts
+	// DockerfileWorkdir is the last WORKDIR of the app's Dockerfile, if any.
+	DockerfileWorkdir string
 }
 
 // Limits keep gathering cheap on large repositories.
@@ -137,20 +103,8 @@ func Gather(fsys fs.FS, buildEnv []string) Facts {
 	if s, ok := readSmall(fsys, "package.json"); ok {
 		f.PackageJSON = parsePackageJSON(s)
 	}
-	if s, ok := readSmall(fsys, "composer.json"); ok {
-		var c struct {
-			Require    map[string]any `json:"require"`
-			RequireDev map[string]any `json:"require-dev"`
-		}
-		if json.Unmarshal([]byte(s), &c) == nil {
-			for k := range c.Require {
-				f.ComposerRequire[strings.ToLower(k)] = true
-			}
-			for k := range c.RequireDev {
-				f.ComposerRequire[strings.ToLower(k)] = true
-			}
-		}
-	}
+	gatherComposer(fsys, &f)
+	gatherJavaScript(fsys, &f)
 	gatherPythonDeps(fsys, &f)
 	for _, n := range []string{"next.config.js", "next.config.mjs", "next.config.ts"} {
 		if s, ok := readSmall(fsys, n); ok {
@@ -162,190 +116,9 @@ func Gather(fsys fs.FS, buildEnv []string) Facts {
 		f.Django = gatherDjango(fsys)
 	}
 	f.PythonApps = findPythonApps(fsys)
+	gatherServerFacts(fsys, &f)
 	scanSources(fsys, &f)
 	return f
-}
-
-func parsePackageJSON(s string) *PackageJSON {
-	var raw struct {
-		Name            string            `json:"name"`
-		Main            string            `json:"main"`
-		Scripts         map[string]string `json:"scripts"`
-		Dependencies    map[string]string `json:"dependencies"`
-		DevDependencies map[string]string `json:"devDependencies"`
-	}
-	if json.Unmarshal([]byte(s), &raw) != nil {
-		return nil
-	}
-	p := &PackageJSON{Name: raw.Name, Main: raw.Main, Scripts: raw.Scripts, Deps: map[string]string{}}
-	for k, v := range raw.DevDependencies {
-		p.Deps[k] = v
-	}
-	for k, v := range raw.Dependencies {
-		p.Deps[k] = v
-	}
-	if p.Scripts == nil {
-		p.Scripts = map[string]string{}
-	}
-	return p
-}
-
-var (
-	reReqLine    = regexp.MustCompile(`^\s*([A-Za-z0-9][A-Za-z0-9._-]*)\s*(?:\[([A-Za-z0-9_,\s-]+)\])?`)
-	rePyprojDeps = regexp.MustCompile(`["']([A-Za-z0-9][A-Za-z0-9._-]*)(?:\[([A-Za-z0-9_,\s-]+)\])?\s*(?:[<>=!~;].*)?["']`)
-	rePipfileDep = regexp.MustCompile(`^\s*["']?([A-Za-z0-9][A-Za-z0-9._-]*)["']?\s*=`)
-)
-
-var rePEP503 = regexp.MustCompile(`[-_.]+`)
-
-// PythonName normalises a Python package name (PEP 503: runs of "-", "_"
-// and "." become one "-", lower case), so "Django_Rest.Framework" and
-// "django-rest-framework" are the same package.
-func PythonName(n string) string {
-	return strings.ToLower(rePEP503.ReplaceAllString(strings.TrimSpace(n), "-"))
-}
-
-func addPyDep(f *Facts, name, extras string) {
-	n := PythonName(name)
-	f.PythonDeps[n] = true
-	for _, e := range strings.Split(extras, ",") {
-		if e = strings.TrimSpace(strings.ToLower(e)); e != "" && !slices.Contains(f.PythonExtras[n], e) {
-			f.PythonExtras[n] = append(f.PythonExtras[n], e)
-		}
-	}
-}
-
-func gatherPythonDeps(fsys fs.FS, f *Facts) {
-	for _, n := range []string{"requirements.txt", "requirements/base.txt", "requirements/prod.txt", "requirements/production.txt"} {
-		s, ok := readSmall(fsys, n)
-		if !ok {
-			continue
-		}
-		sc := bufio.NewScanner(strings.NewReader(s))
-		for sc.Scan() {
-			line := strings.TrimSpace(sc.Text())
-			if line == "" || strings.HasPrefix(line, "#") || strings.HasPrefix(line, "-") {
-				continue
-			}
-			if m := reReqLine.FindStringSubmatch(line); m != nil {
-				addPyDep(f, m[1], m[2])
-			}
-		}
-	}
-	if s, ok := readSmall(fsys, "pyproject.toml"); ok {
-		// Dependencies appear as quoted PEP 508 strings (PEP 621, uv) or as
-		// `name = "…"` keys (poetry); both are matched loosely.
-		inDeps := false
-		sc := bufio.NewScanner(strings.NewReader(s))
-		for sc.Scan() {
-			line := strings.TrimSpace(sc.Text())
-			if strings.HasPrefix(line, "[") {
-				inDeps = strings.Contains(line, "dependencies")
-				continue
-			}
-			if strings.HasPrefix(line, "dependencies") {
-				inDeps = true
-			}
-			for _, m := range rePyprojDeps.FindAllStringSubmatch(line, -1) {
-				if inDeps {
-					addPyDep(f, m[1], m[2])
-				}
-			}
-			if inDeps {
-				if m := rePipfileDep.FindStringSubmatch(line); m != nil && m[1] != "python" && m[1] != "dependencies" {
-					addPyDep(f, m[1], "")
-				}
-			}
-		}
-	}
-	if s, ok := readSmall(fsys, "Pipfile"); ok {
-		inPkgs := false
-		sc := bufio.NewScanner(strings.NewReader(s))
-		for sc.Scan() {
-			line := strings.TrimSpace(sc.Text())
-			if strings.HasPrefix(line, "[") {
-				inPkgs = line == "[packages]" || line == "[dev-packages]"
-				continue
-			}
-			if m := rePipfileDep.FindStringSubmatch(line); inPkgs && m != nil {
-				addPyDep(f, m[1], "")
-			}
-		}
-	}
-}
-
-var (
-	reWSGI       = regexp.MustCompile(`(?m)^\s*WSGI_APPLICATION\s*=\s*['"]([A-Za-z0-9_.]+)['"]`)
-	reASGI       = regexp.MustCompile(`(?m)^\s*ASGI_APPLICATION\s*=\s*['"]([A-Za-z0-9_.]+)['"]`)
-	reStaticRoot = regexp.MustCompile(`(?m)^\s*STATIC_ROOT\s*=`)
-	// SECRET_KEY = os.environ["X"], os.environ.get("X", …), os.getenv("X"), env("X") (django-environ), config("X") (python-decouple).
-	reSecretKeyEnv = regexp.MustCompile(`(?m)^\s*SECRET_KEY\s*=\s*(?:os\.environ(?:\.get)?|os\.getenv|env(?:\.str)?|config)\s*[\[(]\s*['"]([A-Z_][A-Z0-9_]*)['"]`)
-	reSettingsEn   = regexp.MustCompile(`DJANGO_SETTINGS_MODULE['"]?\s*,\s*['"]([A-Za-z0-9_]+)\.settings`)
-)
-
-func gatherDjango(fsys fs.FS) DjangoFacts {
-	var d DjangoFacts
-	if s, ok := readSmall(fsys, "manage.py"); ok {
-		if m := reSettingsEn.FindStringSubmatch(s); m != nil {
-			d.Project = m[1]
-		}
-	}
-	var candidates []string
-	if d.Project != "" {
-		candidates = append(candidates, d.Project+"/settings.py", d.Project+"/settings/__init__.py", d.Project+"/settings/base.py", d.Project+"/settings/production.py")
-	}
-	entries, _ := fs.ReadDir(fsys, ".")
-	for _, e := range entries {
-		if e.IsDir() && !strings.HasPrefix(e.Name(), ".") {
-			candidates = append(candidates, e.Name()+"/settings.py")
-		}
-	}
-	for _, c := range candidates {
-		s, ok := readSmall(fsys, c)
-		if !ok {
-			continue
-		}
-		if d.Project == "" {
-			d.Project = strings.Split(c, "/")[0]
-		}
-		if m := reWSGI.FindStringSubmatch(s); m != nil && d.WSGI == "" {
-			d.WSGI = m[1]
-		}
-		if m := reASGI.FindStringSubmatch(s); m != nil && d.ASGI == "" {
-			d.ASGI = m[1]
-		}
-		if reStaticRoot.MatchString(s) {
-			d.StaticRoot = true
-		}
-		if m := reSecretKeyEnv.FindStringSubmatch(s); m != nil && d.SecretKeyEnv == "" {
-			d.SecretKeyEnv = m[1]
-		}
-	}
-	return d
-}
-
-var rePyApp = regexp.MustCompile(`(?m)^([A-Za-z_][A-Za-z0-9_]*)\s*(?::\s*[A-Za-z_.]+\s*)?=\s*(FastAPI|Flask|Litestar)\(`)
-
-func findPythonApps(fsys fs.FS) []PythonApp {
-	candidates := []string{"main.py", "app.py", "server.py", "app/main.py", "api/main.py", "src/main.py", "app/__init__.py"}
-	if entries, err := fs.ReadDir(fsys, "src"); err == nil {
-		for _, e := range entries {
-			if e.IsDir() {
-				candidates = append(candidates, "src/"+e.Name()+"/main.py", "src/"+e.Name()+"/app.py")
-			}
-		}
-	}
-	var out []PythonApp
-	for _, c := range candidates {
-		s, ok := readSmall(fsys, c)
-		if !ok {
-			continue
-		}
-		if m := rePyApp.FindStringSubmatch(s); m != nil {
-			out = append(out, PythonApp{File: c, Variable: m[1], Framework: strings.ToLower(m[2])})
-		}
-	}
-	return out
 }
 
 var (

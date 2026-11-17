@@ -115,10 +115,35 @@ const FeaturePhpExtensions DaemonFeature = "phpExtensions"
 // §8). Older daemons refuse the field (strict decoding).
 const FeatureSharedVolumes DaemonFeature = "sharedVolumes"
 
+// Operations features (runtime visibility, self-recovery, control-plane
+// care). All but recoverySessions are announced unconditionally (the
+// watchdog's local opt-out is LR_WATCHDOG; it then renders nothing).
+const (
+	// FeatureProbeHost: HealthSpec.host (the probe's Host header plus
+	// X-Forwarded-Proto: https).
+	FeatureProbeHost DaemonFeature = "probeHost"
+	// FeatureLivenessRestart: HealthSpec.restartAfter (restart a serving
+	// workload whose probe keeps failing; issue "unresponsive").
+	FeatureLivenessRestart DaemonFeature = "livenessRestart"
+	// FeatureVolumeInitOwner: workloads[].mounts[].initOwner.
+	FeatureVolumeInitOwner DaemonFeature = "volumeInitOwner"
+	// FeatureReleaseMounts: RunOnceSpec.mounts.
+	FeatureReleaseMounts DaemonFeature = "releaseMounts"
+	// FeatureRecoverySessions: "session" tasks of kind recovery; announced
+	// only when the local policy (LR_INTERACTIVE_SESSIONS) allows the kind.
+	FeatureRecoverySessions DaemonFeature = "recoverySessions"
+	// FeatureWatchdog: system.watchdog and Report.controlPlane.
+	FeatureWatchdog DaemonFeature = "watchdog"
+	// FeatureCleanupTask: the "cleanup" task.
+	FeatureCleanupTask DaemonFeature = "cleanupTask"
+	// FeatureCertificateRetry: the "cert_retry" task.
+	FeatureCertificateRetry DaemonFeature = "certificateRetry"
+)
+
 // SupportedFeatures is what this launchroomd announces in every report;
 // conditional features (sessions, access, data transfer, waf) are added by
 // the components that check their local policy or capability.
-var SupportedFeatures = []DaemonFeature{FeatureDNSProviders, FeatureLinkProbe, FeatureShipLogs, FeaturePointInTime, FeatureVerifyRestore, FeatureStopSpec, FeatureGitProviders, FeatureControlPlaneURL, FeatureCronSchedule, FeatureGeneratedDockerfile, FeatureClientCertificates, FeatureMongoClickHouse, FeaturePreparedVolumes, FeatureRequestAnalytics, FeatureContainerInspection, FeatureInventory, FeatureConfigFiles, FeatureServiceStop, FeaturePhpExtensions, FeatureSharedVolumes}
+var SupportedFeatures = []DaemonFeature{FeatureDNSProviders, FeatureLinkProbe, FeatureShipLogs, FeaturePointInTime, FeatureVerifyRestore, FeatureStopSpec, FeatureGitProviders, FeatureControlPlaneURL, FeatureCronSchedule, FeatureGeneratedDockerfile, FeatureClientCertificates, FeatureMongoClickHouse, FeaturePreparedVolumes, FeatureRequestAnalytics, FeatureContainerInspection, FeatureInventory, FeatureConfigFiles, FeatureServiceStop, FeaturePhpExtensions, FeatureSharedVolumes, FeatureProbeHost, FeatureLivenessRestart, FeatureVolumeInitOwner, FeatureReleaseMounts, FeatureCleanupTask, FeatureCertificateRetry, FeatureWatchdog}
 
 const maxFeatures = 64
 

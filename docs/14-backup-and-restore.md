@@ -190,11 +190,14 @@ restic is pinned at **0.19.1** (SHA-256 per architecture) in the launchroomd ima
 ### 9.4 Schedules, runs, statuses
 
 - A team's default destination (the first one, or the one marked default) creates a schedule for every database in production and persistent environments: daily at `M H * * *` UTC with `M = crc32(instance id) % 60`, `H = (crc32 / 60) % 6 + 1` (01:00–06:59 UTC); retention production 7d/4w/3m, persistent 7d. The instance destination creates the control-plane schedule `M */6 * * *`, retention 7d/4w/6m. Schedules are editable (5-field cron, retention, on/off).
-- `launchroom:backups:tick` (every minute): new default schedules, run ↔ task sync (also catches lost leases), due schedules (once per minute), daily maintenance jobs, restore advancement. Completion hooks (`DaemonTaskFinished` listener) sync runs immediately.
+- `launchroom:backups:tick` (every minute): new default schedules, run ↔ task sync (also catches lost leases), due schedules (once per minute), daily maintenance jobs, restore advancement.
+- **Due means owed** (`App\Support\Cron\CatchUp::owed`, `BackupSchedule::owedRun`): a schedule is due when its latest cron slot at or before now is later than its last run (or its creation when it never ran). A slot missed while the scheduler or the dashboard was down therefore runs once on the next tick, never one run per missed slot. Changing the cron or turning a schedule on again sets `last_run_at = now`, so neither starts a catch-up run. Point-in-time base backups (§10.2) work the same way (`WalArchive::owedBaseBackup`, from `last_base_run_at`, else `enabled_at`, else creation). Daily housekeeping (prune, sweep) isn't caught up; it runs the next day. Completion hooks (`DaemonTaskFinished` listener) sync runs immediately.
 - `backup_runs` per attempt (at most one in flight per database, partial unique index). A due backup that can't start (database down) is recorded as a failed run unless the database was never deployed.
 - Health per database (`App\Queries\Backups\BackupStatuses`, `ServiceBackupStatusData.status`): `ok`, `stale` (no success for 36 h), `failing` (latest finished run failed), `running`, `none`, `unconfigured`.
 
 ### 9.5 Restores and safety snapshots
+
+*Planned, not built:* repairing a database that won't start in place, with a volume snapshot as the safety copy instead of a dump (user-initiated only). It needs a daemon-side "hold stopped" signal and a restore into the existing volume, which don't exist yet; until then the rules below apply.
 
 - **Restore as new service** (needs `projects.manage` + `deployments.create`): adds `<name>-restored-<date>` with the same engine and version **to the source's environment only**, deploys it when nothing else is staged there (otherwise it stays staged and the restore waits up to 24 h for it to run), then a `restore` task runs on its server.
 - **Restore into this service** (needs `backups.manage`): typed confirmation (the service slug), a `pre_restore` safety snapshot first; the restore task starts only after it succeeded (if it fails, nothing is changed).

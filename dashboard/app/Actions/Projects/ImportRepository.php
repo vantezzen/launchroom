@@ -7,6 +7,7 @@ namespace App\Actions\Projects;
 use App\Actions\Audit\RecordAuditEvent;
 use App\Actions\Canvas\AddService;
 use App\Actions\Connections\CreateConnection;
+use App\Actions\Variables\CreateVariable;
 use App\Contracts\Git\SourceRepository;
 use App\Data\Audit\AuditActor;
 use App\Data\Audit\AuditEntryData;
@@ -16,11 +17,14 @@ use App\Data\Projects\CreateProjectData;
 use App\Data\Projects\ImportAppData;
 use App\Data\Projects\ImportDatabaseData;
 use App\Data\Projects\ImportRepositoryData;
+use App\Data\Variables\VariableInput;
+use App\Data\Variables\VariableTargetData;
 use App\Drivers\DatabaseEngines\DatabaseEngines;
 use App\Enums\AuditAction;
 use App\Enums\ConnectionMode;
 use App\Enums\ConnectionStyle;
 use App\Enums\ServiceKind;
+use App\Enums\VariableType;
 use App\Exceptions\DomainRuleViolation;
 use App\Models\Environment;
 use App\Models\Project;
@@ -29,6 +33,7 @@ use App\Models\Team;
 use App\Models\User;
 use App\Services\Git\GitProviders;
 use App\Support\Git\GitRef;
+use App\Support\Variables\VariableKey;
 use Illuminate\Support\Facades\DB;
 
 /**
@@ -36,7 +41,7 @@ use Illuminate\Support\Facades\DB;
  * by the user, production tracking the picked branch), one service per
  * picked app (monorepo apps with their root directory), the picked databases
  * and a connection from every app that uses one (framework-aware variable
- * names). Deploying is the caller's next step: a brand-new project deploys
+ * names), plus the secrets the plan asked for. Deploying is the caller's next step: a brand-new project deploys
  * directly, without a staged review (maintainer decision 2026-10-19).
  */
 final readonly class ImportRepository
@@ -48,6 +53,7 @@ final readonly class ImportRepository
         private DatabaseEngines $engines,
         private RecordAuditEvent $audit,
         private GitProviders $providers,
+        private CreateVariable $createVariable,
     ) {}
 
     /**
@@ -92,6 +98,24 @@ final readonly class ImportRepository
                     'service' => $service,
                     'framework' => $app->framework === null ? null : strtolower($app->framework),
                 ];
+
+                // Secrets the plan said launchroom can't generate (RAILS_MASTER_KEY), pasted here.
+                foreach ($app->secrets as $key => $value) {
+                    if ($value === null || $value === '') {
+                        continue;
+                    }
+
+                    if (! VariableKey::isValid((string) $key)) {
+                        throw DomainRuleViolation::on('apps.'.$index.'.secrets', 'Secret names are letters, digits and underscores.');
+                    }
+
+                    $this->createVariable->handle($project, $service, new VariableInput(
+                        key: (string) $key,
+                        value: $value,
+                        type: VariableType::Secret,
+                        targets: [VariableTargetData::environment($production->public_id)],
+                    ), $user, $actor);
+                }
 
                 // Suggested processes the user kept: workers from the app's image.
                 foreach ($app->processes as $p => $process) {

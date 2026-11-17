@@ -57,6 +57,9 @@ const (
 	// EnvInteractiveSessions is the local policy for interactive sessions
 	// (docs/03 §11.3): on (default), console, data or off.
 	EnvInteractiveSessions = "LR_INTERACTIVE_SESSIONS"
+	// EnvWatchdog is the local setting for the control-plane watchdog
+	// (docs/README D90): on (default), notify (never restarts) or off.
+	EnvWatchdog = "LR_WATCHDOG"
 	// EnvBuildSubnet is the build network (default 10.232.0.0/24, docs/05 §7).
 	EnvBuildSubnet = "LR_BUILD_SUBNET"
 	// EnvInsecureGitHosts lists hosts that may be cloned over plain http (dev fixtures only).
@@ -179,8 +182,10 @@ type Config struct {
 	BuildSlots       int
 	// InteractiveSessions is LR_INTERACTIVE_SESSIONS: "on", "console", "data" or "off".
 	InteractiveSessions string
-	BuildSubnet         netip.Prefix
-	InsecureGitHosts    []string
+	// Watchdog is LR_WATCHDOG: "on", "notify" or "off".
+	Watchdog         string
+	BuildSubnet      netip.Prefix
+	InsecureGitHosts []string
 	// BuildkitMemoryMB and BuildkitCPUs limit buildkitd (0 = derived from the host).
 	BuildkitMemoryMB int
 	BuildkitCPUs     float64
@@ -426,6 +431,16 @@ func parseInteractiveSessions(v string) (string, error) {
 	return "on", fmt.Errorf("config: %s must be on, console, data or off, got %q", EnvInteractiveSessions, v)
 }
 
+func parseWatchdog(v string) (string, error) {
+	switch v = strings.ToLower(strings.TrimSpace(v)); v {
+	case "":
+		return "on", nil
+	case "on", "notify", "off":
+		return v, nil
+	}
+	return "on", fmt.Errorf("config: %s must be on, notify or off, got %q", EnvWatchdog, v)
+}
+
 func parseSystemImageDigests(v string) (map[string][]string, error) {
 	var out map[string][]string
 	for _, item := range strings.Split(v, ",") {
@@ -560,6 +575,11 @@ func loadBuildConfig(cfg *Config, get func(string) string) []error {
 		errs = append(errs, err)
 	}
 	cfg.InteractiveSessions = sessions
+	watchdogMode, err := parseWatchdog(get(EnvWatchdog))
+	if err != nil {
+		errs = append(errs, err)
+	}
+	cfg.Watchdog = watchdogMode
 	cfg.RemoteAccess = "on"
 	if v := strings.ToLower(strings.TrimSpace(get(EnvRemoteAccess))); v != "" {
 		if remoteAccessValue(v) {

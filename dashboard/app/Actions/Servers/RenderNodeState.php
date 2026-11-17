@@ -21,6 +21,7 @@ use App\Models\Environment;
 use App\Models\NodeStateVersion;
 use App\Models\Placement;
 use App\Models\Server;
+use App\Services\Alerts\FallbackWatchdog;
 use App\Services\Daemon\DaemonNudger;
 use App\Services\Ingress\CertStorage;
 use App\Services\Ingress\EdgeIngress;
@@ -82,6 +83,7 @@ final readonly class RenderNodeState
         private CertStorage $certStorage,
         private LinkProbePeers $linkProbePeers,
         private DashboardOrigin $origin,
+        private FallbackWatchdog $watchdog,
     ) {}
 
     public function handle(Server $server): NodeStateRender
@@ -295,6 +297,8 @@ final readonly class RenderNodeState
             // Where launchroomd should reach the dashboard (docs/05 §4.1); it
             // keeps its configured URL as the fallback.
             controlPlaneUrl: $this->controlPlaneUrl($server),
+            // The watchdog and its fallback channel (D90): the control-plane server and one peer.
+            watchdog: $this->watchdog->for($server),
         );
     }
 

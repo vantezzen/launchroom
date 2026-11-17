@@ -8,19 +8,24 @@ use App\Actions\Backups\RecordWalArchives;
 use App\Actions\Mesh\RecordMeshStatus;
 use App\Actions\Metrics\RecordMetrics;
 use App\Actions\Security\RecordWafReport;
+use App\Data\Deployments\ContainerExitData;
 use App\Data\Deployments\ProbeProgressData;
 use App\Data\Deployments\PullProgressData;
 use App\Data\Protocol\V1\HardwareFacts;
 use App\Data\Protocol\V1\HostStatus;
+use App\Data\Protocol\V1\ImageFacts;
 use App\Data\Protocol\V1\IngressStatus;
 use App\Data\Protocol\V1\ProbeStatus;
 use App\Data\Protocol\V1\PullProgress;
 use App\Data\Protocol\V1\Report;
 use App\Data\Protocol\V1\StateRejection;
 use App\Data\Protocol\V1\VolumeDeletionResult;
+use App\Data\Protocol\V1\WorkloadFailure;
 use App\Data\Protocol\V1\WorkloadIssue;
 use App\Data\Protocol\V1\WorkloadStatus;
+use App\Data\Servers\ControlPlaneHealthData;
 use App\Data\Servers\ControlPlaneUrlReportData;
+use App\Data\Servers\DaemonExitData;
 use App\Data\Servers\Host\HostStatusData;
 use App\Data\Servers\HostFactsData;
 use App\Data\Servers\ServerRuntimeData;
@@ -28,6 +33,8 @@ use App\Data\Servers\StateRejectionData;
 use App\Enums\DaemonFeature;
 use App\Enums\DeploymentStatus;
 use App\Enums\PortHint;
+use App\Enums\ProbeHint;
+use App\Enums\WorkloadFailureCode;
 use App\Enums\WorkloadPhase;
 use App\Events\Broadcasts\DeploymentUpdated;
 use App\Events\NodeStateInvalidated;
@@ -37,6 +44,7 @@ use App\Jobs\RenderServerNodeState;
 use App\Models\Deployment;
 use App\Models\Placement;
 use App\Models\Server;
+use App\Services\Deployments\DeploymentLogMasker;
 use App\Services\Volumes\VolumeRetirements;
 use App\Support\Network\ServerAddress;
 use Carbon\CarbonImmutable;
@@ -53,6 +61,12 @@ use Spatie\LaravelData\Optional;
  * (`observedAt` ordering). Deployments whose workloads changed, and
  * deployments waiting for this server to apply a NodeState, are advanced
  * (docs/04 §6: event-driven orchestration).
+ *
+ * Also kept for the server page and the alerts: launchroomd's last unclean
+ * exit (`last_daemon_exit`), its last refusal (kept until a newer one), the
+ * control-plane watchdog's view (`control_plane_health`), the image facts of
+ * pulled images (a change re-renders their servers), cron runs and crashes
+ * of live services (RecordWorkloadRuns).
  */
 final readonly class RecordReport
 {
@@ -65,6 +79,8 @@ final readonly class RecordReport
         private RecordWalArchives $walArchives,
         private RecordWafReport $waf,
         private RecordWorkloadEvents $events,
+        private RecordWorkloadRuns $runs,
+        private DeploymentLogMasker $masker,
     ) {}
 
     public function handle(Server $server, Report $report): bool
@@ -97,11 +113,21 @@ final readonly class RecordReport
                 }
 
                 // Latest host facts and health snapshot (docs/03 §1), whitelisted.
+                $host = HostStatusData::fromProtocol($report->host);
+                // A refusal is delivered once: the page keeps showing the last one.
+                $host->lastRefusal ??= $server->host_status?->lastRefusal;
                 $server->forceFill([
-                    'host_status' => HostStatusData::fromProtocol($report->host),
+                    'host_status' => $host,
                     'host_status_at' => now(),
                     'daemon_version' => $report->host->daemonVersion,
                 ]);
+
+                // launchroomd crashed, got stuck or the machine restarted (also delivered once).
+                $exit = is_array($report->host->daemon) ? DaemonExitData::fromReport($report->host->daemon) : null;
+
+                if ($exit instanceof DaemonExitData) {
+                    $server->forceFill(['last_daemon_exit' => $exit]);
+                }
 
                 if ($report->host->hardware instanceof HardwareFacts) {
                     // Device detection input (docs/design/direction.md §7.3), sent when it changed.
@@ -123,6 +149,11 @@ final readonly class RecordReport
                 if (is_array($report->host->runtime)) {
                     $server->runtime = ServerRuntimeData::fromReport($report->host->runtime, now()->toIso8601ZuluString()) ?? $server->runtime;
                 }
+            }
+
+            // The control-plane watchdog's view (D90): Settings → System and `control_plane_degraded`.
+            if (is_array($report->controlPlane)) {
+                $server->forceFill(['control_plane_health' => ControlPlaneHealthData::merge($server->control_plane_health, $report->controlPlane, CarbonImmutable::now())]);
             }
 
             // The daemon refused a NodeState and runs its last good one
@@ -188,6 +219,8 @@ final readonly class RecordReport
         // a report that was otherwise stale.
         if (is_array($report->events)) {
             $this->events->handle($server, $report->events);
+            // Cron runs and crashes of live services (history and alerts), idempotent too.
+            $this->runs->handle($server, $report->events);
         }
 
         if ($result === null) {
@@ -311,6 +344,8 @@ final readonly class RecordReport
                 continue;
             }
 
+            $this->recordImageFacts($placement, $status);
+
             $phase = $status->phase;
             $health = $status->health instanceof ProbeStatus ? $status->health->state : null;
             $message = is_string($status->message) ? mb_substr($status->message, 0, 4000) : null;
@@ -329,6 +364,9 @@ final readonly class RecordReport
                 checkedAt: is_string($status->health->lastCheckedAt) ? $status->health->lastCheckedAt : null,
                 portHint: $status->portHint instanceof PortHint ? $status->portHint : null,
                 listening: $status->portHint instanceof PortHint && is_array($status->detectedPorts) ? array_slice($status->detectedPorts, 0, 32) : [],
+                // What the failing answer means and its first bytes (G20, G45), masked like log lines.
+                hint: $status->health->hint instanceof ProbeHint ? $status->health->hint : null,
+                body: is_string($status->health->body) && $status->health->body !== '' ? $this->masker->mask($placement->deployment_id, mb_substr($status->health->body, 0, 300)) : null,
             ) : null;
 
             if ($placement->phase !== $phase || $placement->health !== $health || $placement->message !== $message || $placement->issue?->kind !== $issue?->kind) {
@@ -337,6 +375,15 @@ final readonly class RecordReport
             } elseif ($placement->pull?->toArray() !== $pull?->toArray() || ($probe instanceof ProbeProgressData ? $probe->movedFrom($placement->probe) : $placement->probe instanceof ProbeProgressData)) {
                 // Only the pull moved: open deployment pages refetch, nothing to advance.
                 $progressed[] = $placement->deployment_id;
+            }
+
+            $exit = $this->failureAsExit($placement, $status);
+
+            if ($exit instanceof ContainerExitData) {
+                // A typed failure without an event (a pull: unauthorized, image_not_found, wrong_platform):
+                // kept like an exit, so the rollout fails at once and says why (AdvanceDeployment::failFast).
+                $placement->forceFill(['last_exit' => $exit]);
+                $changed[] = $placement->deployment_id;
             }
 
             $placement->forceFill([
@@ -363,6 +410,51 @@ final readonly class RecordReport
         }
 
         return [array_values($changed), array_values(array_unique(array_diff($progressed, $changed)))];
+    }
+
+    /**
+     * `WorkloadStatus.failure` as the placement's last exit, unless the
+     * stored one is as new or newer (an event already reported it).
+     */
+    private function failureAsExit(Placement $placement, WorkloadStatus $status): ?ContainerExitData
+    {
+        $failure = $status->failure instanceof WorkloadFailure ? $status->failure : null;
+
+        if (! $failure instanceof WorkloadFailure || ! $failure->code instanceof WorkloadFailureCode) {
+            return null;
+        }
+
+        $at = CarbonImmutable::parse($failure->at);
+        $stored = $placement->last_exit;
+
+        if ($stored instanceof ContainerExitData && CarbonImmutable::parse($stored->at)->greaterThanOrEqualTo($at)) {
+            return null;
+        }
+
+        $message = is_string($failure->message) && $failure->message !== '' ? $this->masker->mask($placement->deployment_id, mb_substr($failure->message, 0, 1024)) : null;
+
+        return new ContainerExitData(at: $failure->at, failure: $failure->code, message: $message);
+    }
+
+    /**
+     * The pulled image's user and ports (Report `workloads[].image`): the
+     * only source for image services and for builds without them in the
+     * summary. A change re-renders the deployment's servers, so root images
+     * get their capabilities and volumes their owner (NodeStateContent).
+     */
+    private function recordImageFacts(Placement $placement, WorkloadStatus $status): void
+    {
+        if (! $status->image instanceof ImageFacts) {
+            return;
+        }
+
+        $deployment = Deployment::query()->whereKey($placement->deployment_id)->first();
+
+        if (! $deployment instanceof Deployment || ! $deployment->recordImageFacts($status->image)) {
+            return;
+        }
+
+        NodeStateInvalidated::servers(Placement::query()->where('deployment_id', $deployment->id)->distinct()->pluck('server_id'));
     }
 
     /**

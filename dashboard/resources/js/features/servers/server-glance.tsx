@@ -154,9 +154,11 @@ export function ServerGlance({
                     href={network}
                     detail={
                         edge
-                            ? edge.routes !== null
-                                ? `${edge.routes} ${edge.routes === 1 ? 'route' : 'routes'} applied`
-                                : null
+                            ? edge.state !== null && edge.state !== 'applied'
+                                ? edge.problemTitle
+                                : edge.routes !== null
+                                  ? `${edge.routes} ${edge.routes === 1 ? 'route' : 'routes'} applied`
+                                  : null
                             : null
                     }
                 >

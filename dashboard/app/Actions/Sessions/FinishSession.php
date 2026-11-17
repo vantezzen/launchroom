@@ -16,6 +16,7 @@ use App\Models\DaemonTask;
 use App\Models\Sessions\DatabaseQuery;
 use App\Models\Sessions\InteractiveSession;
 use Carbon\CarbonImmutable;
+use Carbon\CarbonInterface;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 use Throwable;
@@ -76,6 +77,7 @@ final readonly class FinishSession
 
             if ($session->started_at === null || in_array($reason, [SessionEndReason::Error, SessionEndReason::Refused, SessionEndReason::NeverConnected], true)) {
                 // Why a session never started is otherwise only in the task (docs/03 §11.4).
+                // The handshake timings say which side never arrived.
                 Log::warning('Interactive session ended before it was used.', [
                     'session' => $session->public_id,
                     'kind' => $session->kind->value,
@@ -83,6 +85,7 @@ final readonly class FinishSession
                     'task' => $task->public_id,
                     'taskStatus' => $task->status->value,
                     'error' => $task->error === null ? null : mb_substr($task->error, 0, 1000),
+                    ...$this->handshake($session, $task, $endedAt),
                 ]);
             }
 
@@ -134,6 +137,35 @@ final readonly class FinishSession
                     $outcome?->durationMs,
                 );
             });
+    }
+
+    /**
+     * How far a session got, in milliseconds after it was opened: the
+     * server leased its task, the server asked to join the channel, the
+     * browser asked to join it. `missing` names the steps that never happened.
+     *
+     * @return array{leasedAfterMs: int|null, serverJoinedAfterMs: int|null, browserJoinedAfterMs: int|null, endedAfterMs: int|null, missing: string|null}
+     */
+    private function handshake(InteractiveSession $session, DaemonTask $task, CarbonImmutable $endedAt): array
+    {
+        $opened = $session->created_at;
+        $after = static fn (?CarbonInterface $at): ?int => ! $at instanceof CarbonInterface || $opened === null
+            ? null
+            : (int) round($opened->diffInMilliseconds($at, absolute: false));
+        $steps = [
+            'lease' => $task->leased_at,
+            'server join' => $session->server_joined_at,
+            'browser join' => $session->ticket_used_at,
+        ];
+        $missing = array_keys(array_filter($steps, static fn (?CarbonInterface $at): bool => ! $at instanceof CarbonInterface));
+
+        return [
+            'leasedAfterMs' => $after($steps['lease']),
+            'serverJoinedAfterMs' => $after($steps['server join']),
+            'browserJoinedAfterMs' => $after($steps['browser join']),
+            'endedAfterMs' => $after($endedAt),
+            'missing' => $missing === [] ? null : implode(', ', $missing),
+        ];
     }
 
     private function time(mixed $value): ?CarbonImmutable

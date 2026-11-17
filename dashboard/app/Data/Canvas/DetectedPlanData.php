@@ -7,10 +7,13 @@ namespace App\Data\Canvas;
 use App\Data\Protocol\V1\AppliedPreset;
 use App\Data\Protocol\V1\BuildSummary;
 use App\Data\Protocol\V1\BuildWarning;
+use App\Data\Protocol\V1\EnvAlias;
 use App\Data\Protocol\V1\GeneratedSecret;
 use App\Data\Protocol\V1\NextBuildInfo;
 use App\Data\Protocol\V1\PhpExtension;
+use App\Data\Protocol\V1\RequiredSecret;
 use App\Data\Protocol\V1\ResolvedPackage;
+use App\Data\Protocol\V1\VolumeSuggestion;
 use App\Enums\Builds\BuilderReason;
 use App\Enums\Builds\ChosenBuilder;
 use App\Support\Variables\VariableKey;
@@ -33,6 +36,7 @@ final class DetectedPlanData extends Data
         'laravel' => 'Laravel', 'symfony' => 'Symfony', 'django' => 'Django', 'fastapi' => 'FastAPI', 'flask' => 'Flask',
         'rails' => 'Rails', 'spring-boot' => 'Spring Boot', 'static-spa' => 'Static site', 'static' => 'Static site',
         'node' => 'Node.js', 'python' => 'Python', 'php' => 'PHP', 'go' => 'Go', 'ruby' => 'Ruby', 'bun' => 'Bun', 'deno' => 'Deno',
+        'phoenix' => 'Phoenix', 'java' => 'Java', 'aspnetcore' => 'ASP.NET Core', 'dotnet' => '.NET', 'rocket' => 'Rocket', 'litestar' => 'Litestar',
     ];
 
     /** Variables the platform or runtime provides; never reported as missing. */
@@ -54,6 +58,10 @@ final class DetectedPlanData extends Data
      * @param  list<string>  $warnings
      * @param  array<string, mixed>|null  $planJson  Railpack's build plan (View plan JSON)
      * @param  list<string>  $phpExtensions
+     * @param  list<string>  $envAliases  "APP_URL from PUBLIC_URL": framework variables launchroom sets per environment
+     * @param  list<RequiredSecret>  $requiredSecrets  secrets the app needs that launchroom can't generate
+     * @param  list<string>  $missingSecrets  the required ones the service doesn't have (all of them when unknown)
+     * @param  list<VolumeSuggestion>  $volumeSuggestions  folders whose files should outlive a deploy
      */
     public function __construct(
         public ?ChosenBuilder $builder = null,
@@ -89,12 +97,25 @@ final class DetectedPlanData extends Data
         public ?NextBuildInfo $next = null,
         /** PHP database drivers launchroom added for connected databases: "pdo_pgsql (for postgres)" (docs/04 §3.1). */
         public array $phpExtensions = [],
+        public array $envAliases = [],
+        public array $requiredSecrets = [],
+        public array $missingSecrets = [],
+        public array $volumeSuggestions = [],
+        /** A Laravel app with no database connected runs on a SQLite file that every deploy resets. */
+        public ?string $sqliteWarning = null,
     ) {}
+
+    /** Warnings that only matter with more than one replica (G56). */
+    public const array MULTI_REPLICA_WARNINGS = ['isr-cache-warning'];
+
+    /** Variables that point a Laravel app at a database other than its default SQLite file. */
+    private const array LARAVEL_DATABASE_KEYS = ['DB_CONNECTION', 'DB_URL', 'DATABASE_URL'];
 
     /**
      * @param  list<string>|null  $definedKeys  variable keys this service sees; null when unknown (no service yet)
+     * @param  int  $replicas  the service's replicas (warnings about several replicas are left out at one)
      */
-    public static function fromSummary(BuildSummary $summary, ?array $definedKeys = null): self
+    public static function fromSummary(BuildSummary $summary, ?array $definedKeys = null, int $replicas = 1): self
     {
         $packages = $summary->packages ?? [];
         $runtime = null;
@@ -124,6 +145,15 @@ final class DetectedPlanData extends Data
         $references = self::names($summary->envReferences ?? []);
         $generated = self::names(array_map(static fn (GeneratedSecret $secret): string => $secret->name, $summary->generatedSecrets ?? []));
         $buildVariables = self::names($summary->buildEnv ?? []);
+        $aliases = $summary->envAliases ?? [];
+        $required = array_slice($summary->requiredSecrets ?? [], 0, 8);
+        $requiredNames = array_map(static fn (RequiredSecret $secret): string => $secret->name, $required);
+        $provided = [...array_map(static fn (EnvAlias $alias): string => $alias->name, $aliases), ...$requiredNames];
+        $warnings = array_values(array_filter(
+            $summary->warnings ?? [],
+            static fn (BuildWarning $warning): bool => $replicas > 1 || ! in_array($warning->code, self::MULTI_REPLICA_WARNINGS, true),
+        ));
+        $laravel = strtolower((string) $summary->framework) === 'laravel';
 
         return new self(
             builder: $summary->builder,
@@ -148,14 +178,21 @@ final class DetectedPlanData extends Data
             runtimeVariableCount: count($summary->runtimeEnv ?? []),
             envReferences: $references,
             missingVariables: $definedKeys === null ? [] : array_values(array_filter(
-                array_diff($references, $definedKeys, self::PROVIDED, array_keys($summary->runtimeEnv ?? []), $generated),
+                array_diff($references, $definedKeys, self::PROVIDED, array_keys($summary->runtimeEnv ?? []), $generated, $provided),
                 static fn (string $name): bool => ! str_starts_with($name, 'LAUNCHROOM_'),
             )),
             generatedSecrets: $definedKeys === null ? $generated : array_values(array_diff($generated, $definedKeys)),
-            warnings: array_map(static fn (BuildWarning $warning): string => $warning->message, $summary->warnings ?? []),
+            warnings: array_map(static fn (BuildWarning $warning): string => $warning->message, $warnings),
             planJson: $summary->plan,
             next: $summary->next,
             phpExtensions: array_map(static fn (PhpExtension $extension): string => "{$extension->name} (for {$extension->for})", $summary->phpExtensions ?? []),
+            envAliases: array_map(static fn (EnvAlias $alias): string => "{$alias->name} from {$alias->from->value}", $aliases),
+            requiredSecrets: $required,
+            missingSecrets: $definedKeys === null ? $requiredNames : array_values(array_diff($requiredNames, $definedKeys)),
+            volumeSuggestions: array_slice($summary->volumeSuggestions ?? [], 0, 8),
+            sqliteWarning: $laravel && $definedKeys !== null && array_intersect(self::LARAVEL_DATABASE_KEYS, $definedKeys) === []
+                ? 'This Laravel app keeps its data in a SQLite file inside the container. Every deploy starts it empty, and pages that use sessions fail. Connect a database, or keep the file on a volume.'
+                : null,
         );
     }
 

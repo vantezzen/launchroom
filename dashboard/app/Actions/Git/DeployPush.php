@@ -53,7 +53,7 @@ final readonly class DeployPush
             ->where('team_id', $account->accountTeamId())
             ->where('enabled', true)
             ->whereHas('service', static fn ($query) => $query->sourcedFrom($account, $event->repositoryId))
-            ->with(['service', 'environment.project'])
+            ->with(['service', 'environment.project', 'activeDeployment'])
             ->orderBy('id')
             ->get();
 
@@ -74,7 +74,8 @@ final readonly class DeployPush
                 continue;
             }
 
-            $watched = WatchPaths::matches($instance->build->watchPaths, $event->changedFiles);
+            $workspace = ($instance->plan->summary ?? $instance->activeDeployment?->plan?->summary)?->workspace;
+            $watched = WatchPaths::matches(WatchPaths::effective($instance->build->watchPaths, $source->rootDirectory, $workspace), $event->changedFiles);
 
             // A change of launchroom.json concerns every service (docs/18 §3.4).
             if (! $watched && ! $this->configFiles->touches($environment->project, $event->changedFiles)) {

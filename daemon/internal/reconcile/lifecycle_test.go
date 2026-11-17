@@ -232,8 +232,14 @@ func TestLifecycleStopReasons(t *testing.T) {
 	if err := h.r.Reconcile(ctx, h.nodeState(t, 2, drain)); err != nil {
 		t.Fatal(err)
 	}
+	// The stop and the exit it caused (byLaunchroom, seen by the exit
+	// watcher or the pass, whichever is first).
 	evs := h.r.PendingEvents()
-	if len(evs) < 2 || evs[0].Kind != state.EventStopped || evs[0].Reason != state.ReasonDrained || evs[1].Kind != state.EventExited {
+	stopped := slices.IndexFunc(evs, func(ev state.WorkloadEvent) bool {
+		return ev.Kind == state.EventStopped && ev.Reason == state.ReasonDrained
+	})
+	exited := slices.IndexFunc(evs, func(ev state.WorkloadEvent) bool { return ev.Kind == state.EventExited && ev.ByLaunchroom })
+	if len(evs) != 2 || stopped < 0 || exited < 0 {
 		t.Fatalf("drain events %+v", evs)
 	}
 	h.r.AckEvents(evs)

@@ -21,6 +21,8 @@ export function openSession(
         shell?: string | null;
         cols: number;
         rows: number;
+        /** Recovery shells: mount the volumes writable (audited). */
+        allowChanges?: boolean;
     },
 ): Promise<App.Data.Sessions.OpenedSessionData> {
     return requestJson(
@@ -81,9 +83,12 @@ export function authorizeChannel(
     session: string,
     socketId: string,
     ticket: string,
+    signal?: AbortSignal,
 ): Promise<{ auth: string }> {
-    return requestJson('post', sessions.authorize(session).url, {
-        socket_id: socketId,
-        ticket,
-    });
+    return requestJson(
+        'post',
+        sessions.authorize(session).url,
+        { socket_id: socketId, ticket },
+        signal,
+    );
 }

@@ -9,7 +9,7 @@ use Spatie\LaravelData\Data;
 
 /**
  * Settings → Deploy steppers: the bounds DeploySettings and
- * HealthcheckSettings validate, and the Roll out timeout's default.
+ * HealthcheckSettings validate, and the defaults of the timeouts.
  */
 final class DeployLimitsData extends Data
 {
@@ -22,6 +22,11 @@ final class DeployLimitsData extends Data
         public NumberRangeData $rolloutTimeout,
         public NumberRangeData $healthTimeout,
         public int $rolloutTimeoutDefault,
+        public NumberRangeData $stopTimeout,
+        /** The stop timeout without a setting: web services, then workers and crons. */
+        public int $stopTimeoutWeb = DeploySettings::STOP_TIMEOUT_WEB,
+        public int $stopTimeoutProcess = DeploySettings::STOP_TIMEOUT_PROCESS,
+        public int $restartAfterDefault = HealthcheckSettings::RESTART_AFTER_DEFAULT,
     ) {}
 
     public static function make(): self
@@ -35,6 +40,7 @@ final class DeployLimitsData extends Data
             rolloutTimeout: NumberRangeData::of(DeploySettings::class, 'rolloutTimeoutSeconds'),
             healthTimeout: NumberRangeData::of(DeploySettings::class, 'healthTimeoutSeconds'),
             rolloutTimeoutDefault: DeploySettings::ROLLOUT_TIMEOUT_DEFAULT,
+            stopTimeout: NumberRangeData::of(DeploySettings::class, 'stopTimeoutSeconds'),
         );
     }
 }

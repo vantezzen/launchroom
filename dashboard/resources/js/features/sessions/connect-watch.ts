@@ -30,12 +30,13 @@ function failureOf(item: SessionItem): string {
  * to start it (no shell, a refusal, launchroomd offline) without ever
  * joining the channel, so the dashboard is asked every two seconds, and
  * after CONNECT_TIMEOUT_MS the session is ended. `onFailed` gets one
- * sentence for the tab. Returns a function that stops watching (call it
- * once the session is live or over).
+ * sentence for the tab: the server's reason, or `timedOut(seconds)`, which
+ * says which step of the connection didn't finish (joinFailure). Returns a
+ * function that stops watching (call it once the session is live or over).
  */
 export function watchConnect(
     sessionId: string,
-    serverName: string,
+    timedOut: (waitedSeconds: number) => string,
     onFailed: (message: string) => void,
     deps: ConnectWatchDeps = browserDeps,
     timeoutMs: number = CONNECT_TIMEOUT_MS,
@@ -75,9 +76,7 @@ export function watchConnect(
 
     const timeout = deps.setTimer(() => {
         void deps.end(sessionId).catch(() => undefined);
-        fail(
-            `${serverName} didn’t answer within ${Math.round(timeoutMs / 1000)} seconds. The server may be offline, busy or unable to reach the live connection.`,
-        );
+        fail(timedOut(Math.round(timeoutMs / 1000)));
     }, timeoutMs);
 
     poll = deps.setTimer(() => void check(), POLL_MS);

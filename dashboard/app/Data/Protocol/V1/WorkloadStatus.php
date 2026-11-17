@@ -43,6 +43,10 @@ final class WorkloadStatus extends Data
         /** Why the probe's port gets no answer (launchroomd's port hint); omitted when none. */
         #[UnknownCodeAsNull]
         public PortHint|null|Optional $portHint = new Optional,
+        /** Why the container can't be pulled, created or started right now; omitted once it runs. */
+        public WorkloadFailure|null|Optional $failure = new Optional,
+        /** The image's user and exposed ports, once pulled. */
+        public ImageFacts|null|Optional $image = new Optional,
     ) {}
 
     /**

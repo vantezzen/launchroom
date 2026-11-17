@@ -40,14 +40,18 @@ func TestWithPhpExtensions(t *testing.T) {
 }
 
 func TestDockerfilePhpWarning(t *testing.T) {
-	if _, ok := dockerfilePhpWarning(pgsqlAndRedis, false); ok {
+	if _, ok := dockerfilePhpWarning(pgsqlAndRedis, nil, false); ok {
 		t.Fatal("no warning for a Dockerfile app without composer.json")
 	}
-	if _, ok := dockerfilePhpWarning(nil, true); ok {
+	if _, ok := dockerfilePhpWarning(nil, nil, true); ok {
 		t.Fatal("no warning without extensions")
 	}
-	w, ok := dockerfilePhpWarning(pgsqlAndRedis, true)
+	w, ok := dockerfilePhpWarning(pgsqlAndRedis, nil, true)
 	if !ok || w.Code != "dockerfile-php-extensions" || !strings.Contains(w.Message, "pdo_pgsql (for postgres)") {
+		t.Fatalf("warning %+v", w)
+	}
+	w, ok = dockerfilePhpWarning(nil, []state.PhpDependencyExtension{{Name: "intl", For: "filament/support"}}, true)
+	if !ok || !strings.Contains(w.Message, "intl (filament/support)") {
 		t.Fatalf("warning %+v", w)
 	}
 }

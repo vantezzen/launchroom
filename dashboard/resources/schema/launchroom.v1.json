@@ -313,6 +313,32 @@
                         ]
                     }
                 },
+                "rolloutTimeoutSeconds": {
+                    "description": "Seconds the rollout may take before it fails. Image pulls that make progress extend it. Unset: 600.",
+                    "type": "integer",
+                    "minimum": 60,
+                    "maximum": 3600
+                },
+                "healthTimeoutSeconds": {
+                    "description": "Seconds a new replica may take to become healthy. Unset: derived from the health check.",
+                    "type": "integer",
+                    "minimum": 30,
+                    "maximum": 3600
+                },
+                "stopTimeoutSeconds": {
+                    "description": "Seconds a stopping replica may take to finish its work before it is killed. Unset: 10 for web services, 30 for workers and crons.",
+                    "type": "integer",
+                    "minimum": 1,
+                    "maximum": 300
+                },
+                "stopSignal": {
+                    "description": "The signal a stop sends first. Unset: SIGTERM.",
+                    "enum": ["SIGTERM", "SIGINT"]
+                },
+                "overlapOnVolumes": {
+                    "description": "The app handles two copies on its volume: a deploy starts the new version next to the old one. false: the old version stops first, with a short downtime.",
+                    "type": "boolean"
+                },
                 "schedule": {
                     "description": "Cron services: when the command runs. null: it runs continuously.",
                     "anyOf": [
@@ -346,6 +372,44 @@
                 "capabilities": {
                     "anyOf": [
                         { "$ref": "#/$defs/deploy/properties/capabilities" },
+                        { "type": "null" }
+                    ]
+                },
+                "rolloutTimeoutSeconds": {
+                    "anyOf": [
+                        {
+                            "$ref": "#/$defs/deploy/properties/rolloutTimeoutSeconds"
+                        },
+                        { "type": "null" }
+                    ]
+                },
+                "healthTimeoutSeconds": {
+                    "anyOf": [
+                        {
+                            "$ref": "#/$defs/deploy/properties/healthTimeoutSeconds"
+                        },
+                        { "type": "null" }
+                    ]
+                },
+                "stopTimeoutSeconds": {
+                    "anyOf": [
+                        {
+                            "$ref": "#/$defs/deploy/properties/stopTimeoutSeconds"
+                        },
+                        { "type": "null" }
+                    ]
+                },
+                "stopSignal": {
+                    "anyOf": [
+                        { "$ref": "#/$defs/deploy/properties/stopSignal" },
+                        { "type": "null" }
+                    ]
+                },
+                "overlapOnVolumes": {
+                    "anyOf": [
+                        {
+                            "$ref": "#/$defs/deploy/properties/overlapOnVolumes"
+                        },
                         { "type": "null" }
                     ]
                 },
@@ -425,6 +489,12 @@
                     "type": "integer",
                     "minimum": 1,
                     "maximum": 100
+                },
+                "restartAfterSeconds": {
+                    "description": "Restart a running replica whose check keeps failing for this long, at most 3 times an hour. 0: never. Unset: 300.",
+                    "type": "integer",
+                    "minimum": 0,
+                    "maximum": 3600
                 }
             }
         },
@@ -480,6 +550,14 @@
                     "anyOf": [
                         {
                             "$ref": "#/$defs/healthcheck/properties/failureThreshold"
+                        },
+                        { "type": "null" }
+                    ]
+                },
+                "restartAfterSeconds": {
+                    "anyOf": [
+                        {
+                            "$ref": "#/$defs/healthcheck/properties/restartAfterSeconds"
                         },
                         { "type": "null" }
                     ]

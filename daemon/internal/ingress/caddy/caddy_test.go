@@ -103,6 +103,28 @@ func TestResolveRoutes(t *testing.T) {
 	if got := routes[0].Dial; !slices.Equal(got, []string{"10.231.4.6:3000", "100.64.0.9:31002"}) {
 		t.Errorf("fallback: %v", got)
 	}
+	// Fail open (HEAL-10): nothing ready and no mesh upstream → running
+	// serving replicas, then running draining ones; stopped ones never.
+	routes = ResolveRoutes(routeSpecs()[1:2], resolver(map[state.WorkloadID]ingress.Endpoint{
+		wlC: {Addr: ip("10.231.5.2"), Serving: true, Running: true},
+	}))
+	if got := routes[0].Dial; !slices.Equal(got, []string{"10.231.5.2:8080"}) {
+		t.Errorf("fail open: %v", got)
+	}
+	routes = ResolveRoutes(routeSpecs()[1:2], resolver(map[state.WorkloadID]ingress.Endpoint{
+		wlC: {Addr: ip("10.231.5.2"), Serving: true},
+	}))
+	if len(routes[0].Dial) != 0 {
+		t.Errorf("stopped replica: %v", routes[0].Dial)
+	}
+	// A ready mesh upstream wins over running, not ready local replicas.
+	routes = ResolveRoutes(routeSpecs()[:1], resolver(map[state.WorkloadID]ingress.Endpoint{
+		wlA: {Addr: ip("10.231.4.5"), Serving: true, Running: true},
+		wlB: {Addr: ip("10.231.4.6"), Running: true},
+	}))
+	if got := routes[0].Dial; !slices.Equal(got, []string{"100.64.0.9:31002"}) {
+		t.Errorf("mesh before fail open: %v", got)
+	}
 }
 
 func TestRenderGolden(t *testing.T) {
@@ -116,6 +138,10 @@ func TestRenderGolden(t *testing.T) {
 		t.Fatal(err)
 	}
 	golden(t, "routes", cfg)
+	// Every app proxy sets the visitor's address (overwriting a client's).
+	if n := bytes.Count(cfg, []byte(`"X-Real-IP": [`)); n == 0 || n != bytes.Count(cfg, []byte(`"flush_interval": -1`)) || n != bytes.Count(cfg, []byte(`"{http.vars.client_ip}"`)) {
+		t.Errorf("X-Real-IP on %d app proxies", n)
+	}
 
 	empty, err := Render(nil, renderOpts)
 	if err != nil {

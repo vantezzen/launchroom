@@ -36,6 +36,9 @@ type HostHealth struct {
 	Cleanup *CleanupResult `json:"cleanup,omitzero" jsonschema:"nullable"`
 	// Firewall is the state of the daemon's network isolation (docs/05 §1).
 	Firewall *FirewallStatus `json:"firewall,omitzero" jsonschema:"nullable"`
+	// Disk is what takes the disk (volumes, WAL backlog, registry),
+	// measured every 30 minutes and repeated until the next measurement.
+	Disk *DiskBreakdown `json:"disk,omitzero" jsonschema:"nullable"`
 }
 
 // FirewallMode is the state of the nftables isolation.
@@ -77,6 +80,10 @@ type FirewallStatus struct {
 type FilesystemUsage struct {
 	TotalMB int64 `json:"totalMb" jsonschema:"minimum=0"`
 	FreeMB  int64 `json:"freeMb" jsonschema:"minimum=0"`
+	// InodesTotal and InodesFree are the filesystem's inodes (omitted when
+	// the filesystem doesn't have a fixed number, e.g. btrfs).
+	InodesTotal int64 `json:"inodesTotal,omitzero" jsonschema:"minimum=0"`
+	InodesFree  int64 `json:"inodesFree,omitzero" jsonschema:"minimum=0"`
 }
 
 // MemoryUsage is host memory from /proc/meminfo.
@@ -122,9 +129,12 @@ type CleanupTrigger string
 const (
 	CleanupScheduled    CleanupTrigger = "schedule"
 	CleanupDiskPressure CleanupTrigger = "disk_pressure"
+	// CleanupManual: a "cleanup" task ("Free space now"), or a build that
+	// ran out of space.
+	CleanupManual CleanupTrigger = "manual"
 )
 
-var cleanupTriggers = []string{string(CleanupScheduled), string(CleanupDiskPressure)}
+var cleanupTriggers = []string{string(CleanupScheduled), string(CleanupDiskPressure), string(CleanupManual)}
 
 // ProtocolSchema implements SchemaDescriber.
 func (CleanupTrigger) ProtocolSchema() ScalarSchema { return enumSchema(cleanupTriggers) }
@@ -154,7 +164,7 @@ func (h *HostHealth) validate(e *errs, p string) {
 		e.addf(p+".collectedAt", "is required")
 	}
 	for name, fs := range map[string]*FilesystemUsage{p + ".dataDisk": h.DataDisk, p + ".dockerDisk": h.DockerDisk} {
-		if fs != nil && (fs.TotalMB < 0 || fs.FreeMB < 0) {
+		if fs != nil && (fs.TotalMB < 0 || fs.FreeMB < 0 || fs.InodesTotal < 0 || fs.InodesFree < 0) {
 			e.addf(name, "sizes must be >= 0")
 		}
 	}
@@ -181,15 +191,8 @@ func (h *HostHealth) validate(e *errs, p string) {
 	if h.BuildCacheMB != nil && *h.BuildCacheMB < 0 {
 		e.addf(p+".buildCacheMb", "must be >= 0")
 	}
-	if c := h.Cleanup; c != nil {
-		if c.At.IsZero() {
-			e.addf(p+".cleanup.at", "is required")
-		}
-		e.check(p+".cleanup.trigger", c.Trigger)
-		if c.RemovedImages < 0 || c.RemovedContainers < 0 || c.ReclaimedMB < 0 {
-			e.addf(p+".cleanup", "counts must be >= 0")
-		}
-		checkText(e, p+".cleanup.error", c.Error, 1024)
+	if h.Cleanup != nil {
+		h.Cleanup.validate(e, p+".cleanup")
 	}
 	if f := h.Firewall; f != nil {
 		e.check(p+".firewall.mode", f.Mode)
@@ -201,4 +204,18 @@ func (h *HostHealth) validate(e *errs, p string) {
 		}
 		checkText(e, p+".firewall.error", f.Error, 1024)
 	}
+	if h.Disk != nil {
+		h.Disk.validate(e, p+".disk")
+	}
+}
+
+func (c *CleanupResult) validate(e *errs, p string) {
+	if c.At.IsZero() {
+		e.addf(p+".at", "is required")
+	}
+	e.check(p+".trigger", c.Trigger)
+	if c.RemovedImages < 0 || c.RemovedContainers < 0 || c.ReclaimedMB < 0 {
+		e.addf(p, "counts must be >= 0")
+	}
+	checkText(e, p+".error", c.Error, 1024)
 }

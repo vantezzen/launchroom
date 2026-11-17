@@ -140,8 +140,19 @@ func (m *mysql) query(ctx context.Context, statement string, allowWrites bool) *
 	return m.exec(ctx, statement, !allowWrites)
 }
 
+// mysqlSchemaSQL lists tables with InnoDB's row estimate and data size.
+// MySQL caches both for a day (information_schema_stats_expiry), so its
+// query reads them fresh first; MariaDB has no such cache.
+const mysqlSchemaSQL = "SELECT table_name AS name, table_type AS kind, table_rows AS est, data_length AS size FROM information_schema.tables WHERE table_schema = DATABASE() ORDER BY table_name LIMIT 2000"
+
 func (m *mysql) schema(ctx context.Context) *Result {
-	r := m.exec(ctx, "SELECT table_name AS name, table_type AS kind, table_rows AS est FROM information_schema.tables WHERE table_schema = DATABASE() ORDER BY table_name LIMIT 2000", true)
+	var r *Result
+	if !m.mariadb {
+		r = m.exec(ctx, "SET SESSION information_schema_stats_expiry = 0; "+mysqlSchemaSQL, true)
+	}
+	if r == nil || r.Status != state.CommandOK {
+		r = m.exec(ctx, mysqlSchemaSQL, true)
+	}
 	if r.Status != state.CommandOK {
 		return r
 	}
@@ -149,9 +160,23 @@ func (m *mysql) schema(ctx context.Context) *Result {
 	if m.mariadb {
 		engine = state.EngineMariaDB
 	}
-	g := SchemaGroup{Name: m.db, Items: []SchemaItem{}}
+	info, targets := mysqlSchemaInfo(r, m.db, engine)
+	if picked := pickCounts(targets); len(picked) > 0 {
+		limit := "SET SESSION max_execution_time = " + strconv.Itoa(countTimeoutMs) + "; "
+		if m.mariadb {
+			limit = "SET SESSION max_statement_time = " + strconv.Itoa(countTimeoutMs/1000) + "; "
+		}
+		applyCounts(info, picked, m.exec(ctx, limit+countSQL(picked, "`"), true))
+	}
+	return &Result{Status: state.CommandOK, Truncated: r.Truncated, Schema: info}
+}
+
+// mysqlSchemaInfo builds the one-database group and the base tables count(*) may run on.
+func mysqlSchemaInfo(r *Result, db string, engine state.DatabaseEngine) (*SchemaInfo, []countTarget) {
+	g := SchemaGroup{Name: db, Items: []SchemaItem{}}
+	var targets []countTarget
 	for _, row := range r.Rows {
-		if len(row) != 3 || row[0] == nil {
+		if len(row) != 4 || row[0] == nil {
 			continue
 		}
 		kind := "table"
@@ -159,14 +184,18 @@ func (m *mysql) schema(ctx context.Context) *Result {
 			kind = "view"
 		}
 		item := SchemaItem{Name: *row[0], Kind: kind}
-		if row[2] != nil {
-			if n, err := strconv.ParseInt(*row[2], 10, 64); err == nil {
-				item.Rows = &n
+		if kind == "table" {
+			item.Rows = estimate(row[2])
+			item.Estimate = item.Rows != nil
+			if row[3] != nil && countable("", *row[0]) {
+				if size, err := strconv.ParseInt(*row[3], 10, 64); err == nil {
+					targets = append(targets, countTarget{item: len(g.Items), table: state.TableName(*row[0]), size: size})
+				}
 			}
 		}
 		g.Items = append(g.Items, item)
 	}
-	return &Result{Status: state.CommandOK, Truncated: r.Truncated, Schema: &SchemaInfo{Engine: engine, Groups: []SchemaGroup{g}}}
+	return &SchemaInfo{Engine: engine, Groups: []SchemaGroup{g}}, targets
 }
 
 func (m *mysql) rows(ctx context.Context, t state.TableRef, page, size int) *Result {

@@ -60,5 +60,7 @@ export function placeholderPanel(
         actionNeededFinding: same?.actionNeededFinding ?? null,
         controls: same?.controls ?? null,
         origin: same?.origin ?? null,
+        runtime: same?.runtime ?? null,
+        cronRuns: same?.cronRuns ?? [],
     };
 }

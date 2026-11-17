@@ -20,6 +20,7 @@ use App\Enums\DaemonTaskPurpose;
 use App\Enums\ServiceKind;
 use App\Enums\Sessions\InteractiveSessionKind;
 use App\Enums\TaskBackedAccessStatus;
+use App\Enums\WorkloadPhase;
 use App\Exceptions\DomainRuleViolation;
 use App\Models\Placement;
 use App\Models\ServiceInstance;
@@ -34,11 +35,17 @@ use App\Support\PublicId;
 use Illuminate\Support\Facades\DB;
 
 /**
- * Opens a Console or Data session (docs/03 §11.1): the session row with a
- * single-use ticket and a fresh key, the `session` daemon task pinned to the
- * replica's server (the key is sealed to that server at lease time), and the
- * "started" audit entry. The caller has authorized the user (D60: no
- * password prompt).
+ * Opens a Console, Data or recovery session (docs/03 §11.1): the session
+ * row with a single-use ticket and a fresh key, the `session` daemon task
+ * pinned to the replica's server (the key is sealed to that server at lease
+ * time), and the "started" audit entry. The caller has authorized the user
+ * (D60: no password prompt).
+ *
+ * A recovery shell (OD9) is a terminal like the console, in a copy of a
+ * replica whose container won't stay up, with the app not started. Its
+ * volumes are read-only unless the user allows changes, which the audit
+ * entry records; changes are refused while a container of a service with
+ * data still runs, so two processes never write the same volume.
  */
 final readonly class OpenSession
 {
@@ -66,9 +73,11 @@ final readonly class OpenSession
         $key = SessionSecrets::key();
         $idle = config()->integer('launchroom.sessions.idle_minutes') * 60;
         $max = config()->integer('launchroom.sessions.max_minutes') * 60;
-        $record = $kind === InteractiveSessionKind::Console && $instance->environment->project->team->settings->recordConsoleSessions;
+        $terminal = $kind !== InteractiveSessionKind::Data;
+        $allowChanges = $kind === InteractiveSessionKind::Recovery && $data->allowChanges;
+        $record = $terminal && $instance->environment->project->team->settings->recordConsoleSessions;
 
-        $session = DB::transaction(function () use ($user, $instance, $kind, $data, $placement, $engine, $ticket, $key, $idle, $max, $record, $actor): InteractiveSession {
+        $session = DB::transaction(function () use ($user, $instance, $kind, $data, $placement, $engine, $ticket, $key, $idle, $max, $record, $actor, $terminal, $allowChanges): InteractiveSession {
             // Serialize this user's opens (FOR UPDATE can't be combined with COUNT).
             User::query()->whereKey($user->id)->lockForUpdate()->value('id');
             // Sessions already being ended (replaced, closed) don't count.
@@ -83,7 +92,7 @@ final readonly class OpenSession
             }
 
             $publicId = PublicId::generate(InteractiveSession::publicIdPrefix());
-            $shell = $kind === InteractiveSessionKind::Console ? $data->shell : null;
+            $shell = $terminal ? $data->shell : null;
 
             $task = $this->tasks->create(
                 $instance->team_id,
@@ -94,10 +103,11 @@ final readonly class OpenSession
                     channel: Channel::Session->wire($publicId),
                     idleTimeout: intdiv($idle, 60).'m',
                     shell: $shell,
-                    cols: $kind === InteractiveSessionKind::Console ? $data->cols : null,
-                    rows: $kind === InteractiveSessionKind::Console ? $data->rows : null,
+                    cols: $terminal ? $data->cols : null,
+                    rows: $terminal ? $data->rows : null,
                     record: $record ? true : null,
                     engine: $engine,
+                    allowChanges: $allowChanges ? true : null,
                 ),
                 $max,
                 pin: $placement->server,
@@ -140,9 +150,10 @@ final readonly class OpenSession
                     'replica' => $placement->slot + 1,
                     'workload' => $placement->workload_id,
                     'server' => $placement->server->public_id,
-                    'shell' => $shell ?? ($kind === InteractiveSessionKind::Console ? 'auto' : null),
+                    'shell' => $shell ?? ($terminal ? 'auto' : null),
                     'engine' => $engine,
                     'recorded' => $record ? true : null,
+                    'allowChanges' => $kind === InteractiveSessionKind::Recovery ? $allowChanges : null,
                 ], static fn (mixed $value): bool => $value !== null),
             ));
 
@@ -208,6 +219,10 @@ final readonly class OpenSession
             return [$placement, $source->engine->value];
         }
 
+        if ($kind === InteractiveSessionKind::Recovery) {
+            return [$this->recoveryTarget($instance, $data), null];
+        }
+
         $placement = $this->targets->replica($instance, $data->workload, $kind);
 
         if (! $placement instanceof Placement) {
@@ -217,5 +232,33 @@ final readonly class OpenSession
         }
 
         return [$placement, null];
+    }
+
+    private function recoveryTarget(ServiceInstance $instance, OpenSessionData $data): Placement
+    {
+        $placement = $this->targets->stuckReplica($instance, $data->workload);
+
+        if (! $placement instanceof Placement) {
+            $stuck = $this->targets->stuckReplicas($instance)->first();
+
+            throw match (true) {
+                $stuck instanceof Placement => DomainRuleViolation::conflict("Update {$stuck->server->name} in Settings → Updates, or allow recovery shells on it, to open one there."),
+                $data->workload !== null => DomainRuleViolation::on('workload', 'That replica is running again. Open a console instead.'),
+                default => DomainRuleViolation::conflict('Every replica of this service is running. Open a console instead.'),
+            };
+        }
+
+        // Two processes writing the same data can corrupt it: while this
+        // container still runs between restarts, its volumes stay read-only.
+        if ($data->allowChanges && in_array($placement->phase, WorkloadPhase::running(), true) && $this->hasData($instance)) {
+            throw DomainRuleViolation::on('allowChanges', 'This service keeps data in a volume and its container is still running between restarts. Open the shell read-only, or stop the service first to allow changes.');
+        }
+
+        return $placement;
+    }
+
+    private function hasData(ServiceInstance $instance): bool
+    {
+        return $instance->service->kind->isStateful() || $instance->mountedVolumes()->isNotEmpty();
     }
 }

@@ -65,7 +65,7 @@ final readonly class RouteFinishedDaemonTask
             DaemonTaskType::Access => $this->finishAccess->handle(...),
             DaemonTaskType::Inventory => $this->inventory(...),
             DaemonTaskType::InspectContainer => $this->advanceInvestigation->handle(...),
-            DaemonTaskType::Logs => null,
+            DaemonTaskType::Logs, DaemonTaskType::Cleanup, DaemonTaskType::CertRetry => null,
         };
 
         if ($owner !== null) {

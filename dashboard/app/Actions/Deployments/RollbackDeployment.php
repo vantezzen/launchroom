@@ -22,6 +22,9 @@ use Illuminate\Support\Facades\DB;
  * and env snapshot run again ({@see DeploymentFactory::rerun()}), applied
  * immediately (no staging). Rolling back production pauses auto-deploy for
  * the environment. Database migrations are not reverted.
+ *
+ * `$reason`: launchroom rolls back by itself (CheckProbation, OD1); kept as
+ * the new deployment's `rollback_reason` and in the audit entry.
  */
 final readonly class RollbackDeployment
 {
@@ -30,9 +33,9 @@ final readonly class RollbackDeployment
         private RecordAuditEvent $audit,
     ) {}
 
-    public function handle(Deployment $target, ?User $user, AuditActor $actor): Deployment
+    public function handle(Deployment $target, ?User $user, AuditActor $actor, ?string $reason = null): Deployment
     {
-        return DB::transaction(function () use ($target, $user, $actor): Deployment {
+        return DB::transaction(function () use ($target, $user, $actor, $reason): Deployment {
             $target = Deployment::query()->whereKey($target->id)->with(['environment.project'])->lockForUpdate()->firstOrFail();
 
             if (! $target->isRollbackTarget()) {
@@ -40,6 +43,10 @@ final readonly class RollbackDeployment
             }
 
             $deployment = $this->factory->rerun($target, DeploymentTrigger::Rollback, $user, rollback: true);
+
+            if ($reason !== null) {
+                $deployment->forceFill(['rollback_reason' => mb_substr($reason, 0, 1000)])->save();
+            }
 
             $environment = Environment::query()->whereKey($target->environment_id)->lockForUpdate()->firstOrFail();
 
@@ -54,7 +61,7 @@ final readonly class RollbackDeployment
                 teamId: $target->team_id,
                 subjectType: 'deployment',
                 subjectId: $deployment->public_id,
-                meta: ['to' => $target->public_id],
+                meta: ['to' => $target->public_id, ...($reason === null ? [] : ['automatic' => true, 'reason' => mb_substr($reason, 0, 1000)])],
             ));
 
             return $deployment;

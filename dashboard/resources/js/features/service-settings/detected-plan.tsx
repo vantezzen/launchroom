@@ -8,6 +8,7 @@ import {
     DialogDescription,
     DialogTitle,
 } from '@/components/ui/dialog';
+import { PlanAsks } from '@/features/variables/plan-asks';
 import { useClipboard } from '@/hooks/use-clipboard';
 import { cn } from '@/lib/utils';
 import { vocabulary } from '@/lib/vocabulary';
@@ -362,6 +363,8 @@ export function DetectedPlan({
                     )}
                 </div>
             )}
+
+            <PlanAsks plan={plan} />
 
             {warnings.length > 0 && (
                 <ul className="flex flex-col gap-1.5">

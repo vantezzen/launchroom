@@ -22,6 +22,12 @@ use Closure;
  * variable, a refused connection, running out of memory) match a pattern on
  * the failure message / log excerpt. Unknown failures return null and the
  * page falls back to the generic DeploymentFailureData hint.
+ *
+ * Entries for containers that didn't start or stay up live in
+ * RuntimeFailures, newer build hints in BuildFailures. An entry matches by
+ * hint code, by a typed fact (`when`) or by a pattern.
+ *
+ * @phpstan-type Entry array{key: string, classes: list<DeploymentFailureClass>|null, hints: list<string>, patterns: list<string>, extract?: string, when?: Closure(FailureContext): bool, explain: Closure(FailureMatch, FailureContext): ?FailureExplanationData}
  */
 final class FailureCatalogue
 {
@@ -37,7 +43,8 @@ final class FailureCatalogue
             }
 
             $matches = new FailureMatch;
-            $hit = array_intersect($entry['hints'], $context->hintCodes) !== [];
+            $hit = array_intersect($entry['hints'], $context->hintCodes) !== []
+                || (isset($entry['when']) && ($entry['when'])($context));
 
             if ($hit && isset($entry['extract']) && preg_match($entry['extract'], $text, $found) === 1) {
                 $matches = new FailureMatch($found);
@@ -52,7 +59,7 @@ final class FailureCatalogue
                 }
             }
 
-            if ($hit || ($entry['patterns'] === [] && $entry['hints'] === [])) {
+            if ($hit || ($entry['patterns'] === [] && $entry['hints'] === [] && ! isset($entry['when']))) {
                 $explanation = ($entry['explain'])($matches, $context);
 
                 if ($explanation instanceof FailureExplanationData) {
@@ -75,7 +82,7 @@ final class FailureCatalogue
     }
 
     /**
-     * @return list<array{key: string, classes: list<DeploymentFailureClass>|null, hints: list<string>, patterns: list<string>, extract?: string, explain: Closure(FailureMatch, FailureContext): ?FailureExplanationData}>
+     * @return list<Entry>
      */
     private static function entries(): array
     {
@@ -83,6 +90,7 @@ final class FailureCatalogue
         $running = [DeploymentFailureClass::HealthTimeout, DeploymentFailureClass::RuntimeError, DeploymentFailureClass::PortMismatch];
 
         return [
+            ...RuntimeFailures::typed(),
             [
                 'key' => 'cannot_plan',
                 'classes' => [DeploymentFailureClass::PlanError],
@@ -210,18 +218,7 @@ final class FailureCatalogue
                     params: ['name' => 'NODE_OPTIONS', 'value' => '--max-old-space-size=2048', 'buildTime' => '1'],
                 ),
             ],
-            [
-                'key' => 'out_of_memory',
-                'classes' => null,
-                'hints' => [],
-                'patterns' => ['/out of memory|OOM ?killed|exit(?:ed with)? code:? 137\b/i'],
-                'explain' => static fn (): FailureExplanationData => new FailureExplanationData(
-                    key: 'out_of_memory',
-                    title: 'Your app ran out of memory',
-                    cause: 'It used more memory than its limit and was stopped (exit code 137).',
-                    fix: 'Raise the memory limit in the service settings under Scaling, or reduce what the app keeps in memory.',
-                ),
-            ],
+            ...RuntimeFailures::output(),
             [
                 'key' => 'pnpm_lockfile',
                 'classes' => $build,
@@ -278,6 +275,7 @@ final class FailureCatalogue
                     params: ['name' => 'RAILPACK_BUILD_APT_PACKAGES', 'value' => 'python3 make g++', 'buildTime' => '1'],
                 ),
             ],
+            ...BuildFailures::entries(),
             [
                 'key' => 'missing_variable',
                 'classes' => null,
@@ -314,6 +312,7 @@ final class FailureCatalogue
                     );
                 },
             ],
+            ...RuntimeFailures::probe(),
             [
                 'key' => 'health_refused',
                 'classes' => [DeploymentFailureClass::HealthTimeout],

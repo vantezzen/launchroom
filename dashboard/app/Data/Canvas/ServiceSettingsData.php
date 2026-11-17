@@ -22,6 +22,7 @@ final class ServiceSettingsData extends Data
      * @param  list<DomainData>  $domains
      * @param  list<VolumeData>  $volumes
      * @param  list<EdgeServerData>  $edges
+     * @param  list<string>  $replicaWarnings
      */
     public function __construct(
         public ServiceSourceData $source,
@@ -52,5 +53,7 @@ final class ServiceSettingsData extends Data
         public ?ManagedByFileData $configFile = null,
         /** "Generate a Dockerfile" (app services, docs/20 §7). */
         public ?DockerfileGenerationPanelData $dockerfileGeneration = null,
+        /** What breaks with more than one replica (file sessions, a scheduler); shown while scaling above one. */
+        public array $replicaWarnings = [],
     ) {}
 }

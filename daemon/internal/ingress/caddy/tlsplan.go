@@ -264,7 +264,7 @@ func (m *Manager) readLogs(ctx context.Context, id string) {
 		if l.Time.After(last) {
 			last = l.Time
 		}
-		ident, ok, msg, matched := parseCertLog(l.Text)
+		ident, ok, raw, matched := parseCertLogRaw(l.Text)
 		if !matched {
 			return nil
 		}
@@ -272,7 +272,8 @@ func (m *Manager) readLogs(ctx context.Context, id string) {
 		if ok {
 			ev.lastOKAt = l.Time
 		} else {
-			ev.lastErr, ev.lastErrAt = msg, l.Time
+			ev.lastErr, ev.lastErrAt = cleanError(raw), l.Time
+			ev.kind, ev.retryAfter = ClassifyCertError(raw)
 		}
 		events[ident] = ev
 		return nil
@@ -292,7 +293,7 @@ func (m *Manager) readLogs(ctx context.Context, id string) {
 			cur.lastOKAt = ev.lastOKAt
 		}
 		if ev.lastErrAt.After(cur.lastErrAt) {
-			cur.lastErr, cur.lastErrAt = ev.lastErr, ev.lastErrAt
+			cur.lastErr, cur.lastErrAt, cur.kind, cur.retryAfter = ev.lastErr, ev.lastErrAt, ev.kind, ev.retryAfter
 		}
 		m.events[k] = cur
 	}

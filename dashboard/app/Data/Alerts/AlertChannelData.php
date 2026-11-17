@@ -30,6 +30,9 @@ final class AlertChannelData extends Data
         public ?bool $lastDeliveryOk,
         public ?string $lastError,
         public bool $canManage,
+        /** launchroom itself notifies through it while the dashboard is down (OD7). */
+        public bool $fallback = false,
+        public bool $allowPrivateHosts = false,
     ) {}
 
     public static function fromChannel(AlertChannel $channel, bool $canManage): self
@@ -46,6 +49,8 @@ final class AlertChannelData extends Data
             $channel->last_delivery_ok,
             $channel->last_error,
             $canManage,
+            $channel->fallback,
+            $channel->allow_private_hosts,
         );
     }
 }

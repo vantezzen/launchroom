@@ -5,18 +5,24 @@ declare(strict_types=1);
 namespace App\Services\Alerts\Conditions;
 
 use App\Data\Alerts\AlertSignal;
+use App\Data\Alerts\ResolvedRule;
 use App\Enums\Alerts\AlertRule;
 use App\Enums\Alerts\AlertSeverity;
 use App\Enums\EnvironmentKind;
 use App\Models\Domain;
+use App\Models\Server;
 use App\Support\Hostname;
 use App\Support\Links;
 use Carbon\CarbonImmutable;
+use Closure;
 use Illuminate\Contracts\Database\Query\Builder;
 
 /**
  * Domains of lasting environments whose certificate expires within the
- * team's threshold (Caddy renews 30 days ahead, so renewal is failing).
+ * team's threshold (Caddy renews 30 days ahead, so renewal is failing),
+ * and the dashboard's own domain once it was switched to one (G38: the
+ * control-plane edge reports it, RecordCertificates), for the
+ * control-plane server's team.
  */
 final readonly class CertificateExpiring extends AlertCondition
 {
@@ -83,6 +89,40 @@ final readonly class CertificateExpiring extends AlertCondition
             };
         }
 
-        return $out;
+        return [...$out, ...$this->dashboardDomain($rules, $now)];
+    }
+
+    /**
+     * @param  array<int, array<string, ResolvedRule>>  $rules
+     * @return array<string, Closure(): AlertSignal>
+     */
+    private function dashboardDomain(array $rules, CarbonImmutable $now): array
+    {
+        $server = $this->controlPlaneServer();
+        $certificate = $server?->ingress_status?->dashboardCertificate;
+        $host = $server?->ingress_status?->dashboardHost;
+
+        if (! $server instanceof Server || $certificate === null || $certificate->notAfter === null || $host === null || ! isset($rules[$server->team_id])) {
+            return [];
+        }
+
+        $expires = CarbonImmutable::parse($certificate->notAfter);
+        $threshold = $rules[$server->team_id][AlertRule::CertificateExpiring->value]->thresholdValue();
+
+        if ($expires->greaterThanOrEqualTo($now->addSeconds((int) round($threshold * 86_400)))) {
+            return [];
+        }
+
+        return [$server->team_id.'|dashboard:certificate' => fn (): AlertSignal => new AlertSignal(
+            team: $this->team($server->team_id),
+            rule: AlertRule::CertificateExpiring,
+            subject: 'dashboard:certificate',
+            title: "The dashboard’s certificate for {$host} is about to expire",
+            summary: 'It '.($expires->lessThanOrEqualTo($now) ? 'expired' : 'expires').' on '.$expires->format('j M Y').' and renewing it keeps failing. Check that the domain still points at '.$server->name.'.',
+            severity: $expires->lessThan($now->addDays(3)) ? AlertSeverity::Critical : AlertSeverity::Warning,
+            href: Links::server($server, 'network'),
+            server: $server,
+            facts: array_filter(['Expires' => $expires->format('j M Y'), 'Last error' => $certificate->lastError !== null ? mb_substr($certificate->lastError, 0, 200) : null], static fn (?string $v): bool => $v !== null),
+        )];
     }
 }

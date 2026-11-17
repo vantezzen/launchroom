@@ -191,7 +191,20 @@ func overlayFS(dir string, src fs.FS) error {
 		if err != nil {
 			return err
 		}
-		return os.WriteFile(target, data, 0o600)
+		info, err := d.Info()
+		if err != nil {
+			return err
+		}
+		if err := os.WriteFile(target, data, 0o600); err != nil {
+			return err
+		}
+		// Keep the exec bit (as os.CopyFS does): release scripts in an
+		// overlay must stay runnable. WriteFile keeps an existing file's mode.
+		mode := fs.FileMode(0o600)
+		if info.Mode().Perm()&0o111 != 0 {
+			mode = 0o700
+		}
+		return os.Chmod(target, mode)
 	})
 }
 

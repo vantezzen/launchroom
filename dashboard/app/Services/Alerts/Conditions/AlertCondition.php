@@ -35,6 +35,25 @@ abstract readonly class AlertCondition
 
     protected const int WINDOW_MINUTES = 30;
 
+    /**
+     * Only alerts of the rule whose subject starts with this belong to the
+     * condition (a rule that other code raises too, like `backup_failed`);
+     * null: every alert of the rule.
+     */
+    public function subjectPrefix(): ?string
+    {
+        return null;
+    }
+
+    /**
+     * The control-plane server, whose team hears about launchroom itself
+     * (the dashboard, its queues, its backups).
+     */
+    protected function controlPlaneServer(): ?Server
+    {
+        return Server::query()->controlPlane()->orderBy('id')->first();
+    }
+
     protected function team(int $id): Team
     {
         return Team::query()->whereKey($id)->firstOrFail();

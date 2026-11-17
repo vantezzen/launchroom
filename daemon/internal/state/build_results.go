@@ -2,6 +2,7 @@ package state
 
 import (
 	"strings"
+	"time"
 	"unicode/utf8"
 )
 
@@ -46,6 +47,8 @@ type AppliedPreset struct {
 	// Version of the preset code (bumped when its behaviour changes).
 	Version   int              `json:"version" jsonschema:"minimum=1"`
 	Decisions []PresetDecision `json:"decisions" jsonschema:"maxItems=32"`
+	// Scope is how much of it applied (omitted: full).
+	Scope PresetScope `json:"scope,omitzero"`
 }
 
 // ProcessSuggestion is an extra process from the same image (queue worker, scheduler, …).
@@ -53,6 +56,10 @@ type ProcessSuggestion struct {
 	Name Slug `json:"name"`
 	// Args is the argv to run in the image (never a shell string).
 	Args []string `json:"args" jsonschema:"minItems=1,maxItems=64"`
+	// StopTimeout is how long the process needs to finish its current work
+	// on SIGTERM (queue workers: 60s), a default for the service's stop
+	// timeout (1s to 5m). Omitted: launchroom's default.
+	StopTimeout Duration `json:"stopTimeout,omitzero"`
 }
 
 // GeneratedSecret is a runtime secret the app can't start without (Laravel's
@@ -63,6 +70,11 @@ type GeneratedSecret struct {
 	// Length is characters for alnum, random bytes for the other encodings.
 	Length   int            `json:"length" jsonschema:"minimum=16,maximum=128"`
 	Encoding SecretEncoding `json:"encoding"`
+	// Scope is where it is used (omitted: runtime).
+	Scope SecretScope `json:"scope,omitzero"`
+	// Shared is which environments share one value (omitted: environment).
+	// "service" needs scope build.
+	Shared SecretSharing `json:"shared,omitzero"`
 }
 
 // BuildWarning is a non-fatal finding shown with the plan.
@@ -116,6 +128,19 @@ type BuildSummary struct {
 	Plan RawObject `json:"plan,omitzero"`
 	// Next is what the launchroom Next.js deployment adapter reported (build tasks of Next ≥ 16.2 apps).
 	Next *NextBuildInfo `json:"next,omitzero" jsonschema:"nullable"`
+	// EnvAliases set framework variables to system values per environment (unique names).
+	EnvAliases []EnvAlias `json:"envAliases,omitzero" jsonschema:"nullable,maxItems=16"`
+	// RequiredSecrets are secrets the app needs that launchroom can't generate.
+	RequiredSecrets []RequiredSecret `json:"requiredSecrets,omitzero" jsonschema:"nullable,maxItems=8"`
+	// VolumeSuggestions are folders whose files should outlive a deploy.
+	VolumeSuggestions []VolumeSuggestion `json:"volumeSuggestions,omitzero" jsonschema:"nullable,maxItems=8"`
+	// Workspace is the monorepo workspace the app belongs to (omitted: none).
+	Workspace *WorkspaceInfo `json:"workspace,omitzero" jsonschema:"nullable"`
+	// PhpDependencyExtensions are PHP extensions added because dependencies
+	// require them (composer.lock; provider php only).
+	PhpDependencyExtensions []PhpDependencyExtension `json:"phpDependencyExtensions,omitzero" jsonschema:"nullable,maxItems=32"`
+	// Image is what the built image's config says (user, exposed ports; build tasks).
+	Image *ImageFacts `json:"image,omitzero" jsonschema:"nullable"`
 }
 
 // Limits of NextBuildInfo.
@@ -237,6 +262,9 @@ func (s *BuildSummary) validate(e *errs, p string) {
 		if ap.Decisions == nil {
 			e.addf(pp+".decisions", "is required ([] when empty)")
 		}
+		if ap.Scope != "" {
+			e.check(pp+".scope", ap.Scope)
+		}
 		checkCount(e, pp+".decisions", len(ap.Decisions), 0, maxDecisions)
 		for j, d := range ap.Decisions {
 			dp := idx(pp+".decisions", j)
@@ -254,6 +282,12 @@ func (s *BuildSummary) validate(e *errs, p string) {
 			e.addf(pp+".args", "is required")
 		}
 		checkArgv(e, pp+".args", pr.Args)
+		if pr.StopTimeout != "" {
+			e.check(pp+".stopTimeout", pr.StopTimeout)
+			if d := pr.StopTimeout.Std(); pr.StopTimeout.Validate() == nil && (d < time.Second || d > MaxStopTimeout) {
+				e.addf(pp+".stopTimeout", "must be between 1s and %s", MaxStopTimeout)
+			}
+		}
 	}
 	checkArgv(e, p+".releaseCommand", s.ReleaseCommand)
 	if s.HealthPath != "" {
@@ -267,6 +301,15 @@ func (s *BuildSummary) validate(e *errs, p string) {
 		e.check(gp+".encoding", g.Encoding)
 		if g.Length < minGeneratedLength || g.Length > maxGeneratedLength {
 			e.addf(gp+".length", "must be between %d and %d", minGeneratedLength, maxGeneratedLength)
+		}
+		if g.Scope != "" {
+			e.check(gp+".scope", g.Scope)
+		}
+		if g.Shared != "" {
+			e.check(gp+".shared", g.Shared)
+		}
+		if g.Shared == ShareService && g.Scope != SecretBuild {
+			e.addf(gp+".shared", "service needs scope build")
 		}
 		if seenSecrets[g.Name] {
 			e.addf(gp+".name", "is listed twice")
@@ -294,6 +337,7 @@ func (s *BuildSummary) validate(e *errs, p string) {
 	if s.Next != nil {
 		s.Next.validate(e, p+".next")
 	}
+	s.validateRuntimeContract(e, p)
 }
 
 func (b *BuildResult) validate(e *errs) {
@@ -357,6 +401,15 @@ const (
 	HintNoStartCommand           HintCode = "no-start-command"
 	HintRegistryRateLimit        HintCode = "registry-rate-limit"
 	HintViteEnvUndefined         HintCode = "vite-env-undefined"
+	// HintDiskFull: the build ran out of disk space (no space left on device).
+	HintDiskFull HintCode = "disk-full"
+	// HintBuildDNS: a name didn't resolve inside the build (clone or install).
+	HintBuildDNS HintCode = "build-dns"
+	// HintBuildDatabase: the build tried to reach a database (prerendering
+	// with ECONNREFUSED/ENOTFOUND on a database host).
+	HintBuildDatabase HintCode = "build-database"
+	// HintBuildIdle: the build printed nothing for the idle timeout.
+	HintBuildIdle HintCode = "build-idle"
 )
 
 var hintCodes = []string{
@@ -365,6 +418,7 @@ var hintCodes = []string{
 	string(HintYarnFrozenLockfile), string(HintNodeGypToolchain), string(HintMissingModule), string(HintPhpExtension),
 	string(HintDjangoImproperlyConfig), string(HintPythonModuleNotFound), string(HintOutOfMemory),
 	string(HintNoStartCommand), string(HintRegistryRateLimit), string(HintViteEnvUndefined),
+	string(HintDiskFull), string(HintBuildDNS), string(HintBuildDatabase), string(HintBuildIdle),
 }
 
 // FailureHint is a known-error hint ("ERR_PNPM_OUTDATED_LOCKFILE → run pnpm install and commit the lockfile").

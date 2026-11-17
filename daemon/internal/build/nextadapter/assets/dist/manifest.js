@@ -103,6 +103,8 @@ export function buildManifest(ctx) {
         buildId: ctx.buildId,
         deploymentId: config.deploymentId || null,
         output: config.output ?? null,
+        basePath: typeof config.basePath === 'string' ? config.basePath : '',
+        trailingSlash: config.trailingSlash === true,
         standalone: standalonePaths(ctx),
         middleware: { present: Boolean(mw), runtime: mw?.runtime ?? null, matchers },
         imageOptimization: {

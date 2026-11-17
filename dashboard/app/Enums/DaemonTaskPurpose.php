@@ -28,6 +28,7 @@ enum DaemonTaskPurpose: string
     case FleetUpdate = 'fleet_update';
     case ConsoleSession = 'console';
     case DataSession = 'data';
+    case RecoverySession = 'recovery';
     case AccessSsh = 'access_ssh';
     case AccessDatabase = 'access_database';
     case AccessVolume = 'access_volume';
@@ -39,6 +40,7 @@ enum DaemonTaskPurpose: string
         return match ($kind) {
             InteractiveSessionKind::Console => self::ConsoleSession,
             InteractiveSessionKind::Data => self::DataSession,
+            InteractiveSessionKind::Recovery => self::RecoverySession,
         };
     }
 

@@ -38,6 +38,8 @@ function panel(overrides: Partial<Panel> = {}): Panel {
         actionNeededFinding: null,
         controls: null,
         origin: null,
+        cronRuns: [],
+        runtime: null,
         ...overrides,
     };
 }

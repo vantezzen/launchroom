@@ -21,7 +21,8 @@ import (
 //	update/tasks/<task>/plan.json    what the supervisor does (host paths)
 //	update/tasks/<task>/status.json  the supervisor's final outcome
 //	update/tasks/<task>/bundle/      the verified, extracted release bundle
-//	update/tasks/<task>/backup/      the managed files before the update
+//	update/tasks/<task>/backup/      the managed files before the update (files.json: owners and modes)
+//	update/tasks/<task>/diagnostics/ logs and state of the containers that were not healthy, saved before a rollback
 //	update/tasks/<task>/bundle.tar.gz (+ .sigstore.json) the signed bundle as downloaded
 //
 // On a guarded install (D49) the supervisor keeps its own state outside
@@ -44,6 +45,8 @@ const (
 	dirTasks     = "tasks"
 	dirBundle    = "bundle"
 	dirBackup    = "backup"
+	fileSaved    = "files.json"
+	dirDiag      = "diagnostics"
 	keepTaskDirs = 3
 )
 
@@ -119,6 +122,17 @@ type Plan struct {
 	// the new launchroomd (and, on rollback, the old one).
 	InstallTimeout Duration `json:"installTimeout"`
 	HealthTimeout  Duration `json:"healthTimeout"`
+	// Manual: started on the host by the admin (`./launchroom update`, an
+	// installer re-run), not by a task. No signed bundle is re-verified
+	// (the installer did that, or the admin chose an unsigned one), a
+	// failed database copy only skips the database rollback, and health is
+	// "launchroomd runs and talks to the dashboard" whatever its version.
+	// Without BundleDir the pins in .env are pulled and started again.
+	Manual bool `json:"manual,omitempty"`
+	// InstallArgs and InstallEnv are passed to the bundle's installer
+	// (manual updates only; allow-listed by RunLocal).
+	InstallArgs []string `json:"installArgs,omitempty"`
+	InstallEnv  []string `json:"installEnv,omitempty"`
 }
 
 // Outcome is the supervisor's verdict.
@@ -141,8 +155,16 @@ type Status struct {
 	Outcome Outcome           `json:"outcome"`
 	Error   string            `json:"error,omitempty"`
 	// Reason is why a rolled-back update was rolled back.
-	Reason     string    `json:"reason,omitempty"`
-	FinishedAt time.Time `json:"finishedAt"`
+	Reason string `json:"reason,omitempty"`
+	// RollbackFailed: the rollback stopped half-way; `launchroomd
+	// update-rollback` (doctor fix update-rollback) finishes it.
+	RollbackFailed bool `json:"rollbackFailed,omitempty"`
+	// MigrationFailed is the dashboard's `[launchroom] migration-failed`
+	// line (migration name and error class), when the new release's
+	// migrations failed.
+	MigrationFailed string    `json:"migrationFailed,omitempty"`
+	Manual          bool      `json:"manual,omitempty"`
+	FinishedAt      time.Time `json:"finishedAt"`
 }
 
 // Completion converts the status into the task completion fields.

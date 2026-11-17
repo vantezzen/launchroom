@@ -10,18 +10,22 @@ use App\Enums\Backups\WalArchiveState;
 use App\Enums\Builds\BuilderReason;
 use App\Enums\Builds\BuildHintCode;
 use App\Enums\Builds\ChosenBuilder;
+use App\Enums\CertFailureKind;
 use App\Enums\CertStatus;
 use App\Enums\ClientCertificateMode;
 use App\Enums\DaemonFeature;
 use App\Enums\DaemonTaskType;
 use App\Enums\DatabaseEngine;
 use App\Enums\DnsProvider;
+use App\Enums\EnvAliasSource;
 use App\Enums\Git\GitProviderKind;
 use App\Enums\HealthcheckType;
+use App\Enums\IngressFailureReason;
 use App\Enums\LogSourceKind;
 use App\Enums\LogStream;
 use App\Enums\Mesh\MeshPath;
 use App\Enums\PortHint;
+use App\Enums\ProbeHint;
 use App\Enums\ProbeState;
 use App\Enums\RemoteAccess\RemoteAccessEndReason;
 use App\Enums\RemoteAccess\RemoteAccessKind;
@@ -43,6 +47,7 @@ use App\Enums\Updates\UpdateScope;
 use App\Enums\WorkloadCapability;
 use App\Enums\WorkloadEventKind;
 use App\Enums\WorkloadEventReason;
+use App\Enums\WorkloadFailureCode;
 use App\Enums\WorkloadIssueKind;
 use App\Enums\WorkloadPhase;
 use App\Enums\WorkloadRole;
@@ -132,6 +137,12 @@ test('mirror enums have the schema\'s values', function (string $enum, string $p
     'Virtualization (report)' => [Virtualization::class, 'report.json#/$defs/HardwareFacts/properties/virtualization'],
     'Virtualization (enroll)' => [Virtualization::class, 'enroll-request.json#/$defs/HardwareFacts/properties/virtualization'],
     'WorkloadCapability' => [WorkloadCapability::class, 'capability-allow-list.json#'],
+    'WorkloadFailureCode (status)' => [WorkloadFailureCode::class, 'report.json#/$defs/WorkloadFailure/properties/code'],
+    'WorkloadFailureCode (event)' => [WorkloadFailureCode::class, 'report.json#/$defs/WorkloadEvent/properties/code'],
+    'ProbeHint' => [ProbeHint::class, 'report.json#/$defs/ProbeStatus/properties/hint'],
+    'IngressFailureReason' => [IngressFailureReason::class, 'report.json#/$defs/IngressStatus/properties/reason'],
+    'CertFailureKind' => [CertFailureKind::class, 'report.json#/$defs/CertificateStatus/properties/failureKind'],
+    'EnvAliasSource' => [EnvAliasSource::class, 'task-completion.json#/$defs/EnvAlias/properties/from'],
 ]);
 
 test('dashboard enums that differ from the schema say why', function (string $enum, string $pointer, array $onlyOurs, array $onlyTheirs): void {

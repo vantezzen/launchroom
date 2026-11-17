@@ -71,6 +71,7 @@ case "$*" in
 "info --format {{.Architecture}}") printf '%s\n' "${STUB_ARCH:-aarch64}" ;;
 "info --format {{range .SecurityOptions}}{{.}} {{end}}") printf 'name=seccomp,profile=builtin name=cgroupns \n' ;;
 "info --format {{.CgroupDriver}}") printf 'systemd\n' ;;
+"ps -a --filter label=launchroom.role=launchroomd"*) [ -z "${STUB_EXISTING:-}" ] || printf '%s\n' "$STUB_EXISTING" ;;
 "compose up"*)
 	# launchroomd "enrolls" as soon as it is started with a token.
 	[ ! -e data/join-token ] || printf '{}\n' >data/enrollment.json ;;
@@ -511,6 +512,55 @@ lacks "$WORK/mac-swap.out" "memory and no swap"
 STUB_VERIFIED='' STUB_USERNS=1 STUB_TTY=y run mac-aa
 ok mac-aa
 lacks "$WORK/mac-aa.out" 'user namespaces'
+
+# --- A server that already runs launchroomd ---------------------------
+KEY=ed25519:Kay64UG8yvCyLhqU000LxzYeUm0L/hLIl5S8kyKWbdc=
+OTHER=ed25519:AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=
+# The control plane's own launchroomd, same launchroom: refused, nothing written.
+cp_dir="$WORK/cp-host/opt/launchroom"
+mkdir -p "$cp_dir/data/daemon"
+printf '%s\n' "$KEY" >"$cp_dir/data/daemon/cp-key"
+printf '{"serverId":"srv_x","controlPlaneUrl":"https://dash.example.com"}\n' >"$cp_dir/data/daemon/enrollment.json"
+STUB_UNAME=Linux STUB_INFO='Ubuntu 24.04.2 LTS|vps-1' STUB_EXISTING="launchroom|$cp_dir" run cp-host
+refused cp-host 'already connected to this launchroom (https://dash.example.com)'
+has "$WORK/cp-host.out" 'another team comes in a later update'
+[ ! -e "$WORK/cp-host/home/launchroomd" ] || fail "cp-host wrote ./launchroomd"
+lacks "$WORK/cp-host/docker.log" 'compose up'
+
+# Another folder's launchroomd connected to another launchroom: refused.
+other_dir="$WORK/elsewhere/launchroomd"
+mkdir -p "$other_dir/data"
+printf 'LR_CONTROL_PLANE_URL=https://other.example.org\nLR_CP_KEY=%s\n' "$OTHER" >"$other_dir/.env"
+printf '{"controlPlaneUrl":"https://other.example.org"}\n' >"$other_dir/data/enrollment.json"
+STUB_UNAME=Linux STUB_INFO='Ubuntu 24.04.2 LTS|vps-1' STUB_EXISTING="launchroomd|$other_dir" run other-folder
+refused other-folder 'already connected to another launchroom at https://other.example.org'
+has "$WORK/other-folder.out" 'remove the server in that dashboard'
+lacks "$WORK/other-folder/docker.log" 'compose up'
+
+# This folder, enrolled with another launchroom: .env is never rewritten.
+mkdir -p "$WORK/repoint/home/launchroomd/data"
+printf 'LR_CONTROL_PLANE_URL=https://other.example.org\nLR_CP_KEY=%s\n' "$OTHER" >"$WORK/repoint/home/launchroomd/.env"
+printf '{"controlPlaneUrl":"https://other.example.org"}\n' >"$WORK/repoint/home/launchroomd/data/enrollment.json"
+STUB_VERIFIED='' STUB_UNAME=Linux STUB_INFO='Ubuntu 24.04.2 LTS|vps-1' run repoint
+refused repoint 'already connected to another launchroom at https://other.example.org'
+has "$WORK/repoint/home/launchroomd/.env" '^LR_CONTROL_PLANE_URL=https://other.example.org$'
+has "$WORK/repoint/home/launchroomd/.env" "^LR_CP_KEY=$OTHER\$"
+lacks "$WORK/repoint/docker.log" 'compose up'
+
+# This folder, same launchroom, run again with a join token: says the token
+# wasn't used, updates and restarts (its own container is not "another").
+mkdir -p "$WORK/again/home/launchroomd/data"
+printf 'LR_CONTROL_PLANE_URL=https://dash.example.com\nLR_CP_KEY=%s\n' "$KEY" >"$WORK/again/home/launchroomd/.env"
+printf '{"controlPlaneUrl":"https://dash.example.com"}\n' >"$WORK/again/home/launchroomd/data/enrollment.json"
+STUB_VERIFIED='' STUB_UNAME=Linux STUB_INFO='Ubuntu 24.04.2 LTS|vps-1' STUB_EXISTING="launchroomd|$WORK/again/home/launchroomd" run again
+ok again
+has "$WORK/again.out" 'the join token was not used'
+has "$WORK/again.out" 'already enrolled'
+
+# A self-update in this folder says nothing about the token.
+STUB_UNAME=Linux STUB_INFO='Ubuntu 24.04.2 LTS|vps-1' STUB_EXISTING="launchroomd|$WORK/again/home/launchroomd" run again
+ok again
+lacks "$WORK/again.out" 'join token'
 
 rm -rf "$WORK"
 if [ "$FAILED" != 0 ]; then

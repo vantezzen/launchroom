@@ -68,13 +68,14 @@ If the console can't open, the tab says why instead of waiting, with **Try again
 | The server refused | The server doesn't allow consoles (`LR_INTERACTIVE_SESSIONS`, below), or its Docker guard refused the shell. The message names the reason. |
 | The container isn't running | The replica restarted or stopped. Try again once it runs. |
 | The server couldn't reach the live connection | launchroomd on that server can't connect to the dashboard's realtime server. Check its logs. |
-| fra-1 didn't answer within 25 seconds | launchroomd on that server is offline or busy. |
+| Your browser couldn't join the live connection | Your browser couldn't reach or join the dashboard's live connection. A proxy or firewall in front of the dashboard may block WebSockets; the message names the HTTP status when there is one. Try again, and if it repeats, check the browser's Network tab. |
+| fra-1 didn't connect to the live connection within 25 seconds | launchroomd on that server is offline, busy or can't reach the dashboard. Its log has a "session relay connected slowly" or "session ended" line with the timings. |
 
 **Recent sessions** shows the same reason for a session that never started.
 
 On a database, the Console tab points at the **Data** tab: browsing tables and running queries there needs no shell.
 
-The status line under the terminal shows the shell, the user and how long the session has been open. **End session** closes it. Switching tabs or closing the panel ends it too.
+The status line under the terminal shows the shell, the user and how long the session has been open. **End session** closes it within a second or two. Switching tabs or closing the panel ends it too. The shell gets a hang-up when the session ends, so it doesn't keep running in the container. A full-screen program such as `vim` can ignore it.
 
 **Recent sessions** lists who opened a console on this service, on which replica, for how long and why it ended. Owners and admins see everyone's sessions and can end open ones.
 
@@ -99,7 +100,7 @@ Managed databases get a **Data** tab with two modes. It opens the panel at full 
 
 <Screenshot id="database-data" />
 
-- **Browse**: the sidebar lists schemas and tables (or keys for Redis and Valkey). Select one to page through rows, 50 at a time, with ‹ and › next to the row count. Long values are cut with "…". Click one to see the full value. On a narrow panel or a phone, the sidebar becomes a picker button above the rows.
+- **Browse**: the sidebar lists schemas and tables (or keys for Redis and Valkey). Select one to page through rows, 50 at a time, with ‹ and › next to the row count. Small tables show their exact row count. Larger ones show the database's own estimate with a ~, for example "~1.2M", and the pager reads "Rows 1–50 of about 1.2M". Long values are cut with "…". Click one to see the full value. On a narrow panel or a phone, the sidebar becomes a picker button above the rows.
 - **Query**: write a statement and press ⌘↵ or **Run**. **History** holds your last 50 statements on this database.
 
 Click a row's number to open it in the **row inspector**: every column with its full value and a copy button. **Previous row** and **Next row** (or ↑ and ↓) move between rows.
@@ -149,7 +150,7 @@ Read-only mode protects you from accidents. Access is controlled by the Data per
 | Open sessions per person | 3 |
 | Open sessions per server | 8 |
 
-A session also ends when your browser goes quiet for 45 seconds, when launchroomd can't reach the dashboard for about 30 seconds, or when your access changes. Removing a member or changing their role ends their open sessions at once. You can't reconnect to a running shell. Open a new one instead: a new session replaces your open one of the same kind on the same service, so reconnecting never counts against the limit.
+A session also ends when your browser goes quiet for 45 seconds, when launchroomd can't reach the dashboard for about 30 seconds, or when your access changes. Ending a Data session stops the statement that is still running. Removing a member or changing their role ends their open sessions at once. You can't reconnect to a running shell. Open a new one instead: a new session replaces your open one of the same kind on the same service, so reconnecting never counts against the limit.
 
 ## Audit
 

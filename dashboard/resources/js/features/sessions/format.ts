@@ -34,3 +34,28 @@ export function endSentence(reason: string): string {
 
     return known[reason] ?? reason;
 }
+
+/**
+ * A table's row count from the schema list: exact counts as they are
+ * ("6", "1,234", "48K" when long), catalog estimates marked: "~1.2M", or
+ * "about 1.2M" in running text.
+ */
+export function rowCount(
+    rows: number | undefined,
+    estimate: boolean | undefined,
+    inText = false,
+): string | null {
+    if (rows === undefined) {
+        return null;
+    }
+
+    const compact = new Intl.NumberFormat('en', { notation: 'compact' });
+
+    if (!estimate) {
+        return rows < 10000 || inText
+            ? new Intl.NumberFormat('en').format(rows)
+            : compact.format(rows);
+    }
+
+    return `${inText ? 'about ' : '~'}${compact.format(rows)}`;
+}

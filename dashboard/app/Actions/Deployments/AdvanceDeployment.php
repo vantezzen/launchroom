@@ -5,12 +5,15 @@ declare(strict_types=1);
 namespace App\Actions\Deployments;
 
 use App\Actions\Mesh\AllocateMeshPorts;
+use App\Actions\Registry\MirrorPrivateImage;
 use App\Actions\Servers\RenderNodeState;
 use App\Actions\Transfers\EndDatabasePreparation;
+use App\Actions\Variables\CheckRequiredSecrets;
 use App\Actions\Variables\GenerateDeclaredSecrets;
 use App\Contracts\ImageDigestResolver;
 use App\Data\Deployments\StepOutcome;
 use App\Data\Holds\Hold;
+use App\Data\Registry\PrivateImageResult;
 use App\Data\Services\ImageSource;
 use App\Data\Specs\ServiceSpec;
 use App\Enums\DeploymentFailureClass;
@@ -18,6 +21,7 @@ use App\Enums\DeploymentPurpose;
 use App\Enums\DeploymentStatus;
 use App\Enums\DeploymentStepName;
 use App\Enums\DeploymentStepStatus;
+use App\Enums\WorkloadFailureCode;
 use App\Enums\WorkloadPhase;
 use App\Enums\WorkloadRole;
 use App\Events\NodeStateInvalidated;
@@ -28,6 +32,7 @@ use App\Jobs\AdvanceDeploymentJob;
 use App\Models\Deployment;
 use App\Models\DeploymentStep;
 use App\Models\Placement;
+use App\Models\Registry\RegistryCredential;
 use App\Models\Server;
 use App\Scheduling\PlacementFailed;
 use App\Services\Builds\BuildOrchestrator;
@@ -38,8 +43,10 @@ use App\Services\Deployments\RolloutStatus;
 use App\Services\Holds\Holds;
 use App\Services\Ingress\EdgeServers;
 use App\Services\NodeStates\MeshReadiness;
+use App\Support\Deployments\DetectedPort;
 use App\Support\Deployments\EffectiveDeploy;
 use App\Support\Deployments\PrefetchedInputs;
+use App\Support\Deployments\ProbationScope;
 use App\Support\Images\ImageReference;
 use App\Support\Images\RegistryLayout;
 use Carbon\CarbonImmutable;
@@ -61,10 +68,12 @@ use Throwable;
  *
  * - queued: waits while another deployment of the instance is in flight;
  *   resolves the image (tags → digest) or starts the build.
- * - rolling_out: stateful services first stop the previous workload and wait
- *   until the daemon reports it stopped (no two databases on one data dir);
- *   then the scheduler places the new workloads next to the old ones and the
- *   affected NodeStates are rendered.
+ * - rolling_out: services with data (databases, and any service with a
+ *   volume unless it allows two copies, ServiceInstance::stopsBeforeStart)
+ *   first stop the previous workload and wait until the daemon reports it
+ *   stopped (never two copies on one data dir); then the scheduler places
+ *   the new workloads next to the old ones and the affected NodeStates are
+ *   rendered.
  * - Rolling update (docs/04 §8, stateless services with more than one
  *   replica replacing serving ones, not staged): max-surge 1 /
  *   max-unavailable 0 across the replica set. One new replica at a time is
@@ -86,7 +95,12 @@ use Throwable;
  *   new workloads), old workloads drain until `drainUntil`; active once every
  *   edge server applied the new NodeState (or after a timeout).
  * - failure: new workloads are removed, the old version keeps serving (a
- *   stopped stateful predecessor is started again).
+ *   predecessor stopped for this rollout is started again).
+ * - port adoption (OD14): a new version that listens on exactly one other
+ *   port while the service has none set fails, and AdoptDetectedPort sets
+ *   that port and deploys again.
+ * - probation (OD1): a production deployment of a new version is watched
+ *   after it went live; CheckProbation rolls it back once if it crashes.
  * - holds (docs/14 §12.5, Holds): while an import or restore
  *   holds the instance, a queued deployment waits, and one that has started
  *   (building up to health checking) is cancelled with the reason and
@@ -109,6 +123,21 @@ final readonly class AdvanceDeployment
     /** A download without new bytes for this long is stuck (D68). */
     private const int PULL_STALL_SECONDS = 120;
 
+    /**
+     * Typed start failures (launchroomd, WorkloadFailureCode) that won't go
+     * away by waiting: the rollout fails at once. `network` and
+     * `rate_limited` keep waiting (the pull retries), `no_space` and
+     * `mount_failed` too (cleanup or the next pass may fix them).
+     */
+    private const array FATAL_START_FAILURES = [
+        WorkloadFailureCode::CommandNotFound,
+        WorkloadFailureCode::NotExecutable,
+        WorkloadFailureCode::WrongPlatform,
+        WorkloadFailureCode::InvalidUser,
+        WorkloadFailureCode::ImageNotFound,
+        WorkloadFailureCode::Unauthorized,
+    ];
+
     public function __construct(
         private BuildOrchestrator $builds,
         private ReleaseRunner $releases,
@@ -119,6 +148,10 @@ final readonly class AdvanceDeployment
         private EndDatabasePreparation $endPreparation,
         private AllocateMeshPorts $meshPorts,
         private GenerateDeclaredSecrets $generatedSecrets,
+        private CheckRequiredSecrets $requiredSecrets,
+        private CheckProbation $probation,
+        private AdoptDetectedPort $adoptPort,
+        private MirrorPrivateImage $privateImages,
     ) {}
 
     public function handle(int $deploymentId): void
@@ -149,7 +182,8 @@ final readonly class AdvanceDeployment
         $prefetched = $this->prefetch($deploymentId);
 
         $teamId = null;
-        $next = DB::transaction(function () use ($deploymentId, $prefetched, &$teamId): ?int {
+        $portMismatch = false;
+        $next = DB::transaction(function () use ($deploymentId, $prefetched, &$teamId, &$portMismatch): ?int {
             $deployment = Deployment::query()
                 ->whereKey($deploymentId)
                 ->with(['serviceInstance.service', 'environment.project', 'revision'])
@@ -166,8 +200,20 @@ final readonly class AdvanceDeployment
             for ($i = 0; $i < 8 && $this->step($deployment, $prefetched); $i++);
 
             /** @var Deployment $deployment status changed by step() */
+            $portMismatch = $deployment->status === DeploymentStatus::Failed && $deployment->failure_class === DeploymentFailureClass::PortMismatch;
+
             return $deployment->status->isFinished() ? Deployment::nextQueuedId($deployment->service_instance_id) : null;
         });
+
+        // A finished deployment: a live one in probation is watched (reports
+        // and the sweep call this), a failed one may adopt its app's port.
+        if ($teamId === null) {
+            $this->probation->handle($deploymentId);
+        }
+
+        if ($portMismatch) {
+            $this->adoptPort->handle($deploymentId);
+        }
 
         // Placements it created may need mesh ports; allocated after commit,
         // outside the deployment's transaction (the allocation lock is global).
@@ -235,6 +281,12 @@ final readonly class AdvanceDeployment
         $reference = $source instanceof ImageSource ? ImageReference::tryParse($source->reference) : null;
 
         if ($deployment->image !== null || ! $reference instanceof ImageReference) {
+            return new PrefetchedInputs;
+        }
+
+        // A private image is copied into the team's mirror path (D91); the
+        // public registry lookup would only fail on it.
+        if (RegistryCredential::forImage($deployment->team_id, $reference) instanceof RegistryCredential) {
             return new PrefetchedInputs;
         }
 
@@ -401,19 +453,38 @@ final readonly class AdvanceDeployment
                 return $this->fail($deployment, DeploymentFailureClass::ConfigError, 'The service has no image to deploy.');
             }
 
-            if ($prefetched->imageError !== null) {
-                return $this->fail($deployment, DeploymentFailureClass::ConfigError, $prefetched->imageError);
-            }
+            // A private image (the team has sign-in details for its host) is
+            // copied into the team's mirror path first (D91). While the copy
+            // runs the deployment waits: the sweep advances it every minute.
+            $private = $this->privateImages->handle($deployment->team_id, $reference);
 
-            try {
-                // Resolved before the lock; resolving here is only the fallback.
-                $pinned = $prefetched->image ?? $this->digests->resolve($reference);
-            } catch (ImageResolutionFailed $e) {
-                return $this->fail($deployment, DeploymentFailureClass::ConfigError, $e->getMessage());
-            }
+            if ($private instanceof PrivateImageResult) {
+                if ($private->isPending()) {
+                    return false;
+                }
 
-            $deployment->forceFill(['image' => $pinned->mirrored(RegistryLayout::mirrorPrefix())])->save();
+                if ($private->isFailed()) {
+                    return $this->fail($deployment, DeploymentFailureClass::ConfigError, (string) $private->message);
+                }
+
+                $deployment->forceFill(['image' => $private->image])->save();
+            } else {
+                if ($prefetched->imageError !== null) {
+                    return $this->fail($deployment, DeploymentFailureClass::ConfigError, $prefetched->imageError);
+                }
+
+                try {
+                    // Resolved before the lock; resolving here is only the fallback.
+                    $pinned = $prefetched->image ?? $this->digests->resolve($reference);
+                } catch (ImageResolutionFailed $e) {
+                    return $this->fail($deployment, DeploymentFailureClass::ConfigError, $e->getMessage());
+                }
+
+                $deployment->forceFill(['image' => $pinned->mirrored(RegistryLayout::mirrorPrefix())])->save();
+            }
         }
+
+        $this->carryImageFacts($deployment);
 
         return $this->releaseOrRollOut($deployment, $spec);
     }
@@ -455,6 +526,14 @@ final readonly class AdvanceDeployment
                 Log::warning('A declared secret could not be generated.', ['deployment' => $deployment->public_id, 'reason' => $e->getMessage()]);
             }
 
+            // A secret the app can't start without that nobody set
+            // (RAILS_MASTER_KEY): fail with the ask instead of a crash loop.
+            $missing = $this->requiredSecrets->handle($deployment);
+
+            if ($missing !== null) {
+                return $this->fail($deployment, DeploymentFailureClass::ConfigError, $missing);
+            }
+
             return $this->releaseOrRollOut($deployment, $spec);
         }
 
@@ -490,8 +569,8 @@ final readonly class AdvanceDeployment
             return $this->waitForRollOut($deployment, $spec);
         }
 
-        if ($spec->kind->isStateful()) {
-            $stopped = $this->previousStopped($deployment);
+        if ($deployment->serviceInstance->stopsBeforeStart($spec)) {
+            $stopped = $this->previousStopped($deployment, $spec);
 
             if ($stopped !== true) {
                 // null: the deployment failed (status changed); false: still waiting.
@@ -532,12 +611,13 @@ final readonly class AdvanceDeployment
 
         if ($broken !== null) {
             $message = str_starts_with((string) $broken->message, 'pull failed') ? (string) $broken->message : $status->stopped($broken);
-            $this->finishStep($deployment, DeploymentStepName::Rollout, DeploymentStepStatus::Failed, ['message' => $message]);
+            $fatal = $this->fatalStartFailure($broken);
+            $this->finishStep($deployment, DeploymentStepName::Rollout, DeploymentStepStatus::Failed, [...$status->failureMeta($broken), 'message' => $message]);
 
-            return $this->fail($deployment, str_starts_with($message, 'pull failed') ? DeploymentFailureClass::Transient : DeploymentFailureClass::RuntimeError, $message);
+            return $this->fail($deployment, str_starts_with($message, 'pull failed') && ! $fatal instanceof WorkloadFailureCode ? DeploymentFailureClass::Transient : DeploymentFailureClass::RuntimeError, $message);
         }
 
-        if ($this->failFast($deployment, $placements, $status, DeploymentStepName::Rollout)) {
+        if ($this->failFast($deployment, $spec, $placements, $status, DeploymentStepName::Rollout)) {
             return true;
         }
 
@@ -595,22 +675,57 @@ final readonly class AdvanceDeployment
      * clearly misconfigured (a crash loop, a port mismatch, D68): waiting
      * for the deadline would change nothing.
      *
+     * A port mismatch with exactly one other port the app listens on, while
+     * the service has no port of its own, records that port in the step
+     * (`adoptPort`): AdoptDetectedPort sets it and deploys again (OD14).
+     *
      * @param  Collection<int, Placement>  $placements
      */
-    private function failFast(Deployment $deployment, Collection $placements, RolloutStatus $status, DeploymentStepName $step): bool
+    private function failFast(Deployment $deployment, ServiceSpec $spec, Collection $placements, RolloutStatus $status, DeploymentStepName $step): bool
     {
         foreach ($placements as $placement) {
+            // A start command that can't run (exit 127 from the container's
+            // init, a wrong platform, an unknown user) only restarts in a loop.
+            $fatal = $this->fatalStartFailure($placement);
+
+            if ($fatal instanceof WorkloadFailureCode) {
+                $message = $status->stopped($placement);
+                $this->finishStep($deployment, $step, DeploymentStepStatus::Failed, [
+                    'message' => $message,
+                    ...$status->failureMeta($placement),
+                ]);
+
+                return $this->fail($deployment, DeploymentFailureClass::RuntimeError, $message);
+            }
+
             $failure = $status->issue($placement);
 
             if ($failure !== null) {
                 [$class, $message] = $failure;
-                $this->finishStep($deployment, $step, DeploymentStepStatus::Failed, ['message' => $message, ...$status->failureMeta($placement)]);
+                $adopt = $class === DeploymentFailureClass::PortMismatch ? DetectedPort::adoptable($spec, $placement) : null;
+                $this->finishStep($deployment, $step, DeploymentStepStatus::Failed, [
+                    'message' => $message,
+                    ...$status->failureMeta($placement),
+                    ...($adopt === null ? [] : ['adoptPort' => $adopt]),
+                ]);
 
                 return $this->fail($deployment, $class, $message);
             }
         }
 
         return false;
+    }
+
+    /**
+     * The placement's typed start failure when waiting can't fix it
+     * (`last_exit.failure`, from launchroomd's create_failed and exited
+     * events and WorkloadStatus.failure).
+     */
+    private function fatalStartFailure(Placement $placement): ?WorkloadFailureCode
+    {
+        $code = $placement->last_exit?->failure;
+
+        return $code instanceof WorkloadFailureCode && in_array($code, self::FATAL_START_FAILURES, true) ? $code : null;
     }
 
     private function completeRollOut(Deployment $deployment): bool
@@ -625,11 +740,11 @@ final readonly class AdvanceDeployment
     /**
      * A rolling update replaces serving replicas of a stateless service one
      * at a time; single replicas, first deploys, staged deployments and
-     * stateful services start all their replicas at once.
+     * services that stop before they start run all their replicas at once.
      */
     private function startsRolling(Deployment $deployment, ServiceSpec $spec): bool
     {
-        return ! $spec->kind->isStateful()
+        return ! $deployment->serviceInstance->stopsBeforeStart($spec)
             && ! $deployment->hold_traffic
             && $spec->scaling->replicas > 1
             && Placement::query()
@@ -702,12 +817,13 @@ final readonly class AdvanceDeployment
     }
 
     /**
-     * Stop-then-start for stateful services (docs/04 §8): the previous
+     * Stop-then-start for services with data (docs/04 §8): the previous
      * workloads drain immediately; the new one starts only once the daemon
      * reported them stopped. Returns true once nothing runs anymore, false
-     * while waiting, null when it gave up (the deployment failed).
+     * while waiting, null when it gave up (the deployment failed). The wait
+     * is at least the service's stop timeout plus a minute.
      */
-    private function previousStopped(Deployment $deployment): ?bool
+    private function previousStopped(Deployment $deployment, ServiceSpec $spec): ?bool
     {
         $previous = Placement::query()
             ->where('service_instance_id', $deployment->service_instance_id)
@@ -735,8 +851,10 @@ final readonly class AdvanceDeployment
 
         $since = $this->stepMeta($deployment, DeploymentStepName::Rollout)['stoppingSince'] ?? null;
 
-        if (is_string($since) && CarbonImmutable::parse($since)->addSeconds(config()->integer('launchroom.deployments.stop_timeout_seconds'))->isPast()) {
-            $this->fail($deployment, DeploymentFailureClass::RuntimeError, 'The previous version did not stop in time, so the new one was not started (a database must never run twice on the same data).');
+        $wait = max(config()->integer('launchroom.deployments.stop_timeout_seconds'), $spec->deploy->stopTimeout($spec->kind) + 60);
+
+        if (is_string($since) && CarbonImmutable::parse($since)->addSeconds($wait)->isPast()) {
+            $this->fail($deployment, DeploymentFailureClass::RuntimeError, 'The previous version did not stop in time, so the new one was not started: two copies must never run on the same data.');
 
             return null;
         }
@@ -768,13 +886,15 @@ final readonly class AdvanceDeployment
 
         if ($broken !== null) {
             $message = str_starts_with((string) $broken->message, 'pull failed') ? (string) $broken->message : $status->stopped($broken);
-            $this->finishStep($deployment, DeploymentStepName::Health, DeploymentStepStatus::Failed, ['message' => $message]);
+            $fatal = $this->fatalStartFailure($broken);
+            $this->finishStep($deployment, DeploymentStepName::Health, DeploymentStepStatus::Failed, [...$status->failureMeta($broken), 'message' => $message]);
 
-            // The daemon reports registry trouble as "pull failed: …" (docs/04 §6: transient).
-            return $this->fail($deployment, str_starts_with($message, 'pull failed') ? DeploymentFailureClass::Transient : DeploymentFailureClass::RuntimeError, $message);
+            // The daemon reports registry trouble as "pull failed: …" (docs/04 §6:
+            // transient), unless it typed it as one a retry can't fix.
+            return $this->fail($deployment, str_starts_with($message, 'pull failed') && ! $fatal instanceof WorkloadFailureCode ? DeploymentFailureClass::Transient : DeploymentFailureClass::RuntimeError, $message);
         }
 
-        if ($this->failFast($deployment, $placements, $status, DeploymentStepName::Health)) {
+        if ($this->failFast($deployment, $spec, $placements, $status, DeploymentStepName::Health)) {
             return true;
         }
 
@@ -915,6 +1035,10 @@ final readonly class AdvanceDeployment
 
         $previousId = $meta['previous'] ?? null;
 
+        if (is_int($previousId) && ProbationScope::watches($deployment, $spec)) {
+            $deployment->forceFill(['probation_until' => now()->addSeconds(config()->integer('launchroom.deployments.probation_seconds'))])->save();
+        }
+
         if ($previousId === null && $spec->deploy->seedCommand !== null) {
             // First deploy of this instance: seed it once.
             $this->releases->seed($deployment, $spec->deploy->seedCommand);
@@ -1010,10 +1134,13 @@ final readonly class AdvanceDeployment
         }
 
         $instance = $deployment->serviceInstance;
+        // The predecessor this rollout stopped first (previousStopped).
+        $stopping = $this->stepMeta($deployment, DeploymentStepName::Rollout)['stopping'] ?? [];
 
-        if ($instance->service->kind->isStateful() && $instance->stopped_at === null && $instance->active_deployment_id !== null && $instance->active_deployment_id !== $deployment->id) {
+        if (is_array($stopping) && $stopping !== [] && $instance->stopped_at === null && $instance->active_deployment_id !== null && $instance->active_deployment_id !== $deployment->id) {
             $stopped = Placement::query()
                 ->where('deployment_id', $instance->active_deployment_id)
+                ->whereIn('workload_id', array_values(array_filter($stopping, is_string(...))))
                 ->where('role', WorkloadRole::Draining->value)
                 ->get();
 
@@ -1026,6 +1153,29 @@ final readonly class AdvanceDeployment
         $this->render($this->ids($servers));
 
         return true;
+    }
+
+    /**
+     * An image launchroom didn't build keeps what a server reported about
+     * it (its user, for capabilities and volume owners): a new deployment
+     * of the same image starts with the facts of the last one.
+     */
+    private function carryImageFacts(Deployment $deployment): void
+    {
+        if ($deployment->image_facts !== null || $deployment->image === null || $deployment->plan?->summary !== null) {
+            return;
+        }
+
+        $known = Deployment::query()
+            ->where('service_instance_id', $deployment->service_instance_id)
+            ->where('image', $deployment->image)
+            ->whereNotNull('image_facts')
+            ->latest('id')
+            ->first(['id', 'image_facts']);
+
+        if ($known instanceof Deployment) {
+            $deployment->forceFill(['image_facts' => $known->image_facts])->save();
+        }
     }
 
     private function spec(Deployment $deployment): ?ServiceSpec

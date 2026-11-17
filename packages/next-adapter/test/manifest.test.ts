@@ -42,6 +42,13 @@ describe('buildManifest', () => {
     assert.equal(m.middleware.present, false);
   });
 
+  it('reports basePath and trailingSlash', () => {
+    assert.equal(buildManifest(buildCtx('/app')).basePath, '');
+    const m = buildManifest(buildCtx('/app', { config: { output: 'standalone', basePath: '/docs', trailingSlash: true } }));
+    assert.equal(m.basePath, '/docs');
+    assert.equal(m.trailingSlash, true);
+  });
+
   it('has no standalone paths without standalone output', () => {
     const m = buildManifest(buildCtx('/app', { config: {} }));
     assert.equal(m.standalone, null);

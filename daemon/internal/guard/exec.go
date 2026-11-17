@@ -34,6 +34,26 @@ const (
 	kindUpdater
 	// kindCompose: launchroomd's or the guard's own compose container (inspect only).
 	kindCompose
+	// kindControlPlane: a container of the control plane's compose project
+	// (D49 addendum, OD6): inspect for all of them, restart only for the
+	// services the watchdog may restart (never the databases). No exec,
+	// logs, archive, create, stop or remove.
+	kindControlPlane
+)
+
+// Control-plane compose project and its services (deploy/control-plane/compose.yml).
+const (
+	controlPlaneProject = "launchroom"
+	labelComposeProject = "com.docker.compose.project"
+	labelComposeService = "com.docker.compose.service"
+	roleControlPlane    = "control-plane"
+)
+
+var (
+	// controlPlaneServices may be inspected by launchroomd.
+	controlPlaneServices = []string{"dashboard", "horizon", "reverb", "scheduler", "zot", "postgres", "valkey"}
+	// restartableControlPlaneServices may also be restarted (state.RestartableControlPlaneServices).
+	restartableControlPlaneServices = []string{"dashboard", "horizon", "reverb", "scheduler", "zot"}
 )
 
 func (c *ctr) kind() kind {
@@ -45,10 +65,18 @@ func (c *ctr) kind() kind {
 		return kindServer
 	case l[names.LabelRole] == names.RoleUpdater && state.TaskID(l[names.LabelUpdateTask]).Validate() == nil:
 		return kindUpdater
-	case slices.Contains([]string{"launchroomd", "dockerd-guard"}, l["com.docker.compose.service"]):
+	case slices.Contains([]string{"launchroomd", "dockerd-guard"}, l[labelComposeService]):
 		return kindCompose
+	case l[names.LabelRole] == roleControlPlane && l[labelComposeProject] == controlPlaneProject &&
+		slices.Contains(controlPlaneServices, l[labelComposeService]):
+		return kindControlPlane
 	}
 	return kindForeign
+}
+
+// restartable reports whether the watchdog may restart this container.
+func (c *ctr) restartable() bool {
+	return c.kind() == kindControlPlane && slices.Contains(restartableControlPlaneServices, c.Labels[labelComposeService])
 }
 
 // execTable remembers the execs created through the guard: start, resize

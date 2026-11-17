@@ -21,7 +21,9 @@ const (
 	ConnectionsPerMinute = 20
 	failureDelay         = time.Second
 	handshakeTimeout     = 20 * time.Second
-	maxConnections       = 32
+	// exitCodeWait bounds waiting for a closed shell's exit code.
+	exitCodeWait   = 3 * time.Second
+	maxConnections = 32
 )
 
 // endpoint is the shared state of one running access: allow-list,

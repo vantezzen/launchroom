@@ -518,10 +518,42 @@ return [
     'deployments' => [
         // Waiting for edge servers to load new routes before going active.
         'routing_timeout_seconds' => 120,
-        // Waiting for a stateful service's old container to stop.
+        // Waiting for the old container of a service with data to stop
+        // (at least the service's stop timeout plus a minute).
         'stop_timeout_seconds' => 120,
         // Release and seed commands (run_once tasks, docs/04 §13).
         'release_timeout_seconds' => (int) env('LAUNCHROOM_RELEASE_TIMEOUT', 900),
+        // Probation after a production deployment of a new version went live
+        // (docs/04 §8, OD1): a crash loop, or every replica down for
+        // `probation_down_seconds`, rolls back once; at most once per service
+        // and `auto_rollback_cooldown_seconds`.
+        'probation_seconds' => (int) env('LAUNCHROOM_PROBATION_SECONDS', 600),
+        'probation_down_seconds' => 120,
+        'auto_rollback_cooldown_seconds' => 3600,
+    ],
+
+    /*
+    |--------------------------------------------------------------------------
+    | Daemon tasks waiting for an offline server (docs/03 §7)
+    |--------------------------------------------------------------------------
+    |
+    | A pending task pinned to a server that isn't online is cancelled with
+    | the reason once it waited this long (seconds); the next schedule takes
+    | over. `default` for every type not listed.
+    |
+    */
+
+    'tasks' => [
+        'pending_max_age_seconds' => [
+            'default' => 6 * 3600,
+            'run_once' => 1800,
+            'session' => 900,
+            'access' => 900,
+            'logs' => 900,
+            'inspect_container' => 900,
+            'cleanup' => 1800,
+            'cert_retry' => 1800,
+        ],
     ],
 
     /*

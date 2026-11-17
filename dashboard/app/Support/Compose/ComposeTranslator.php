@@ -87,13 +87,21 @@ final class ComposeTranslator
         'use_api_socket' => 'use_api_socket is refused: services never reach the Docker API.',
     ];
 
+    /**
+     * Ports that usually speak HTTP: a private image service on another port
+     * without a Compose health check gets a TCP check (MQTT, SMTP, gRPC,
+     * FastCGI, game servers), which an HTTP probe would fail.
+     */
+    private const array HTTP_PORTS = [80, 3000, 4000, 5000, 8000, 8008, 8080, 8081, 8088, 8888];
+
+    /** The longest stop timeout launchroom accepts (Limits::STOP_TIMEOUT_SECONDS). */
+    private const int MAX_STOP_SECONDS = 300;
+
     /** Service keys that are ignored, with what launchroom does instead. */
     private const array IGNORED = [
         'restart' => 'launchroom always restarts services.',
         'labels' => 'Labels are ignored: launchroom routes with its own domains.',
         'logging' => 'launchroom keeps and rotates logs itself.',
-        'stop_signal' => 'stop_signal is ignored: launchroom stops with SIGTERM.',
-        'stop_grace_period' => 'stop_grace_period is ignored: launchroom drains traffic before stopping.',
         'tty' => 'tty is ignored.',
         'stdin_open' => 'stdin_open is ignored.',
         'init' => 'launchroom always runs an init process.',
@@ -817,6 +825,12 @@ final class ComposeTranslator
                 case 'cap_add':
                     $this->capabilities($draft);
                     break;
+                case 'stop_grace_period':
+                    $this->stopGrace($draft, $value, $path, $line);
+                    break;
+                case 'stop_signal':
+                    $this->stopSignal($draft, $value, $path, $line);
+                    break;
                 case 'network_mode':
                     $this->networkMode($draft, $value, $path, $line);
                     break;
@@ -1228,6 +1242,9 @@ final class ComposeTranslator
                 $draft->healthcheck = HealthcheckSettings::none();
             } elseif ($draft->databaseImage instanceof DatabaseEngine) {
                 $draft->healthcheck = HealthcheckSettings::tcp(startPeriodSeconds: 60);
+            } elseif ($draft->kind === ServiceKind::Image && ! $draft->public && ! in_array($draft->port, self::HTTP_PORTS, true)) {
+                $draft->healthcheck = HealthcheckSettings::tcp();
+                $draft->note(Note::Translated, "Health check: launchroom checks that port {$draft->port} accepts connections. Switch to an HTTP check in its settings if it serves web pages.", $base, null);
             }
 
             return;
@@ -1999,6 +2016,48 @@ final class ComposeTranslator
         foreach ($draft->connectStyles as $to => $style) {
             $draft->connections[$to] ??= $style;
         }
+    }
+
+    /**
+     * `stop_grace_period`: how long a stop waits before the kill, up to
+     * 5 minutes (docs/04 §8).
+     */
+    private function stopGrace(ServiceDraft $draft, mixed $value, string $path, ?int $line): void
+    {
+        $seconds = ComposeUnits::seconds($value);
+
+        if ($seconds === null || $seconds < 1) {
+            $draft->note(Note::Ignored, 'stop_grace_period can’t be read: launchroom uses its default stop timeout.', $path, $line);
+
+            return;
+        }
+
+        $draft->stopTimeoutSeconds = min($seconds, self::MAX_STOP_SECONDS);
+        $draft->note(Note::Translated, $seconds > self::MAX_STOP_SECONDS
+            ? 'Stops wait 5 minutes, the longest launchroom allows, before the process is killed.'
+            : "Stops wait {$seconds}s for the process to finish before it is killed.", $path, $line);
+    }
+
+    /**
+     * `stop_signal`: SIGTERM or SIGINT, the signals launchroomd stops with.
+     */
+    private function stopSignal(ServiceDraft $draft, mixed $value, string $path, ?int $line): void
+    {
+        $name = is_scalar($value) ? strtoupper(trim((string) $value)) : '';
+        $signal = match ($name) {
+            'SIGTERM', 'TERM', '15' => 'SIGTERM',
+            'SIGINT', 'INT', '2' => 'SIGINT',
+            default => null,
+        };
+
+        if ($signal === null) {
+            $draft->note(Note::Ignored, "stop_signal {$name} is ignored: launchroom stops with SIGTERM or SIGINT.", $path, $line);
+
+            return;
+        }
+
+        $draft->stopSignal = $signal === 'SIGTERM' ? null : $signal;
+        $draft->note(Note::Translated, "Stops send {$signal}.", $path, $line);
     }
 
     private function capabilities(ServiceDraft $draft): void

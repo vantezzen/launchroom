@@ -33,8 +33,11 @@ enum ServiceKind: string
     }
 
     /**
-     * Stateful services keep data in a volume: never overlapped, never moved
-     * automatically (docs/04 §8, docs/02 §6).
+     * Databases keep data in their engine's volume: never overlapped, never
+     * moved automatically (docs/04 §8, docs/02 §6). Other services with a
+     * volume stop before they start too, unless they allow two copies
+     * (ServiceInstance::stopsBeforeStart), and are pinned to their volume's
+     * server (ServiceInstance::isStateful).
      */
     public function isStateful(): bool
     {

@@ -2,6 +2,7 @@ package caddy
 
 import (
 	"encoding/json"
+	"regexp"
 	"slices"
 	"strings"
 	"time"
@@ -17,6 +18,9 @@ type certEvent struct {
 	lastErr   string
 	lastErrAt time.Time
 	lastOKAt  time.Time
+	// kind classifies lastErr; retryAfter is the CA's rate-limit end.
+	kind       state.CertFailureKind
+	retryAfter *time.Time
 }
 
 // caddyLogLine is the subset of Caddy's JSON log lines (certmagic, loggers
@@ -31,6 +35,14 @@ type caddyLogLine struct {
 // parseCertLog reads one Caddy log line: ok=true for a success, ok=false
 // with errMsg for a failure; matched=false for everything else.
 func parseCertLog(line string) (identifier string, ok bool, errMsg string, matched bool) {
+	id, ok, raw, matched := parseCertLogRaw(line)
+	if matched && !ok {
+		return id, false, cleanError(raw), true
+	}
+	return id, ok, "", matched
+}
+
+func parseCertLogRaw(line string) (identifier string, ok bool, rawErr string, matched bool) {
 	line = strings.TrimSpace(line)
 	if !strings.HasPrefix(line, "{") || !strings.Contains(line, `"identifier"`) {
 		return "", false, "", false
@@ -44,9 +56,47 @@ func parseCertLog(line string) (identifier string, ok bool, errMsg string, match
 	case "certificate obtained successfully", "certificate renewed successfully":
 		return id, true, "", true
 	case "could not get certificate from issuer":
-		return id, false, cleanError(l.Error), true
+		return id, false, l.Error, true
 	}
 	return "", false, "", false
+}
+
+// reRetryAfter is the end of an ACME rate limit as Let's Encrypt words it
+// ("…, retry after 2026-11-17 14:05:00 UTC: see …").
+var reRetryAfter = regexp.MustCompile(`(?i)retry after ([0-9]{4}-[0-9]{2}-[0-9]{2}[ T][0-9]{2}:[0-9]{2}:[0-9]{2}) ?(?:UTC|Z)`)
+
+// ClassifyCertError says why a certificate could not be obtained, from the
+// ACME problem type in Caddy's error (RFC 8555 §6.7) and its wording;
+// retryAfter is set for a rate limit that names its end.
+func ClassifyCertError(msg string) (kind state.CertFailureKind, retryAfter *time.Time) {
+	m := strings.ToLower(msg)
+	has := func(subs ...string) bool {
+		for _, s := range subs {
+			if strings.Contains(m, s) {
+				return true
+			}
+		}
+		return false
+	}
+	switch {
+	case has("acme:error:ratelimited", "too many certificates", "too many failed authorizations", "rate limit"):
+		if g := reRetryAfter.FindStringSubmatch(msg); g != nil {
+			if t, err := time.Parse("2006-01-02 15:04:05", strings.Replace(g[1], "T", " ", 1)); err == nil {
+				return state.CertRateLimited, &t
+			}
+		}
+		return state.CertRateLimited, nil
+	case has("acme:error:caa", "caa record"):
+		return state.CertCAA, nil
+	case has("presenting for challenge", "adding temporary record", "solving challenges: dns", "dns provider", "cleaning up solver"):
+		return state.CertDNSProvider, nil
+	case has("timeout during connect", "timeout after connect", "i/o timeout", "context deadline exceeded", "timed out"):
+		return state.CertTimeout, nil
+	case has("acme:error:unauthorized", "acme:error:connection", "acme:error:dns", "acme:error:incorrectresponse",
+		"invalid response from", "no valid ip addresses found", "nxdomain", "during secondary validation"):
+		return state.CertDNSMismatch, nil
+	}
+	return state.CertOtherError, nil
 }
 
 // cleanError keeps an error printable and short (it is reported to the dashboard).
@@ -116,6 +166,11 @@ func CertificateStatuses(routes []Route, t TLS, ix *certstore.Index, events map[
 		if ev.lastErr != "" && ev.lastErrAt.After(ev.lastOKAt) && !stale {
 			at := ev.lastErrAt.UTC()
 			st.LastError, st.LastErrorAt = ev.lastErr, &at
+			st.FailureKind = ev.kind
+			if ev.retryAfter != nil && ev.retryAfter.After(now) {
+				ra := ev.retryAfter.UTC()
+				st.RetryAfter = &ra
+			}
 			if c == nil {
 				st.State = state.CertFailed
 			}

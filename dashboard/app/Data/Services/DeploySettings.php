@@ -8,9 +8,11 @@ use App\Data\Attributes\ChangeAffects;
 use App\Data\Attributes\Promotion;
 use App\Enums\ChangeEffect;
 use App\Enums\PromotionClass;
+use App\Enums\ServiceKind;
 use App\Enums\WorkloadCapability;
 use App\Support\Services\ConfigFileRules;
 use Spatie\LaravelData\Attributes\DataCollectionOf;
+use Spatie\LaravelData\Attributes\Validation\In;
 use Spatie\LaravelData\Attributes\Validation\Max;
 use Spatie\LaravelData\Attributes\Validation\Min;
 use Spatie\LaravelData\Data;
@@ -59,9 +61,41 @@ final class DeploySettings extends Data
         /** How long a new container may take to become healthy (D68); null: derived from the health check. */
         #[ChangeAffects(ChangeEffect::None), Promotion(PromotionClass::Structural), Min(30), Max(3600)]
         public ?int $healthTimeoutSeconds = null,
+        /** How long the process may take to finish its work after the stop signal before it is killed (docs/04 §8); null: stopTimeout(). */
+        #[ChangeAffects(ChangeEffect::Restart), Promotion(PromotionClass::Structural), Min(1), Max(300)]
+        public ?int $stopTimeoutSeconds = null,
+        /** The signal a stop sends first (SIGTERM or SIGINT); null: SIGTERM. */
+        #[ChangeAffects(ChangeEffect::Restart), Promotion(PromotionClass::Structural), In(self::STOP_SIGNALS)]
+        public ?string $stopSignal = null,
+        /**
+         * The app handles two copies on its volume: a deploy starts the new
+         * version next to the old one as for services without volumes. Off:
+         * the old version stops first, with a short downtime (docs/04 §8).
+         */
+        #[ChangeAffects(ChangeEffect::None), Promotion(PromotionClass::Structural)]
+        public bool $overlapOnVolumes = false,
     ) {}
 
     public const int ROLLOUT_TIMEOUT_DEFAULT = 600;
+
+    /** The signals launchroomd stops a workload with (protocol StopSignal). */
+    public const array STOP_SIGNALS = ['SIGTERM', 'SIGINT'];
+
+    /** launchroomd's own grace period: a web service without a setting renders no stop spec. */
+    public const int STOP_TIMEOUT_WEB = 10;
+
+    /** Workers and crons finish a job before they exit (POLY12, PHP-13). */
+    public const int STOP_TIMEOUT_PROCESS = 30;
+
+    /**
+     * How long a stop waits: the explicit setting, else the build's hint
+     * for the process ($hint, a Laravel queue worker gets 60 s), else 30 s
+     * for workers and crons and 10 s for web services.
+     */
+    public function stopTimeout(ServiceKind $kind, ?int $hint = null): int
+    {
+        return $this->stopTimeoutSeconds ?? $hint ?? ($kind->isWeb() ? self::STOP_TIMEOUT_WEB : self::STOP_TIMEOUT_PROCESS);
+    }
 
     public function rolloutTimeout(): int
     {

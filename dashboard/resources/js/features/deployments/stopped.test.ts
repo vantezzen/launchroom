@@ -37,6 +37,8 @@ function summary(overrides: Partial<Summary> = {}): Summary {
         canRollback: false,
         commitAuthorAvatarUrl: null,
         stopped: null,
+        rollbackReason: null,
+        probationUntil: null,
         ...overrides,
     };
 }

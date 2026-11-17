@@ -29,6 +29,10 @@ final class HostStatus extends Data
      * @param  array<string, mixed>|null|Optional  $runtime  how Docker runs and what launchroomd can do there (D49), normalized by App\Data\Servers\ServerRuntimeData
      * @param  array<string, mixed>|null|Optional  $registry  whether the server reaches the image registry (D68)
      * @param  array<string, mixed>|null|Optional  $publicAddresses  the server's public IPv4/IPv6 as IP echo services see them (docs/05 §5), stored by RecordReport
+     * @param  array<string, mixed>|null|Optional  $docker  {reachable, checkedAt, error?}
+     * @param  array<string, mixed>|null|Optional  $reconcile  {lastPassAt, lastCompleteAt?, errors?: list<{code, target?, message?}>}; unknown codes are kept as text
+     * @param  array<string, mixed>|null|Optional  $daemon  {startedAt, hostBootedAt?, previousExit?: {unclean, at?, panic?}}
+     * @param  array<string, mixed>|null|Optional  $lastRefusal  {at, status, clockSkewMs?, message?}
      */
     public function __construct(
         #[Min(1), Max(4096)]
@@ -53,6 +57,14 @@ final class HostStatus extends Data
         public array|null|Optional $publicAddresses = new Optional,
         /** Whether the server reaches the image registry it pulls from (D68), stored by RecordReport. */
         public array|null|Optional $registry = new Optional,
+        /** Whether launchroomd reaches Docker (through dockerd-guard). */
+        public array|null|Optional $docker = new Optional,
+        /** How launchroomd's last reconcile passes went. */
+        public array|null|Optional $reconcile = new Optional,
+        /** When launchroomd and the host started, and how launchroomd's previous run ended. */
+        public array|null|Optional $daemon = new Optional,
+        /** The dashboard's last refusal of a signed request from this server. */
+        public array|null|Optional $lastRefusal = new Optional,
     ) {}
 
     /** `ControlPlaneBaseURL` (protocol/schema/v1/report.json). */
@@ -75,9 +87,13 @@ final class HostStatus extends Data
             'health.dataDisk' => ['nullable', 'array'],
             'health.dataDisk.totalMb' => $size,
             'health.dataDisk.freeMb' => $size,
+            'health.dataDisk.inodesTotal' => $size,
+            'health.dataDisk.inodesFree' => $size,
             'health.dockerDisk' => ['nullable', 'array'],
             'health.dockerDisk.totalMb' => $size,
             'health.dockerDisk.freeMb' => $size,
+            'health.dockerDisk.inodesTotal' => $size,
+            'health.dockerDisk.inodesFree' => $size,
             'health.memory' => ['nullable', 'array'],
             'health.memory.totalMb' => $size,
             'health.memory.availableMb' => $size,
@@ -100,11 +116,20 @@ final class HostStatus extends Data
             'health.clockSkewMs' => ['nullable', 'integer'],
             'health.cleanup' => ['nullable', 'array'],
             'health.cleanup.at' => ['required_with:health.cleanup', ...$time],
-            'health.cleanup.trigger' => ['required_with:health.cleanup', 'in:schedule,disk_pressure'],
+            'health.cleanup.trigger' => ['required_with:health.cleanup', 'in:schedule,disk_pressure,manual'],
             'health.cleanup.removedImages' => $size,
             'health.cleanup.removedContainers' => $size,
             'health.cleanup.reclaimedMb' => $size,
             'health.cleanup.error' => ['sometimes', 'string', 'max:1024'],
+            // What takes the disk (measured every 30 minutes).
+            'health.disk' => ['sometimes', 'nullable', 'array', 'required_array_keys:measuredAt'],
+            'health.disk.measuredAt' => ['sometimes', ...$time],
+            'health.disk.volumes' => ['sometimes', 'nullable', 'array', 'max:1024'],
+            'health.disk.volumes.*.id' => ['required', 'string', 'regex:'.PublicId::regex('vol')],
+            'health.disk.volumes.*.sizeMb' => ['required', 'integer', 'min:0'],
+            'health.disk.volumes.*.retired' => ['sometimes', 'boolean'],
+            'health.disk.walBacklogMb' => ['sometimes', 'nullable', 'integer', 'min:0'],
+            'health.disk.registryMb' => ['sometimes', 'nullable', 'integer', 'min:0'],
             'mesh' => ['nullable', 'array'],
             'mesh.state' => ['required_with:mesh', 'in:starting,needs_login,connected,error'],
             'mesh.ipv4' => ['sometimes', 'ipv4'],
@@ -128,8 +153,9 @@ final class HostStatus extends Data
             'features' => ['sometimes', 'nullable', 'array', 'max:64'],
             'features.*' => ['string', 'regex:'.Grammar::DAEMON_FEATURE],
             // Which dashboard URL launchroomd uses (docs/05 §4.1), stored by RecordReport.
-            'controlPlane' => ['sometimes', 'nullable', 'array'],
-            'controlPlane.state' => ['required_with:controlPlane', 'in:configured,adopted,fallback,pending,refused'],
+            // required_array_keys, not required_with: nested rules see the report's root keys (Report.controlPlane).
+            'controlPlane' => ['sometimes', 'nullable', 'array', 'required_array_keys:state'],
+            'controlPlane.state' => ['sometimes', 'in:configured,adopted,fallback,pending,refused'],
             'controlPlane.configured' => ['sometimes', 'string', 'max:512', 'regex:'.self::BASE_URL_PATTERN],
             'controlPlane.active' => ['sometimes', 'string', 'max:512', 'regex:'.self::BASE_URL_PATTERN],
             'controlPlane.adopted' => ['sometimes', 'string', 'max:260', 'regex:'.self::ORIGIN_PATTERN],
@@ -160,6 +186,30 @@ final class HostStatus extends Data
             'publicAddresses.ipv4' => ['sometimes', 'string', 'ipv4'],
             'publicAddresses.ipv6' => ['sometimes', 'string', 'ipv6'],
             'publicAddresses.detectedAt' => ['required_with:publicAddresses', ...$time],
+            'docker' => ['sometimes', 'nullable', 'array', 'required_array_keys:reachable,checkedAt'],
+            'docker.reachable' => ['sometimes', 'boolean'],
+            'docker.checkedAt' => ['sometimes', ...$time],
+            'docker.error' => ['sometimes', 'string', 'max:512'],
+            'reconcile' => ['sometimes', 'nullable', 'array', 'required_array_keys:lastPassAt'],
+            'reconcile.lastPassAt' => ['sometimes', ...$time],
+            'reconcile.lastCompleteAt' => ['sometimes', 'nullable', ...$time],
+            'reconcile.errors' => ['sometimes', 'nullable', 'array', 'list', 'max:16'],
+            // Codes by grammar only: unknown ones (newer servers) read as "other".
+            'reconcile.errors.*.code' => ['required', 'string', 'regex:'.UnknownCodeAsNull::GRAMMAR],
+            'reconcile.errors.*.target' => ['sometimes', 'string', 'regex:'.Grammar::PUBLIC_ID],
+            'reconcile.errors.*.message' => ['sometimes', 'string', 'max:512'],
+            'daemon' => ['sometimes', 'nullable', 'array', 'required_array_keys:startedAt'],
+            'daemon.startedAt' => ['sometimes', ...$time],
+            'daemon.hostBootedAt' => ['sometimes', 'nullable', ...$time],
+            'daemon.previousExit' => ['sometimes', 'nullable', 'array', 'required_array_keys:unclean'],
+            'daemon.previousExit.unclean' => ['sometimes', 'boolean'],
+            'daemon.previousExit.at' => ['sometimes', 'nullable', ...$time],
+            'daemon.previousExit.panic' => ['sometimes', 'string', 'max:8192'],
+            'lastRefusal' => ['sometimes', 'nullable', 'array', 'required_array_keys:at,status'],
+            'lastRefusal.at' => ['sometimes', ...$time],
+            'lastRefusal.status' => ['sometimes', 'integer', 'min:400', 'max:599'],
+            'lastRefusal.clockSkewMs' => ['sometimes', 'nullable', 'integer'],
+            'lastRefusal.message' => ['sometimes', 'string', 'max:512'],
         ];
     }
 }

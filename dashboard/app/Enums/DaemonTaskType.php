@@ -36,4 +36,8 @@ enum DaemonTaskType: string
     case Inventory = 'inventory';
     /** Read a workload container's changes and processes for an investigation (docs/22 §7.2, docs/03 §13.2). */
     case InspectContainer = 'inspect_container';
+    /** Frees disk space now with the disk-pressure settings ("Free space now"; feature `cleanupTask`). */
+    case Cleanup = 'cleanup';
+    /** Retries certificates of some hosts on an edge now (feature `certificateRetry`). */
+    case CertRetry = 'cert_retry';
 }

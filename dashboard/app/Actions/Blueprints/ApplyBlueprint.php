@@ -205,6 +205,9 @@ final readonly class ApplyBlueprint
                 capabilities: $service->capabilities,
                 schedule: $deploy->schedule,
                 files: $service->files,
+                stopTimeoutSeconds: $service->stopTimeoutSeconds ?? $deploy->stopTimeoutSeconds,
+                stopSignal: $service->stopSignal ?? $deploy->stopSignal,
+                overlapOnVolumes: $deploy->overlapOnVolumes,
             ),
             scaling: $service->scaling instanceof BlueprintScaling && ! $service->scaling->isEmpty()
                 ? new ScalingSettings(

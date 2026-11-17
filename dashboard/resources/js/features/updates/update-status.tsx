@@ -556,6 +556,10 @@ export function UpdateAttention({
     const rolledBack = update.status === 'rolled_back';
     const backupFailed =
         update.status === 'failed' && update.backupStatus === 'failed';
+    // The update supervisor couldn't put the old version back (CPOPS).
+    const rollbackFailed =
+        update.status === 'failed' &&
+        (update.error ?? '').includes('ROLLBACK FAILED');
     const stillOnOld = currentVersion === update.fromVersion;
     const window =
         update.startedAt !== null && update.finishedAt !== null
@@ -588,29 +592,38 @@ export function UpdateAttention({
                     (a test backup shows the problem), then try again.
                 </>,
             ]
-          : [
-                'If the dashboard works as usual, you can try again.',
-                <>
-                    If something looks wrong, run{' '}
-                    <code className="type-mono">./launchroom status</code> in
-                    the launchroom folder on the main server
-                    {update.backupStatus === 'succeeded' ? (
-                        <>
-                            ; the backup taken at{' '}
-                            {time(update.backupFinishedAt)} can bring everything
-                            back (
-                            <Link
-                                href={backupSettings()}
-                                className="text-signal underline-offset-4 hover:underline"
-                            >
-                                Settings → Backups
-                            </Link>
-                            )
-                        </>
-                    ) : null}
-                    .
-                </>,
-            ];
+          : rollbackFailed
+            ? [
+                  <>
+                      The rollback didn’t finish. In the launchroom folder on
+                      the main server, run{' '}
+                      <code className="type-mono">./launchroom doctor</code> to
+                      finish it, then try the update again.
+                  </>,
+              ]
+            : [
+                  'If the dashboard works as usual, you can try again.',
+                  <>
+                      If something looks wrong, run{' '}
+                      <code className="type-mono">./launchroom status</code> in
+                      the launchroom folder on the main server
+                      {update.backupStatus === 'succeeded' ? (
+                          <>
+                              ; the backup taken at{' '}
+                              {time(update.backupFinishedAt)} can bring
+                              everything back (
+                              <Link
+                                  href={backupSettings()}
+                                  className="text-signal underline-offset-4 hover:underline"
+                              >
+                                  Settings → Backups
+                              </Link>
+                              )
+                          </>
+                      ) : null}
+                      .
+                  </>,
+              ];
 
     return (
         <section className="flex flex-col gap-4" aria-live="polite">

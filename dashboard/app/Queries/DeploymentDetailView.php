@@ -26,6 +26,7 @@ use App\Enums\DaemonTaskType;
 use App\Enums\DeploymentStatus;
 use App\Enums\DeploymentStepName;
 use App\Enums\DeploymentStepStatus;
+use App\Enums\FailureFixAction;
 use App\Enums\WorkloadPhase;
 use App\Models\DaemonTask;
 use App\Models\Deployment;
@@ -36,6 +37,7 @@ use App\Models\Server;
 use App\Models\Service;
 use App\Queries\ConfigAsCode\ConfigFileLinks;
 use App\Services\Crypto\ProjectKeyring;
+use App\Services\Deployments\DeploymentLogMasker;
 use App\Services\Deployments\ReleaseStep;
 use App\Services\Deployments\RolloutStatus;
 use App\Services\Git\GitProviders;
@@ -59,6 +61,7 @@ final readonly class DeploymentDetailView
         private DeploymentStats $stats,
         private GitProviders $providers,
         private ConfigFileLinks $configLinks,
+        private DeploymentLogMasker $masker,
     ) {}
 
     public function get(Deployment $deployment): DeploymentDetailData
@@ -195,23 +198,43 @@ final readonly class DeploymentDetailView
             ->where('deployment_id', $deployment->id)
             ->where('type', DaemonTaskType::Build->value)
             ->latest('id')
-            ->first(['id', 'result']);
-        $codes = array_map(static fn (BuildWarning $hint): string => $hint->code, $build?->result?->failure->hints ?? []);
+            ->first(['id', 'result', 'server_id']);
+        $hints = $build?->result?->failure->hints ?? [];
+        $codes = array_map(static fn (BuildWarning $hint): string => $hint->code, $hints);
 
-        $stepMessages = [];
+        // launchroomd's hint messages carry facts the log doesn't ("freed 3.1 GB").
+        $stepMessages = array_map(static fn (BuildWarning $hint): string => $hint->message, $hints);
         $listening = [];
         $hintPort = null;
+        // The failed replica's facts (RolloutStatus::failureMeta, A3a).
+        $facts = [];
+        $adopted = false;
 
         foreach ($steps as $step) {
-            if ($step->status === DeploymentStepStatus::Failed && is_string($step->meta['message'] ?? null)) {
+            if ($step->status !== DeploymentStepStatus::Failed) {
+                continue;
+            }
+
+            // launchroom already set the port it found (AdoptDetectedPort).
+            $adopted = $adopted || isset($step->meta['adoptedAt']);
+
+            if (is_string($step->meta['message'] ?? null)) {
                 $stepMessages[] = $step->meta['message'];
             }
 
-            if ($step->status === DeploymentStepStatus::Failed && is_string($step->meta['portHint'] ?? null)) {
+            if (is_string($step->meta['portHint'] ?? null)) {
                 $codes[] = $step->meta['portHint'];
                 $listening = array_values(array_filter((array) ($step->meta['listening'] ?? []), is_int(...)));
                 $hintPort = is_int($step->meta['port'] ?? null) ? $step->meta['port'] : null;
             }
+
+            foreach (['failureCode', 'probeHint'] as $key) {
+                if (is_string($step->meta[$key] ?? null)) {
+                    $codes[] = $step->meta[$key];
+                }
+            }
+
+            $facts = [...$facts, ...array_intersect_key($step->meta, array_flip(['exitCode', 'oomKilled', 'signal', 'byLaunchroom', 'server', 'probeBody']))];
         }
 
         if ($build !== null) {
@@ -221,16 +244,50 @@ final readonly class DeploymentDetailView
             $stepMessages[] = mb_substr($tail, -16000);
         }
 
-        return FailureCatalogue::explain(new FailureContext(
+        // Where it failed: the replica's server, else the build server (a full disk during the build).
+        $serverId = is_string($facts['server'] ?? null) ? $facts['server'] : null;
+        $server = $serverId !== null
+            ? Server::query()->where('team_id', $deployment->team_id)->where('public_id', $serverId)->first(['id', 'public_id', 'name'])
+            : ($build?->server_id !== null ? Server::query()->where('team_id', $deployment->team_id)->whereKey($build->server_id)->first(['id', 'public_id', 'name']) : null);
+
+        // The probe's answer is the app's output: masked like a log line.
+        $body = is_string($facts['probeBody'] ?? null) && $facts['probeBody'] !== '' ? $this->masker->mask($deployment->id, $facts['probeBody']) : null;
+
+        $explanation = FailureCatalogue::explain(new FailureContext(
             class: $deployment->failure_class,
             message: $deployment->failure_message,
-            hintCodes: $codes,
+            hintCodes: array_values(array_unique($codes)),
             logExcerpt: $stepMessages === [] ? null : implode("\n", $stepMessages),
             currentPort: $service?->deploy->port,
             healthStartPeriodSeconds: $service?->deploy->healthcheck->startPeriodSeconds,
             listening: $listening,
             hintPort: $hintPort,
+            exitCode: is_int($facts['exitCode'] ?? null) ? $facts['exitCode'] : null,
+            oomKilled: ($facts['oomKilled'] ?? false) === true,
+            signal: is_int($facts['signal'] ?? null) ? $facts['signal'] : null,
+            byLaunchroom: ($facts['byLaunchroom'] ?? false) === true,
+            server: $server?->name,
+            serverId: $server?->public_id,
+            imageUser: $deployment->imageFacts()?->user,
+            probeBody: $body,
         ));
+
+        if (! $explanation instanceof FailureExplanationData) {
+            return null;
+        }
+
+        $action = $adopted && $explanation->action === FailureFixAction::SetPort ? null : $explanation->action;
+        $answer = $body !== null && in_array($explanation->key, ['host_not_allowed', 'health_status', 'django_disallowed_host', 'rails_blocked_host'], true) ? $body : null;
+
+        return new FailureExplanationData(
+            key: $explanation->key,
+            title: $explanation->title,
+            cause: $explanation->cause,
+            fix: $explanation->fix,
+            action: $action,
+            params: $action instanceof FailureFixAction ? $explanation->params : [],
+            answer: $answer,
+        );
     }
 
     /**

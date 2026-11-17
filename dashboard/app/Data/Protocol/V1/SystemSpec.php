@@ -28,6 +28,8 @@ final class SystemSpec extends Data
         public ?array $linkProbePeers = null,
         /** The dashboard's canonical origin (`system.controlPlane.url`, docs/05 §4.1); only for daemons with the `controlPlaneUrl` feature. */
         public ?string $controlPlaneUrl = null,
+        /** The watchdog and fallback notifications (`system.watchdog`); only for daemons with the `watchdog` feature. */
+        public ?WatchdogSpec $watchdog = null,
     ) {}
 
     /**
@@ -35,7 +37,7 @@ final class SystemSpec extends Data
      */
     public function toProtocol(): array
     {
-        return $this->render($this->tailscale->toProtocol());
+        return $this->render($this->tailscale->toProtocol(), $this->watchdog?->toProtocol());
     }
 
     /**
@@ -46,14 +48,15 @@ final class SystemSpec extends Data
      */
     public function toFingerprint(): array
     {
-        return $this->render($this->tailscale->toFingerprint());
+        return $this->render($this->tailscale->toFingerprint(), $this->watchdog?->toFingerprint());
     }
 
     /**
      * @param  array<string, mixed>  $tailscale
+     * @param  array<string, mixed>|null  $watchdog
      * @return array<string, mixed>
      */
-    private function render(array $tailscale): array
+    private function render(array $tailscale, ?array $watchdog): array
     {
         $registry = array_filter(['forwardTo' => $this->registryForwardTo], is_string(...));
 
@@ -80,6 +83,10 @@ final class SystemSpec extends Data
 
         if ($this->controlPlaneUrl !== null) {
             $system['controlPlane'] = ['url' => $this->controlPlaneUrl];
+        }
+
+        if ($watchdog !== null) {
+            $system['watchdog'] = $watchdog;
         }
 
         return $system;

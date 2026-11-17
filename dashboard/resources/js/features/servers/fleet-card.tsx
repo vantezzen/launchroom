@@ -8,6 +8,7 @@ import { colorForSlot } from '@/components/charts/palette';
 import { Sparkline } from '@/components/charts/sparkline';
 import { DeviceImage } from '@/components/devices/device-image';
 import { Status } from '@/components/status';
+import { CommandText } from '@/features/servers/server-notices';
 import { Button } from '@/components/ui/button';
 import {
     Popover,
@@ -115,14 +116,23 @@ function WhatToCheck({ server }: { server: Server }) {
                     {server.name} hasn’t reported for{' '}
                     {shortDuration(server.lastSeenAt) ?? 'a while'}
                 </p>
-                <ol className="mt-3 flex list-decimal flex-col gap-2 pl-4 type-small text-muted-foreground">
-                    <li>Is the machine on, and does it have internet?</li>
-                    <li>Is Docker running on it?</li>
-                    <li>
-                        Did its address or firewall change? It only needs to
-                        reach this dashboard over HTTPS.
-                    </li>
-                </ol>
+                {server.refused ? (
+                    <div className="mt-3 flex flex-col gap-2 type-small">
+                        <p>{server.refused.title}.</p>
+                        <p className="text-muted-foreground">
+                            <CommandText text={server.refused.detail} />
+                        </p>
+                    </div>
+                ) : (
+                    <ol className="mt-3 flex list-decimal flex-col gap-2 pl-4 type-small text-muted-foreground">
+                        <li>Is the machine on, and does it have internet?</li>
+                        <li>Is Docker running on it?</li>
+                        <li>
+                            Did its address or firewall change? It only needs to
+                            reach this dashboard over HTTPS.
+                        </li>
+                    </ol>
+                )}
                 <Link
                     href={show(server.id)}
                     className="mt-3 inline-block type-small text-signal underline-offset-4 hover:underline"

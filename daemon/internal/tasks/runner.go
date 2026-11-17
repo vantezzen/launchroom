@@ -141,7 +141,7 @@ type Runner struct {
 	o Options
 
 	mu      sync.Mutex
-	running map[state.TaskID]bool
+	running map[state.TaskID]*progress
 	wg      sync.WaitGroup
 	kick    chan struct{}
 }
@@ -163,7 +163,7 @@ func New(o Options) *Runner {
 	if o.Now == nil {
 		o.Now = time.Now
 	}
-	return &Runner{o: o, running: map[state.TaskID]bool{}, kick: make(chan struct{}, 1)}
+	return &Runner{o: o, running: map[state.TaskID]*progress{}, kick: make(chan struct{}, 1)}
 }
 
 // Wait blocks until every running task finished and was reported.
@@ -174,6 +174,20 @@ func (r *Runner) Kick() {
 	select {
 	case r.kick <- struct{}{}:
 	default:
+	}
+}
+
+// HeartbeatAll sends the next heartbeat of every running task at once (a
+// "task.cancelled" nudge): a task the dashboard cancelled stops within a
+// round trip instead of at its next scheduled heartbeat.
+func (r *Runner) HeartbeatAll() {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	for _, p := range r.running {
+		select {
+		case p.now <- struct{}{}:
+		default:
+		}
 	}
 }
 
@@ -225,21 +239,22 @@ func (r *Runner) LeaseOnce(ctx context.Context) {
 		return
 	}
 	for _, t := range tasks {
+		prog := &progress{now: make(chan struct{}, 1)}
 		r.mu.Lock()
-		dup := r.running[t.ID]
+		_, dup := r.running[t.ID]
 		if !dup {
-			r.running[t.ID] = true
+			r.running[t.ID] = prog
 		}
 		r.mu.Unlock()
 		if dup {
 			continue // still running from an earlier lease
 		}
 		r.wg.Add(1)
-		go r.run(ctx, t)
+		go r.run(ctx, t, prog)
 	}
 }
 
-func (r *Runner) run(parent context.Context, t state.Task) {
+func (r *Runner) run(parent context.Context, t state.Task, prog *progress) {
 	defer r.wg.Done()
 	defer func() {
 		r.mu.Lock()
@@ -251,7 +266,6 @@ func (r *Runner) run(parent context.Context, t state.Task) {
 
 	// The task does not stop the moment the daemon starts shutting down: it
 	// gets ShutdownGrace to finish (stopAfterGrace), then it is released.
-	prog := &progress{now: make(chan struct{}, 1)}
 	lost := &atomic.Bool{}
 	base := context.WithValue(context.WithValue(context.WithoutCancel(parent), progressKey{}, prog), lostKey{}, lost)
 	ctx, cancel := context.WithDeadline(base, t.Deadline)

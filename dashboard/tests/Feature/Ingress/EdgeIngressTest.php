@@ -283,7 +283,7 @@ test('edges report certificates; HSTS follows an issued certificate', function (
         ->and($domain->cert_expires_at?->toIso8601ZuluString())->toBe('2026-12-30T00:00:00Z')
         ->and($domain->cert_server_id)->toBe($edge->id)
         ->and($foreign->refresh()->cert_status)->toBeNull()
-        ->and($edge->refresh()->ingress_status?->toArray())->toBe(['state' => 'applied', 'routes' => 1, 'storage' => ['state' => 'shared', 'mirrored' => 1, 'message' => null]]);
+        ->and($edge->refresh()->ingress_status?->toArray())->toMatchArray(['state' => 'applied', 'routes' => 1, 'storage' => ['state' => 'shared', 'mirrored' => 1, 'message' => null], 'failingSince' => null]);
     Event::assertDispatched(NodeStateInvalidated::class, fn (NodeStateInvalidated $event): bool => in_array($edge->id, $event->serverIds, true) && in_array($other->id, $event->serverIds, true));
 
     $route = collect(renderFor($edge)['routes'])->firstWhere('hosts.0', 'shop.example.org');

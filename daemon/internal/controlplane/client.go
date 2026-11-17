@@ -10,6 +10,7 @@ import (
 	"context"
 	"crypto/ed25519"
 	"crypto/tls"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -93,6 +94,12 @@ type Client struct {
 	downWhy   string
 	// active is the base URL of the last successful request.
 	active atomic.Pointer[url.URL]
+	// accepted is when the dashboard last accepted a request (2xx or 304,
+	// unix ms; 0: never since start).
+	accepted atomic.Int64
+	// refusal is the dashboard's last refusal of a signed request, until
+	// AckRefusal (Report.host.lastRefusal, docs/03 §9).
+	refusal atomic.Pointer[state.Refusal]
 }
 
 // New returns a Client.
@@ -369,6 +376,7 @@ func (c *Client) send(ctx context.Context, base *url.URL, method, path string, q
 	if int64(len(got)) > limit {
 		return nil, fmt.Errorf("controlplane: response larger than %d bytes", limit)
 	}
+	c.observeStatus(path, resp.StatusCode, got)
 	return &response{status: resp.StatusCode, body: got, signature: resp.Header.Get(identity.ResponseSignatureHeader)}, nil
 }
 
@@ -386,6 +394,72 @@ func (c *Client) observeDate(header string, sent, received time.Time) {
 	// The header has whole seconds: compare against the daemon's whole second too.
 	c.skewMs.Store(served.Sub(mid.Truncate(time.Second)).Milliseconds())
 	c.skewKnown.Store(true)
+}
+
+// refusalStatus reports whether status on path means the dashboard refused
+// launchroomd itself: its signature, clock, client certificate or protocol
+// version (401, 426), or a 403 on the paths every server uses. A 403 on
+// other paths (a registry scope, a session) is about the request.
+func refusalStatus(path string, status int) bool {
+	switch status {
+	case http.StatusUnauthorized, http.StatusUpgradeRequired:
+		return true
+	case http.StatusForbidden:
+		return path == "state" || path == "reports" || path == "tasks/lease"
+	}
+	return false
+}
+
+// observeStatus records an accepted answer or a refusal.
+func (c *Client) observeStatus(path string, status int, body []byte) {
+	switch {
+	case status >= 200 && status < 300 || status == http.StatusNotModified:
+		c.accepted.Store(c.now().UnixMilli())
+	case refusalStatus(path, status):
+		r := &state.Refusal{At: c.now().UTC(), Status: status, Message: refusalMessage(body)}
+		if skew, ok := c.ClockSkew(); ok {
+			ms := skew.Milliseconds()
+			r.ClockSkewMs = &ms
+		}
+		c.refusal.Store(r)
+	}
+}
+
+// refusalMessage is the dashboard's error text: the "error" field of a JSON
+// body, else a sanitized snippet (the body is unsigned; it is display text
+// only and bounded).
+func refusalMessage(body []byte) string {
+	var doc struct {
+		Error string `json:"error"`
+	}
+	msg := sanitize(body)
+	if json.Unmarshal(body, &doc) == nil && doc.Error != "" {
+		msg = sanitize([]byte(doc.Error))
+	}
+	return msg
+}
+
+// LastAccepted is when the dashboard last accepted one of launchroomd's
+// requests (zero: not since start). The control-plane watchdog counts the
+// dashboard as reachable from it.
+func (c *Client) LastAccepted() time.Time {
+	ms := c.accepted.Load()
+	if ms == 0 {
+		return time.Time{}
+	}
+	return time.UnixMilli(ms)
+}
+
+// LastRefusal is the dashboard's last refusal of a signed request not yet
+// delivered in an accepted report (nil: none).
+func (c *Client) LastRefusal() *state.Refusal { return c.refusal.Load() }
+
+// AckRefusal forgets r once a report carrying it was accepted (a newer
+// refusal is kept).
+func (c *Client) AckRefusal(r *state.Refusal) {
+	if r != nil {
+		c.refusal.CompareAndSwap(r, nil)
+	}
 }
 
 // ClockSkew returns the dashboard clock minus the daemon clock (ok=false

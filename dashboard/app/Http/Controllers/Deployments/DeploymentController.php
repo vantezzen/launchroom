@@ -12,6 +12,7 @@ use App\Data\Deployments\DeploymentDetailData;
 use App\Data\Deployments\DeploymentImpactData;
 use App\Data\Deployments\FailureFixData;
 use App\Data\Deployments\LogPageData;
+use App\Enums\FailureFixAction;
 use App\Http\Controllers\Controller;
 use App\Http\Routing\RouteScope;
 use App\Http\Toast;
@@ -86,6 +87,12 @@ final class DeploymentController extends Controller
         Gate::authorize('deploy', $environment);
 
         $created = $fix->handle($deployment, $data, $user, $this->auditActor($request, $user));
+
+        if ($data->action === FailureFixAction::FreeDisk) {
+            Toast::success('launchroom is freeing space on the server. Deploy again once it is done.');
+
+            return back();
+        }
 
         if (! $created instanceof Deployment) {
             Toast::success('Fix staged. Other changes are staged too: review and apply them together.');

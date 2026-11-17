@@ -30,6 +30,12 @@ export const vocabulary = {
             backup_failed: { label: 'A backup fails' },
             vulnerability: { label: 'A service needs a security update' },
             waf_unavailable: { label: 'The web firewall stops working on a server' },
+            ingress_down: { label: 'A server stops serving your domains' },
+            certificate_failed: { label: 'A certificate can’t be issued' },
+            service_crashed: { label: 'A running service crashes' },
+            cron_failed: { label: 'A cron job fails or doesn’t run' },
+            control_plane_degraded: { label: 'launchroom itself has trouble' },
+            queue_backlog: { label: 'Background work falls behind' },
         },
         AlertSeverity: {
             warning: { label: 'Warning' },
@@ -366,6 +372,14 @@ export const vocabulary = {
             failed: { label: 'Failed', tone: 'failed', isTerminal: false },
             closed: { label: 'Closed', tone: 'idle', isTerminal: false },
             expired: { label: 'Expired', tone: 'idle', isTerminal: false },
+        },
+    },
+    Registry: {
+        RegistryCopyStatus: {
+            pending: { isTerminal: false },
+            copying: { isTerminal: false },
+            succeeded: { isTerminal: false },
+            failed: { isTerminal: false },
         },
     },
     ReplacedServiceStatus: {

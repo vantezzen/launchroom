@@ -4,6 +4,9 @@ declare(strict_types=1);
 
 namespace App\Queries;
 
+use App\Data\Canvas\DetectedPlanData;
+use App\Data\Protocol\V1\BuildSummary;
+use App\Data\Specs\EnvironmentSpec;
 use App\Data\Specs\ServiceSpec;
 use App\Data\Specs\VariableSpec;
 use App\Data\Variables\EnvironmentOptionData;
@@ -18,6 +21,7 @@ use App\Enums\VariableExposure;
 use App\Enums\VariableType;
 use App\Models\ConfigAsCode\EnvironmentConfigFile;
 use App\Models\Connection;
+use App\Models\Deployment;
 use App\Models\Environment;
 use App\Models\Project;
 use App\Models\Service;
@@ -27,6 +31,7 @@ use App\Models\Variable;
 use App\Models\VariableTarget;
 use App\Services\Crypto\ProjectKeyring;
 use App\Services\Variables\SpecVariableResolver;
+use App\Support\Deployments\EffectiveDeploy;
 use App\Support\Variables\ReferencePreview;
 use App\Support\Variables\SystemVariables;
 use App\Support\Variables\VariableResolver;
@@ -137,11 +142,7 @@ final readonly class ServiceVariablesView
             );
         }
 
-        $system = [];
-
-        foreach (SystemVariables::for($spec->environment, $serviceSpec, $serviceSpec->deploy->port) as $key => $value) {
-            $system[] = new SystemVariableData($key, $value);
-        }
+        $system = $this->system($project, $environment, $service, $spec, $serviceSpec, $winners);
 
         $referenceScopes = [new ReferenceScopeData(null, $serviceSpec->slug.' (this service)', array_keys($scopes[$serviceSpec->slug] ?? []))];
 
@@ -168,6 +169,64 @@ final readonly class ServiceVariablesView
             canRevealSecrets: $canRevealSecrets,
             secretPlaceholder: self::SECRET_PLACEHOLDER,
         );
+    }
+
+    /**
+     * The system variables, then the framework names the latest build asks
+     * for (APP_URL from PUBLIC_URL) and the listen address its preset sets,
+     * as this environment resolves them. A HOST the running deployment has
+     * but the next deploy won't (OD12) is listed as going away.
+     *
+     * @param  array<string, string>  $winners  key => id of the row whose value applies
+     * @return list<SystemVariableData>
+     */
+    private function system(Project $project, Environment $environment, Service $service, EnvironmentSpec $spec, ServiceSpec $serviceSpec, array $winners): array
+    {
+        $instance = ServiceInstance::query()->where('environment_id', $environment->id)->where('service_id', $service->id)->with('activeDeployment')->first();
+        $summary = $instance?->plan->summary ?? ($instance === null ? null : Deployment::query()
+            ->where('service_instance_id', $instance->id)
+            ->whereNotNull('plan')
+            ->latest('id')
+            ->first()?->plan?->summary);
+        $parent = $serviceSpec->parentId === null ? null : $spec->service($serviceSpec->parentId);
+        $values = SystemVariables::for($spec->environment, $serviceSpec, $serviceSpec->deploy->port, $parent);
+        // Aliases see the port the deployment runs with (also one the build detected).
+        $effective = SystemVariables::for($spec->environment, $serviceSpec, $serviceSpec->deploy->port ?? ($serviceSpec->kind->isWeb() ? $summary?->port : null), $parent);
+        $rows = [];
+
+        foreach ($values as $key => $value) {
+            $rows[$key] = new SystemVariableData($key, $value, overridden: isset($winners[$key]));
+        }
+
+        if ($summary instanceof BuildSummary) {
+            $framework = $summary->framework === null ? 'the framework' : DetectedPlanData::frameworkLabel($summary->framework);
+
+            foreach ($summary->envAliases ?? [] as $alias) {
+                $value = SystemVariables::source($alias->from, $effective, $environment->network_subnet);
+
+                if ($value !== null && $value !== '' && ! isset($rows[$alias->name])) {
+                    $rows[$alias->name] = new SystemVariableData($alias->name, $value, "Set from {$alias->from->value} for {$framework}", isset($winners[$alias->name]));
+                }
+            }
+
+            if (EffectiveDeploy::listensOnAll($summary)) {
+                foreach (['HOST', 'HOSTNAME'] as $key) {
+                    $rows[$key] ??= new SystemVariableData($key, '0.0.0.0', 'Set so the app listens on all interfaces', isset($winners[$key]));
+                }
+            }
+        }
+
+        $active = $instance?->activeDeployment;
+
+        if (! isset($rows['HOST']) && ! isset($winners['HOST']) && $active?->env_snapshot !== null) {
+            $running = $this->keyring->decryptSnapshot($project, $active->public_id, $active->env_snapshot);
+
+            if (($running['HOST'] ?? null) === '0.0.0.0') {
+                $rows['HOST'] = new SystemVariableData('HOST', '0.0.0.0', 'No longer set by launchroom. The next deploy runs without it; add HOST as a variable if the app needs it to listen.', removedNextDeploy: true);
+            }
+        }
+
+        return array_values($rows);
     }
 
     /**

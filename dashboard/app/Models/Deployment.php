@@ -6,6 +6,8 @@ namespace App\Models;
 
 use App\Data\ConfigAsCode\DeploymentConfigErrorsData;
 use App\Data\Deployments\DeploymentPlanData;
+use App\Data\Deployments\RuntimeFindingData;
+use App\Data\Protocol\V1\ImageFacts;
 use App\Enums\Contracts\HasTransitionTable;
 use App\Enums\DeploymentFailureClass;
 use App\Enums\DeploymentPurpose;
@@ -62,6 +64,10 @@ use LogicException;
  * @property Carbon|null $went_live_at when it reached `active`; null for deployments that never served (docs/04 §6)
  * @property int|null $superseded_by_id
  * @property int|null $rollback_of_id
+ * @property Carbon|null $probation_until watched after going live until then; a crash loop rolls it back once (docs/04 §8, CheckProbation)
+ * @property string|null $rollback_reason why launchroom rolled back by itself (on the rollback deployment it created); null: manual
+ * @property ImageFacts|null $image_facts the image's user and exposed ports as the server reported them (images launchroom didn't build)
+ * @property RuntimeFindingData|null $runtime_finding the first known problem seen in its runtime logs while live (G12, DetectRuntimeFindings)
  * @property int|null $actor_id
  * @property Carbon|null $created_at
  * @property Carbon|null $updated_at
@@ -210,6 +216,41 @@ final class Deployment extends Model
     }
 
     /**
+     * What the image says about how it runs: the build summary's facts for
+     * images launchroom built, else what the server reported after the pull.
+     */
+    public function imageFacts(): ?ImageFacts
+    {
+        return $this->plan->summary->image ?? $this->image_facts;
+    }
+
+    /**
+     * Keeps the facts a server reported for this deployment's image (Report
+     * `workloads[].image`). Returns whether they changed, so the caller
+     * re-renders the deployment's servers (capabilities for root images and
+     * volume owners follow them, NodeStateContent).
+     */
+    public function recordImageFacts(ImageFacts $facts): bool
+    {
+        if ($this->plan?->summary?->image instanceof ImageFacts || $this->image_facts?->toArray() === $facts->toArray()) {
+            return false;
+        }
+
+        $this->forceFill(['image_facts' => $facts])->save();
+
+        return true;
+    }
+
+    /**
+     * Watched after going live (OD1): a crash loop or every replica down
+     * within the window rolls it back once.
+     */
+    public function inProbation(): bool
+    {
+        return $this->status === DeploymentStatus::Active && $this->probation_until !== null && $this->probation_until->isFuture();
+    }
+
+    /**
      * An earlier version that "Roll back" can return to (docs/04 §8).
      */
     public function isRollbackTarget(): bool
@@ -316,6 +357,9 @@ final class Deployment extends Model
             'went_live_at' => 'datetime',
             'image_pruned_at' => 'datetime',
             'hold_traffic' => 'boolean',
+            'probation_until' => 'datetime',
+            'image_facts' => ImageFacts::class,
+            'runtime_finding' => RuntimeFindingData::class,
         ];
     }
 }

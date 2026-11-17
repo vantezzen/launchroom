@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"sync"
+	"time"
 
 	"github.com/moby/moby/client"
 )
@@ -84,10 +85,62 @@ func (t *TTYExec) Resize(ctx context.Context, cols, rows uint) error {
 	return wrap("exec resize", err)
 }
 
-// Close closes the stream (the shell gets a hangup).
+// Hang-up input for a process that is still running when the stream
+// closes: Docker keeps an exec running after its attach connection is gone
+// (there is no exec kill in the Engine API), so a Console or SSH shell would
+// stay in the container forever. ^C ends a foreground program and clears
+// the line, ^D on the empty line then ends the shell. The pause lets the
+// terminal flush its input queue on the interrupt before the EOF arrives.
+var (
+	hangUpInterrupt = []byte{0x03}
+	hangUpEOF       = []byte{0x04}
+)
+
+const (
+	hangUpPause = 100 * time.Millisecond
+	hangUpWait  = 2 * time.Second
+)
+
+// Close ends the stream. A process still running gets a hang-up first
+// (^C, then ^D) and up to two seconds to exit.
 func (t *TTYExec) Close() error {
-	t.once.Do(t.hr.Close)
+	t.once.Do(func() {
+		t.hangUp()
+		t.hr.Close()
+	})
 	return nil
+}
+
+func (t *TTYExec) hangUp() {
+	ctx, cancel := context.WithTimeout(context.Background(), hangUpWait)
+	defer cancel()
+	if !t.running(ctx) {
+		return
+	}
+	_ = t.hr.Conn.SetWriteDeadline(time.Now().Add(hangUpWait))
+	if _, err := t.hr.Conn.Write(hangUpInterrupt); err != nil {
+		return
+	}
+	time.Sleep(hangUpPause)
+	if _, err := t.hr.Conn.Write(hangUpEOF); err != nil {
+		return
+	}
+	for t.running(ctx) {
+		select {
+		case <-ctx.Done():
+			return
+		case <-time.After(hangUpPause):
+		}
+	}
+}
+
+// running reports whether the exec still runs (false when unknown).
+func (t *TTYExec) running(ctx context.Context) bool {
+	if t.e == nil {
+		return false
+	}
+	res, err := t.e.api.ExecInspect(ctx, t.id, client.ExecInspectOptions{})
+	return err == nil && res.Running
 }
 
 // ExitCode returns the exit code once the process ended (-1 if still running

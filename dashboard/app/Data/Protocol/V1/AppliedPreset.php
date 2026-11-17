@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Data\Protocol\V1;
 
+use Spatie\LaravelData\Attributes\Validation\In;
 use Spatie\LaravelData\Attributes\Validation\Max;
 use Spatie\LaravelData\Attributes\Validation\Min;
 use Spatie\LaravelData\Data;
@@ -23,5 +24,8 @@ final class AppliedPreset extends Data
         public int $version,
         #[Max(32)]
         public array $decisions = [],
+        /** How much applied: full (null) or runtime (a Dockerfile build's container only). */
+        #[In(['full', 'runtime'])]
+        public ?string $scope = null,
     ) {}
 }

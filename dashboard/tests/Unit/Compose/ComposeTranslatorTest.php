@@ -395,3 +395,26 @@ test('the suggested project name comes from the file, the repository, then the p
         ->and(ComposeTranslator::suggestedName(bpCompose($unnamed)->blueprint))->toBe('umami')
         ->and(ComposeTranslator::suggestedName(bpCompose($digest)->blueprint))->toBe('nginx');
 });
+
+test('stop_grace_period and stop_signal become the stop timeout and signal (G30)', function (): void {
+    $translation = bpCompose("services:\n  queue:\n    image: python:3.13\n    stop_grace_period: 1m30s\n    stop_signal: SIGINT\n  slow:\n    image: python:3.13\n    stop_grace_period: 10m\n    stop_signal: SIGKILL\n");
+    $queue = bpService($translation, 'queue');
+    $slow = bpService($translation, 'slow');
+
+    expect($queue->stopTimeoutSeconds)->toBe(90)
+        ->and($queue->stopSignal)->toBe('SIGINT')
+        ->and($slow->stopTimeoutSeconds)->toBe(300)
+        ->and($slow->stopSignal)->toBeNull()
+        ->and(implode(' ', bpNotes($slow, BlueprintNoteKind::Translated)))->toContain('5 minutes, the longest')
+        ->and(implode(' ', bpNotes($slow, BlueprintNoteKind::Ignored)))->toContain('stop_signal SIGKILL is ignored');
+});
+
+test('a private image service on a non-HTTP port gets a TCP check (HEAL-11)', function (): void {
+    $translation = bpCompose("services:\n  mqtt:\n    image: eclipse-mosquitto:2\n    expose: ['1883']\n  api:\n    image: nginx:1.29\n    expose: ['8080']\n  site:\n    image: nginx:1.29\n    ports: ['8443:443']\n");
+
+    expect(bpService($translation, 'mqtt')->healthcheck?->type)->toBe(HealthcheckType::Tcp)
+        ->and(implode(' ', bpNotes(bpService($translation, 'mqtt'), BlueprintNoteKind::Translated)))->toContain('port 1883 accepts connections')
+        ->and(bpService($translation, 'api')->healthcheck)->toBeNull()
+        // Public: served over HTTP through its domain.
+        ->and(bpService($translation, 'site')->healthcheck)->toBeNull();
+});

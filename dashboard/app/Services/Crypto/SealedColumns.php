@@ -16,6 +16,7 @@ use App\Models\Git\GitHubApp;
 use App\Models\IngressCredential;
 use App\Models\Mesh\MeshCredential;
 use App\Models\ProjectKey;
+use App\Models\Registry\RegistryCredential;
 use App\Models\Registry\RegistryStorage;
 use App\Models\Transfers\DataTransfer;
 use Illuminate\Database\Eloquent\Model;
@@ -47,6 +48,7 @@ final readonly class SealedColumns
         DaemonClientCa::class,
         AiProviderSettings::class,
         DataTransfer::class,
+        RegistryCredential::class,
     ];
 
     public function __construct(

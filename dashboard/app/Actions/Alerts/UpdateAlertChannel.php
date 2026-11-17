@@ -11,10 +11,12 @@ use App\Data\Audit\AuditEntryData;
 use App\Enums\Alerts\AlertChannelKind;
 use App\Enums\Alerts\AlertSeverity;
 use App\Enums\AuditAction;
+use App\Events\NodeStateInvalidated;
 use App\Exceptions\DomainRuleViolation;
 use App\Models\Alerts\AlertChannel;
 use App\Services\Alerts\ChannelSecret;
 use App\Services\Alerts\ChannelTargets;
+use App\Services\Alerts\FallbackWatchdog;
 use App\Services\Crypto\SealedColumns;
 use App\Support\Alerts\ChannelUrls;
 use App\Support\Webhooks\WebhookSignature;
@@ -31,6 +33,7 @@ final readonly class UpdateAlertChannel
         private ChannelTargets $targets,
         private SealedColumns $sealed,
         private RecordAuditEvent $audit,
+        private FallbackWatchdog $watchdog,
     ) {}
 
     /**
@@ -45,7 +48,7 @@ final readonly class UpdateAlertChannel
         $url = $channel->kind->hasSecret() && trim((string) $input->secretUrl) !== '' ? $this->targets->url($channel->kind, $input->secretUrl) : null;
         $recipients = $channel->kind === AlertChannelKind::Email && $input->recipients !== null ? $this->targets->recipients($input->recipients) : null;
 
-        return DB::transaction(function () use ($channel, $input, $actor, $url, $recipients): ?string {
+        $secret = DB::transaction(function () use ($channel, $input, $actor, $url, $recipients): ?string {
             $changed = [];
             $signing = null;
 
@@ -93,5 +96,12 @@ final readonly class UpdateAlertChannel
 
             return $input->rotateSecret ? $signing : null;
         });
+
+        // The fallback channel is sealed into the watchdog servers' desired state.
+        if ($channel->fallback && ($url !== null || $recipients !== null || $input->enabled !== null)) {
+            NodeStateInvalidated::servers($this->watchdog->servers());
+        }
+
+        return $secret;
     }
 }

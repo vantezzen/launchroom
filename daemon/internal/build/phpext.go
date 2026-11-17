@@ -39,13 +39,24 @@ func describePhpExtensions(xs []state.PhpExtension) string {
 }
 
 // dockerfilePhpWarning is the hint for Dockerfile builds of a PHP app whose
-// connected databases need extensions: launchroom never edits a Dockerfile.
-func dockerfilePhpWarning(xs []state.PhpExtension, phpApp bool) (state.BuildWarning, bool) {
-	if len(xs) == 0 || !phpApp {
+// connected databases or dependencies need extensions: launchroom never
+// edits a Dockerfile. phpApp says whether the app is a PHP app at all.
+func dockerfilePhpWarning(xs []state.PhpExtension, deps []state.PhpDependencyExtension, phpApp bool) (state.BuildWarning, bool) {
+	if !phpApp {
+		return state.BuildWarning{}, false
+	}
+	var parts []string
+	if len(xs) > 0 {
+		parts = append(parts, describePhpExtensions(xs))
+	}
+	if len(deps) > 0 {
+		parts = append(parts, describeDependencyExtensions(deps))
+	}
+	if len(parts) == 0 {
 		return state.BuildWarning{}, false
 	}
 	return state.BuildWarning{
 		Code:    "dockerfile-php-extensions",
-		Message: state.Clip("This Dockerfile may need the PHP extensions "+describePhpExtensions(xs)+" for the connected databases. launchroom adds them only to Railpack builds; install them in the Dockerfile (for example with install-php-extensions).", 1024),
+		Message: state.Clip("This Dockerfile may need the PHP extensions "+strings.Join(parts, ", ")+". launchroom adds them only to Railpack builds; install them in the Dockerfile (for example with install-php-extensions).", 1024),
 	}, true
 }

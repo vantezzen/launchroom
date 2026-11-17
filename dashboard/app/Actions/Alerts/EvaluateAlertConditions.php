@@ -40,11 +40,14 @@ final readonly class EvaluateAlertConditions
 
         foreach ($this->conditions->all as $condition) {
             $rule = $condition->rule();
+            $prefix = $condition->subjectPrefix();
             /** @var array<string, true> $firing "team|subject" */
             $firing = [];
 
             foreach (Alert::query()->where('rule', $rule->value)->where('status', AlertStatus::Firing->value)->get(['team_id', 'subject_key']) as $alert) {
-                $firing[$alert->team_id.'|'.$alert->subject_key] = true;
+                if ($prefix === null || str_starts_with($alert->subject_key, $prefix)) {
+                    $firing[$alert->team_id.'|'.$alert->subject_key] = true;
+                }
             }
 
             $failing = $condition->failing($rules, $firing, $now);

@@ -1,0 +1,12 @@
+{
+  "name": "stream-upload",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Server-sent events and large uploads through the edge",
+  "scripts": {
+    "start": "node server.js"
+  },
+  "engines": {
+    "node": ">=22"
+  }
+}

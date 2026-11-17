@@ -14,7 +14,12 @@ export type DataResult = {
         groups: {
             name: string;
             rows?: number;
-            items: { name: string; kind: string; rows?: number }[];
+            items: {
+                name: string;
+                kind: string;
+                rows?: number;
+                estimate?: boolean;
+            }[];
         }[];
     };
     keys?: {

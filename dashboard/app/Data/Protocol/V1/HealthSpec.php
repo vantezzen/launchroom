@@ -11,6 +11,10 @@ use Spatie\LaravelData\Data;
 
 /**
  * NodeState workload `health`: the daemon's external HTTP/TCP probe.
+ * `host` (feature `probeHost`) is sent as the Host header of http probes,
+ * with X-Forwarded-Proto: https; `restartAfter` (feature `livenessRestart`,
+ * 1m to 1h) restarts a serving replica whose probe keeps failing. The
+ * renderer sets them; FeatureGate drops them for older servers.
  */
 final class HealthSpec extends Data
 {
@@ -22,6 +26,8 @@ final class HealthSpec extends Data
         public int $failureThreshold,
         public ?string $path = null,
         public ?string $expectStatus = null,
+        public ?string $host = null,
+        public ?string $restartAfter = null,
     ) {}
 
     public static function fromSettings(HealthcheckSettings $settings): ?self
@@ -43,6 +49,8 @@ final class HealthSpec extends Data
             Wire::int($wire, 'failureThreshold'),
             Wire::nullableString($wire, 'path'),
             Wire::nullableString($wire, 'expectStatus'),
+            Wire::nullableString($wire, 'host'),
+            Wire::nullableString($wire, 'restartAfter'),
         );
     }
 
@@ -59,6 +67,8 @@ final class HealthSpec extends Data
             'interval' => $this->interval,
             'timeout' => $this->timeout,
             'failureThreshold' => $this->failureThreshold,
+            'host' => $this->host,
+            'restartAfter' => $this->restartAfter,
         ], static fn (string|int|null $value): bool => $value !== null);
     }
 }

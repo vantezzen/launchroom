@@ -296,9 +296,10 @@ fi
 ok "no token, join token or APP_KEY in the installer's output"
 
 step "B: the dashboard, its data and its launchroomd"
+wait_healthy launchroomd in_lr "$B"
 in_lr "$B" docker compose ps --format '{{.Service}} {{.State}} {{.Health}}' | while read -r service state health; do
 	[ "$state" = running ] || fail "$service is $state on B"
-	case "$service:$health" in *:healthy | scheduler: | zot: | launchroomd:) ;; *) fail "$service health is '$health' on B" ;; esac
+	case "$service:$health" in *:healthy | scheduler: | zot:) ;; *) fail "$service health is '$health' on B" ;; esac
 done
 retry 180 sh -c "docker exec $B docker run --rm --network host --entrypoint curl $DASHBOARD_IMAGE -fsk --resolve $DOMAIN:443:127.0.0.1 -o /dev/null https://$DOMAIN/login" ||
 	fail "B does not serve the dashboard at https://$DOMAIN"

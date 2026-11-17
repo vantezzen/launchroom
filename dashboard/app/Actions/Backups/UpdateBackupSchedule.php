@@ -53,11 +53,17 @@ final readonly class UpdateBackupSchedule
             $destinationId = $destination->id;
         }
 
+        // A new cron, or a schedule turned on again, counts from now: the
+        // catch-up (BackupSchedule::owedRun) never runs a slot of the old
+        // expression or one that passed while the schedule was off.
+        $restart = $cron !== $schedule->cron || ($input->enabled && ! $schedule->enabled);
+
         $schedule->forceFill([
             'cron' => $cron,
             'retention' => $input->retention,
             'enabled' => $input->enabled,
             'destination_id' => $destinationId,
+            ...($restart ? ['last_run_at' => now()] : []),
         ])->save();
 
         $this->audit->handle(new AuditEntryData(

@@ -9,6 +9,7 @@ use App\Data\Services\HealthcheckSettings;
 use App\Enums\HealthcheckType;
 use App\Enums\WorkloadEventKind;
 use App\Enums\WorkloadEventReason;
+use App\Enums\WorkloadFailureCode;
 use Illuminate\Support\Str;
 
 /**
@@ -17,7 +18,8 @@ use Illuminate\Support\Str;
  * dashboard owns the words. "Container started (replica 1, server-2)",
  * "Container exited with code 1 (replica 1, server-2)", "Health check
  * failed: GET / on :8000 → connection refused (3/3)", "Container stopped by
- * launchroom (replaced by deployment dpl_…)".
+ * launchroom (replaced by deployment dpl_…)". Exit codes are worded by
+ * ExitMeaning, typed start failures by failurePhrase().
  */
 final readonly class LifecycleLines
 {
@@ -46,14 +48,28 @@ final readonly class LifecycleLines
         $code = is_int($event->exitCode) ? $event->exitCode : null;
         $reason = $event->reason instanceof WorkloadEventReason ? $event->reason : null;
 
+        $failure = $event->code instanceof WorkloadFailureCode ? self::failurePhrase($event->code) : null;
+        $signal = is_int($event->signal) ? $event->signal : null;
+        $byLaunchroom = $event->byLaunchroom === true;
+
         return match ($event->kind) {
             WorkloadEventKind::Created => $this->info("Container created ({$where})"),
-            WorkloadEventKind::CreateFailed => $this->error("Couldn't start the container ({$where})".($message === '' ? '' : ": {$message}")),
+            WorkloadEventKind::CreateFailed => $this->error("Couldn't start the container ({$where})".match (true) {
+                $failure !== null && $message !== '' => ": {$failure} ({$message})",
+                $failure !== null => ": {$failure}",
+                $message !== '' => ": {$message}",
+                default => '',
+            }),
             WorkloadEventKind::Started => $this->info("Container started ({$where})"),
-            WorkloadEventKind::Exited => $event->oomKilled === true
-                ? $this->error("Out of memory: the container was killed ({$where}). Raise its memory limit in Settings → Scaling.")
-                : ($code === 0 ? $this->info("Container exited with code 0 ({$where})") : $this->error('Container exited'.($code === null ? '' : " with code {$code}")." ({$where})")),
-            WorkloadEventKind::Restarted => $this->warning('Container restarted (attempt '.($restarts + 1).", {$where})"),
+            WorkloadEventKind::Exited => match (true) {
+                $event->oomKilled === true => $this->error("Out of memory: the container was killed ({$where}). Raise its memory limit in Settings → Scaling."),
+                $code === 0 => $this->info("Container exited with code 0 ({$where})"),
+                $failure !== null => $this->error('Container exited'.($code === null ? '' : " with code {$code}").": {$failure} ({$where})"),
+                default => $this->exited($code, $signal, $byLaunchroom, $where),
+            },
+            WorkloadEventKind::Restarted => $reason === WorkloadEventReason::Health
+                ? $this->warning('Restarted by launchroom'.($message === '' ? ': its health check kept failing' : ": {$message}")." ({$where})")
+                : $this->warning('Container restarted (attempt '.($restarts + 1).", {$where})"),
             WorkloadEventKind::HealthPassing => $this->info('Health check passed'.$this->probe()." ({$where})"),
             WorkloadEventKind::HealthFailing => $this->error('Health check failed'.$this->probe().($message === '' ? '' : " → {$message}").' ('.$failures.'/'.max(1, $this->healthcheck->failureThreshold ?? 1).", {$where})"),
             WorkloadEventKind::Stopped => $this->info("Container stopped by launchroom ({$this->because($reason)}, {$where})"),
@@ -63,6 +79,46 @@ final readonly class LifecycleLines
                 WorkloadEventReason::PortNotBound => "Container recreated by launchroom to publish its port on the private network ({$where})",
                 default => "Container removed by launchroom ({$this->because($reason)}, {$where})",
             }),
+        };
+    }
+
+    /**
+     * Why a container couldn't start, from launchroomd's typed code
+     * (WorkloadFailureCode); null for `other` (its message says it).
+     */
+    public static function failurePhrase(WorkloadFailureCode $code): ?string
+    {
+        return match ($code) {
+            WorkloadFailureCode::CommandNotFound => 'the start command doesn’t exist in the image',
+            WorkloadFailureCode::NotExecutable => 'the start command isn’t executable',
+            WorkloadFailureCode::WrongPlatform => 'the image is built for a different processor',
+            WorkloadFailureCode::MountFailed => 'a volume couldn’t be attached',
+            WorkloadFailureCode::InvalidUser => 'the image’s user doesn’t exist',
+            WorkloadFailureCode::ImageNotFound => 'the image doesn’t exist',
+            WorkloadFailureCode::Unauthorized => 'the registry refused the image (it is private or doesn’t exist)',
+            WorkloadFailureCode::RateLimited => 'the registry’s download limit was reached',
+            WorkloadFailureCode::Network => 'the registry couldn’t be reached',
+            WorkloadFailureCode::NoSpace => 'the server’s disk is full',
+            WorkloadFailureCode::Other => null,
+        };
+    }
+
+    /**
+     * "Container exited with code 137: it was killed (SIGKILL)". An exit
+     * launchroom caused is a plain note, except a kill after the stop
+     * timeout (the app didn't shut down in time).
+     *
+     * @return array{text: string, level: string}
+     */
+    private function exited(?int $code, ?int $signal, bool $byLaunchroom, string $where): array
+    {
+        $meaning = ExitMeaning::notable($code, false, $signal, $byLaunchroom);
+        $text = 'Container exited'.($code === null ? '' : " with code {$code}").($meaning === null ? '' : ": {$meaning}")." ({$where})";
+
+        return match (true) {
+            ! $byLaunchroom => $this->error($text),
+            ($signal ?? (($code ?? 0) - 128)) === 9 => $this->warning($text),
+            default => $this->info($text),
         };
     }
 

@@ -51,6 +51,7 @@ Per environment:
 Skipped:
 - environments with `auto_deploy_paused` (production after a rollback, [04](04-build-and-deploy.md) §8),
 - instances with **watch paths** (repo-relative directory prefixes or globs) that none of the changed files match. Unknown file lists always deploy.
+- **Default watch paths for workspace apps** (`App\Support\Git\WatchPaths::effective`): an app without watch paths of its own whose last build reported `summary.workspace` and that has a root directory watches its folder, each `dependsOn` folder, the workspace root's `package.json`, the manager's lockfile and config (`pnpm-lock.yaml` + `pnpm-workspace.yaml`, `package-lock.json`, `yarn.lock` + `.yarnrc.yml`, `bun.lock`/`bun.lockb`) and `turbo.json`/`nx.json` ([04](04-build-and-deploy.md) §3 Monorepos). An app at the repository root, or without a workspace, deploys on every change. The same rule decides focused previews (§5.1).
 
 The deployment uses the environment's **last applied revision**: pushes never apply staged changes, and never-deployed instances are not deployed. It carries `trigger`, `git_ref`, `commit_sha`, `commit_message` and `commit_author`, supersedes queued deployments of the instance, and cancels + supersedes a build still running for an older commit (collapse to latest).
 
@@ -76,7 +77,7 @@ Code: `App\Support\Variables`, `App\Services\Variables`.
 
 ```
 final env for (service instance S in environment E, branch B) =
-     system variables                       (LAUNCHROOM_*, PORT, HOST/HOSTNAME, generated URLs)
+     system variables                       (LAUNCHROOM_*, PORT, generated URLs, framework variables)
    < project shared variables               (only those S opted into)
    < connection-injected references         (from canvas edges)
    < service variables targeted at E
@@ -105,12 +106,34 @@ final env for (service instance S in environment E, branch B) =
 - `${{ uuid() }}`: UUID v4.
 - `${{ jwt("anon", JWT_SECRET) }}` (D65): an HS256 JWT `{"role": "anon", "iss": "supabase", "iat", "exp": iat + 10 years}` signed with the plaintext of `JWT_SECRET`, the row of the same key and service (or shared, without a service) that applies to every target of the new row. The role is a Postgres role name; the signing value has at least 32 characters; a `jwt()` is the whole value, never part of a longer one. Without its signing variable the save fails ("create JWT_SECRET … first"), it never stores an unsigned value. These are Supabase's `anon` and `service_role` API keys.
 - n is 8–1024. The resolver treats a leftover function as a broken expression.
-- **Secrets a framework needs** (D86): when a build's preset declares one (`summary.generatedSecrets`: Laravel `APP_KEY`, Django `SECRET_KEY`) and the service has none in the deployment's environment, the deployment creates it as a secret service variable `${{ secret(n) }}` targeted at that environment (workers and crons reference their app's), applied at once and audited ([04](04-build-and-deploy.md) §13 "Generated secrets"). A variable the user set wins; a deleted one is generated again on the next deploy unless the preset decision is removed.
+- **Secrets a framework needs** (D86): when a build's preset declares one (`summary.generatedSecrets`: Laravel `APP_KEY`, Django `SECRET_KEY`, Rails and Phoenix `SECRET_KEY_BASE`, Symfony `APP_SECRET`, Auth.js `AUTH_SECRET`/`NEXTAUTH_SECRET`) and the service has none in the deployment's environment, the deployment creates it as a secret service variable `${{ secret(n) }}` targeted at that environment (workers and crons reference their app's), applied at once and audited ([04](04-build-and-deploy.md) §13 "Generated secrets"). A variable the user set wins; a deleted one is generated again on the next deploy unless the preset decision is removed. Build-scoped keys (`scope: build`, Next.js `NEXT_SERVER_ACTIONS_ENCRYPTION_KEY`) are created for the next build and, with `shared: service`, hold one value per service across its non-fork environments, stored as a literal so copies keep it ([04](04-build-and-deploy.md) §13).
 - `variables.generator` keeps the generator of a value that was exactly one generator expression; copies into another environment re-evaluate it, so generated values are fresh per environment. Rows without a recorded generator are copied as they are. Generators signed with another variable are evaluated after it: environment copies order them last, blueprints create them after the service's other variables, and Compare & promote makes such an item depend on its signing variable and applies it after it. A copy without secrets (fork previews) gets an empty value for them, like the secret they are signed with.
 
 **System variables** (read-only, shown collapsed in the editor):
 - `LAUNCHROOM`, `LAUNCHROOM_PROJECT_ID`, `LAUNCHROOM_ENVIRONMENT(_ID|_KIND)`, `LAUNCHROOM_SERVICE(_ID)`.
-- `PRIVATE_HOST` (the slug), `PORT`, `HOST`/`HOSTNAME=0.0.0.0` (not for databases), `PRIVATE_URL` (`http://<slug>:<port>`, web kinds), `DOMAIN`/`PUBLIC_URL` (first custom domain, else the generated one).
+- `PRIVATE_HOST` (the slug), `PORT`, `PRIVATE_URL` (`http://<slug>:<port>`, web kinds), `DOMAIN`/`PUBLIC_URL` (the primary domain: the first custom domain, else the generated one), `DOMAINS`/`PUBLIC_URLS` (comma lists of every non-redirect hostname, primary first: custom, then generated, then per-deployment, by hostname within each). With no domain, nothing domain-derived is set.
+- Workers and crons get their app's `DOMAIN`, `PUBLIC_URL`, `DOMAINS` and `PUBLIC_URLS` (they render the same links and run the same settings).
+- `HOST`/`HOSTNAME=0.0.0.0` only for the JS server presets that need it to listen on all interfaces (node-server, nuxt, sveltekit, astro, react-router, tanstack-start, angular-ssr, gatsby; Next.js gets `HOSTNAME` from its preset). Before D88 every service got it; an existing service loses it on its next deploy, which Variables → System says ("No longer set by launchroom. The next deploy runs without it"). An image or Dockerfile app that bound through `$HOST` needs the variable; the `port_loopback` explanation offers it.
+- `WEB_CONCURRENCY` for web services with provider python or ruby: `clamp(min(round(cpus × 2), memoryMb / 256), 1, 16)` from the replica size, so gunicorn and Puma start a sensible number of workers. A variable wins.
+- **Framework variables** (D88, `SystemVariables::aliases`): a preset declares `summary.envAliases [{name, from}]` and the dashboard resolves them per environment from the system values, under the user's variables (a variable of that name wins), left out when there is no domain. Workers and crons resolve against their app; previews against their own domains. Variables → System lists them with a note ("Set from PUBLIC_URL for Laravel", "Replaced by your variable"). Sources:
+
+  | `from` | Value |
+  |---|---|
+  | `DOMAIN`, `PUBLIC_URL`, `DOMAINS`, `PUBLIC_URLS`, `PORT` | as above |
+  | `ALLOWED_HOSTS_LIST` | the domains, the service name and `localhost`, comma-separated |
+  | `TRUSTED_PROXY_CIDRS` | the environment network's gateway (`.1/32`) and `100.64.0.0/10`, comma-separated without spaces |
+
+  | Preset | Aliases |
+  |---|---|
+  | Laravel | `APP_URL ← PUBLIC_URL` |
+  | Symfony | `DEFAULT_URI ← PUBLIC_URL`; `SYMFONY_TRUSTED_PROXIES`, `TRUSTED_PROXIES ← TRUSTED_PROXY_CIDRS` |
+  | Django | `<the hosts variable the settings read> ← ALLOWED_HOSTS_LIST`, `<the CSRF variable> ← PUBLIC_URLS`, or with the settings shim `LAUNCHROOM_ALLOWED_HOSTS ← ALLOWED_HOSTS_LIST`, `LAUNCHROOM_CSRF_TRUSTED_ORIGINS ← PUBLIC_URLS`; `FORWARDED_ALLOW_IPS ← TRUSTED_PROXY_CIDRS` |
+  | FastAPI / Flask / Litestar | `FORWARDED_ALLOW_IPS ← TRUSTED_PROXY_CIDRS` |
+  | Phoenix | `PHX_HOST ← DOMAIN` |
+  | NextAuth 4 | `NEXTAUTH_URL ← PUBLIC_URL` |
+  | Rocket | `ROCKET_PORT ← PORT` |
+
+  Presets also set plain runtime values: `AUTH_TRUST_HOST=true` with Auth.js, SvelteKit `ADDRESS_HEADER=X-Forwarded-For` and `XFF_DEPTH=1`, `NODE_OPTIONS=--import=/opt/launchroom/node/forwarded.mjs` for Node servers (a user `NODE_OPTIONS` replaces it), the Django shim's `DJANGO_SETTINGS_MODULE`/`PYTHONPATH`, Rails `RAILS_ENV`, Phoenix `PHX_SERVER`, `JAVA_TOOL_OPTIONS`, `SERVER_FORWARD_HEADERS_STRATEGY`, `ASPNETCORE_FORWARDEDHEADERS_ENABLED` ([04](04-build-and-deploy.md) §3). Aliases resolve against the system values, not a user-overridden `PUBLIC_URL`. The primary domain doesn't wait for DNS verification yet (`DomainSpec` has no verification state).
 - Deployment-specific `LAUNCHROOM_DEPLOYMENT_ID` and `LAUNCHROOM_GIT_COMMIT_SHA` are added to the env snapshot but can't be referenced.
 
 **Exported variables**: every service exports `PRIVATE_HOST`, `PRIVATE_URL`, `PUBLIC_URL`, `DOMAIN`, `PORT`. Database engines export `DATABASE_URL` plus parts (`HOST`, `PORT`, `USER`, `PASSWORD`, `DATABASE`), Redis exports `REDIS_URL`, and so on.
@@ -137,8 +160,8 @@ Each variable has an effective **exposure**: `runtime` (default), `build`, or `b
 - **Build+runtime automatically**:
   - framework-inlined prefixes: `NEXT_PUBLIC_*`, `VITE_*`, `PUBLIC_*` (SvelteKit/Astro), `REACT_APP_*`, `EXPO_PUBLIC_*`, `GATSBY_*`
   - build tooling: `SENTRY_AUTH_TOKEN`/`SENTRY_ORG`/`SENTRY_PROJECT`, `NODE_OPTIONS`, `NPM_TOKEN`/`NPM_CONFIG_*`, `COMPOSER_AUTH`, `PIP_INDEX_URL`/`UV_INDEX_URL`, `BUNDLE_*`
-  - launchroom-generated build keys (`NEXT_SERVER_ACTIONS_ENCRYPTION_KEY`)
-  - authentication keys imported during Next.js page collection (`AUTH_SECRET`, `NEXTAUTH_SECRET`); these stay secrets, passed to builds through BuildKit's secret transport.
+  - the Next.js server-actions key (`NEXT_SERVER_ACTIONS_ENCRYPTION_KEY`; generated once per service, D86)
+- `AUTH_SECRET` and `NEXTAUTH_SECRET` are runtime-only (D86 amended), so the per-environment generated value doesn't put them into the build key and every environment doesn't build its own image. An app that reads one while building fails with the `missing_variable` explanation, which offers to make it available at build time. Rows that were build+runtime before show one staged exposure change.
 - `NUXT_PUBLIC_*` stays runtime (Nitro reads it at runtime).
 - Inlined-prefix variables get a 🏗 badge: "baked into the browser bundle at build time, visible to anyone. Changing it requires a rebuild." They **cannot** be type `secret`.
 - Everything else is runtime-only, so editing it doesn't rebuild ([04](04-build-and-deploy.md) §7).
@@ -254,7 +277,7 @@ Code: `App\Actions\Previews`, `App\Services\Previews`, `App\Models\Previews` (ta
   1. Snapshot a revision when the intent changed.
   2. Deploy never-deployed image-based services (databases first). The preview stays `preparing` until they run and clones are ready.
   3. Once per head commit (`data.deployedSha`), deploy the built services through `DeployCommit` with trigger `pr`.
-- **Focused previews**: a service builds the PR head when its watch paths match the PR's changed files (GitHub compare `base...head`; more than 300 files or an error = unknown = everything builds), or when it is a worker/cron of such a service, or has a build-time variable referencing one. Every other service deploys the **commit its base instance runs**, so its build key equals the base deployment's and the build step reuses that image (`plan.reusedFrom`, [04](04-build-and-deploy.md) §7). The graph stays complete. Without watch paths every service builds the head.
+- **Focused previews**: a service builds the PR head when its watch paths match the PR's changed files (GitHub compare `base...head`; more than 300 files or an error = unknown = everything builds), or when it is a worker/cron of such a service, or has a build-time variable referencing one. Every other service deploys the **commit its base instance runs**, so its build key equals the base deployment's and the build step reuses that image (`plan.reusedFrom`, [04](04-build-and-deploy.md) §7). The graph stays complete. Without watch paths (its own, or the workspace default of §2.3) every service builds the head.
 
 ### 5.2 Stateful services
 

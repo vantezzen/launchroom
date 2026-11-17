@@ -33,6 +33,7 @@ use App\Data\Services\ScalingSettings;
 use App\Data\Services\ServicePlanData;
 use App\Data\Specs\EnvironmentSpec;
 use App\Data\Specs\ServiceSpec;
+use App\Data\Specs\VariableSpec;
 use App\Drivers\DatabaseEngines\DatabaseEngines;
 use App\Enums\DomainKind;
 use App\Enums\ServerRole;
@@ -58,6 +59,7 @@ use App\Scheduling\SchedulableServer;
 use App\Scheduling\Scheduler;
 use App\Services\Deployments\Placer;
 use App\Services\Dns\EdgeAddresses;
+use App\Services\Variables\ReplicaWarnings;
 use App\Services\Volumes\StagedVolumes;
 use App\Support\Servers\ServerLocations;
 use Carbon\CarbonImmutable;
@@ -76,6 +78,7 @@ final readonly class ServiceSettings
         private Placer $placer,
         private DockerfileGenerationView $dockerfiles,
         private ConfigFileLinks $configLinks,
+        private ReplicaWarnings $replicaWarnings,
     ) {}
 
     /**
@@ -93,9 +96,11 @@ final readonly class ServiceSettings
             ->latest('id')
             ->first();
         $plan = $instance->plan;
-        $definedKeys = $this->definedKeys($instance, $current);
+        $current ??= $this->currentSpec->get($environment);
+        $serviceSpec = $current->service($service->public_id);
+        $definedKeys = $this->definedKeys($current, $serviceSpec);
         $summary = $plan->summary ?? $latestPlanned?->plan?->summary;
-        $detected = $summary instanceof BuildSummary ? DetectedPlanData::fromSummary($summary, $definedKeys) : null;
+        $detected = $summary instanceof BuildSummary ? DetectedPlanData::fromSummary($summary, $definedKeys, $instance->scaling->replicas) : null;
 
         // Plan previews don't run the build, so the Next.js adapter's report
         // comes from the latest build that produced one.
@@ -176,12 +181,14 @@ final readonly class ServiceSettings
                 activeDeploymentId: $instance->activeDeployment?->public_id,
                 workloads: array_values($placements),
                 capabilityOptions: $service->kind === ServiceKind::Database ? [] : CapabilityOptionData::options(),
+                rootImage: $service->kind !== ServiceKind::Database && ($instance->activeDeployment?->imageFacts()?->startsAsRoot() ?? false),
             ),
             appsDomain: $appsDomain,
             placement: $this->placement($instance),
             edges: $this->edges($instance->team_id),
             configFile: $this->configFile($environment, $service),
             dockerfileGeneration: $service->kind === ServiceKind::App ? $this->dockerfiles->panel($instance, $user) : null,
+            replicaWarnings: $serviceSpec instanceof ServiceSpec ? $this->replicaWarnings->for($service->project, $current, $serviceSpec, $summary) : [],
         );
     }
 
@@ -385,26 +392,14 @@ final readonly class ServiceSettings
      *
      * @return list<string>
      */
-    private function definedKeys(ServiceInstance $instance, ?EnvironmentSpec $current): array
+    private function definedKeys(EnvironmentSpec $environment, ?ServiceSpec $service): array
     {
-        $environment = $current ?? $this->currentSpec->get($instance->environment);
-        $service = $environment->service($instance->service->public_id);
-
         if (! $service instanceof ServiceSpec) {
             return [];
         }
 
-        $keys = [];
-
-        foreach ([...$service->variables, ...$service->connectionVariables] as $variable) {
-            $keys[] = $variable->key;
-        }
-
-        foreach ($service->sharedVariableIds as $id) {
-            if (isset($environment->sharedVariables[$id])) {
-                $keys[] = $environment->sharedVariables[$id]->key;
-            }
-        }
+        // Own, shared opt-ins, connections (a worker's app's too) and branch rows.
+        $keys = array_map(static fn (VariableSpec $variable): string => $variable->key, $environment->variablesInPrecedence($service));
 
         return array_values(array_unique($keys));
     }

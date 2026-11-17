@@ -121,10 +121,11 @@ ok "no join token or APP_KEY in the output"
 rm -f "$TMP/install.log"
 
 step "checking services"
+wait_healthy launchroomd in_lr
 in_lr docker compose ps --format '{{.Service}} {{.State}} {{.Health}}' | tee /dev/stderr | while read -r service state health; do
 	[ "$state" = running ] || fail "$service is $state"
 	case "$service:$health" in
-	*:healthy | scheduler: | zot: | launchroomd:) ;;
+	*:healthy | scheduler: | zot:) ;;
 	*) fail "$service health is '$health'" ;;
 	esac
 done
@@ -132,6 +133,20 @@ ok "all services running, probes healthy"
 [ "$(in_lr stat -c %a .env)" = 600 ] || fail ".env is not mode 0600"
 in_vps test ! -e "$LR/data/daemon/join-token" || fail "the used join token was left on disk"
 ok ".env is 0600, join token removed after enrollment"
+
+step "./launchroom doctor"
+in_lr ./launchroom doctor --json </dev/null >"$TMP/doctor.json" || { cat "$TMP/doctor.json"; fail "./launchroom doctor found a problem on a fresh install"; }
+! grep -q '"status": "fail"' "$TMP/doctor.json" || { cat "$TMP/doctor.json"; fail "doctor reports a failed check"; }
+grep -q '"id": "service.postgres"' "$TMP/doctor.json" || fail "doctor did not check the services"
+[ "$(in_vps docker inspect -f '{{.HostConfig.OomScoreAdj}}' launchroom-postgres-1)" = -900 ] || fail "postgres has no memory priority"
+in_lr ./launchroom doctor --bundle </dev/null >"$TMP/doctor.txt" 2>&1 || true
+bundle="$(sed -n 's#.*Wrote the support bundle \([^ ]*\.tar\.gz\).*#\1#p' "$TMP/doctor.txt")"
+[ -n "$bundle" ] || { cat "$TMP/doctor.txt"; fail "no support bundle written"; }
+app_key="$(in_lr sed -n 's/^APP_KEY=base64://p' .env)"
+db_password="$(in_lr sed -n 's/^DB_PASSWORD=//p' .env)"
+in_vps sh -c "mkdir -p /tmp/bundle && tar -xzf '$bundle' -C /tmp/bundle && ! grep -rqF -e '$app_key' -e '$db_password' /tmp/bundle && test ! -e /tmp/bundle/launchroom-support/.env" ||
+	fail "the support bundle contains a secret"
+ok "doctor: no problems on a fresh install; Postgres has memory priority; the bundle holds no secrets"
 
 step "dockerd-guard owns the Docker socket (D49)"
 mounts="$(in_vps docker inspect launchroom-launchroomd-1 --format '{{range .Mounts}}{{.Destination}} {{end}}')"
@@ -147,14 +162,21 @@ guard_call() {
 }
 code="$(guard_call POST '/containers/create?name=lr-e2e-evil' '{"Image":"127.0.0.1:5000/x@sha256:0000000000000000000000000000000000000000000000000000000000000000","Labels":{"launchroom.managed":"true","launchroom.server":"srv_01J9Z8X7W6V5T4S3R2Q1P0N9M8"},"HostConfig":{"Privileged":true,"Binds":["/:/host"]}}')"
 { [ "$code" = 403 ] && grep -q 'dockerd-guard' "$TMP/guard.out"; } || fail "the guard did not refuse a privileged container ($code: $(cat "$TMP/guard.out"))"
-code="$(guard_call GET "/containers/$(in_vps docker ps -q --filter label=com.docker.compose.service=postgres | head -n 1)/json")"
-{ [ "$code" = 403 ] && grep -q 'not managed by launchroom' "$TMP/guard.out"; } || fail "the guard showed launchroomd the postgres container ($code)"
+# D49 addendum (D90): launchroomd may inspect the control-plane containers and
+# restart some of them, but never restart Postgres or run anything in it.
+pg="$(in_vps docker ps -q --filter label=com.docker.compose.service=postgres | head -n 1)"
+code="$(guard_call GET "/containers/$pg/json")"
+[ "$code" = 200 ] || fail "the guard refused to show launchroomd the postgres container ($code)"
+code="$(guard_call POST "/containers/$pg/restart")"
+{ [ "$code" = 403 ] && grep -q 'dockerd-guard' "$TMP/guard.out"; } || fail "the guard let launchroomd restart postgres ($code)"
+code="$(guard_call POST "/containers/$pg/exec" '{"Cmd":["true"]}')"
+[ "$code" = 403 ] || fail "the guard let launchroomd run a command in postgres ($code)"
 code="$(guard_call POST '/containers/create?name=lr-e2e-sock' '{"Image":"x","HostConfig":{"Binds":["/var/run/docker.sock:/s"]}}')"
 [ "$code" = 403 ] || fail "the guard accepted a Docker socket mount ($code)"
 code="$(guard_call GET '/containers/json')"
 [ "$code" = 200 ] || fail "the guard refused a container list ($code)"
 rm -f "$TMP/guard.out"
-ok "launchroomd has no Docker socket; the guard refuses privileged containers, host mounts and other containers"
+ok "launchroomd has no Docker socket; the guard refuses privileged containers, host mounts, and restarts or commands in Postgres"
 
 step "local launchroomd enrolled and online"
 psql() { in_lr docker compose exec -T postgres psql -U launchroom -d launchroom -tAc "$1"; }
@@ -212,12 +234,17 @@ ok "URL, CP key, launchroomd image and compose filled in; sh -n passes"
 step "re-running install.sh (idempotent)"
 key_before="$(in_lr sed -n 's/^APP_KEY=//p' .env)"
 docker exec -w /root -e LR_DASHBOARD_IMAGE="$DASHBOARD_IMAGE" -e LR_DAEMON_IMAGE="$DAEMON_IMAGE" -e LR_CADDY_IMAGE="$CADDY_REF" "$VPS" \
-	sh /opt/bundle/install/install.sh --bundle /opt/bundle --domain "$DOMAIN" --no-public-ip-detect >/dev/null 2>&1 ||
-	fail "second install.sh run failed"
+	sh /opt/bundle/install/install.sh --bundle /opt/bundle --domain "$DOMAIN" --no-public-ip-detect >"$TMP/reinstall.log" 2>&1 ||
+	{ cat "$TMP/reinstall.log"; fail "second install.sh run failed"; }
+rm -f "$TMP/reinstall.log"
 [ "$(in_lr sed -n 's/^APP_KEY=//p' .env)" = "$key_before" ] || fail "re-run changed APP_KEY"
 [ "$(psql 'SELECT count(*) FROM servers')" = 1 ] || fail "re-run enrolled a second server"
 [ "$(vps_curl -o /dev/null -w '%{http_code}' "https://$DOMAIN/up")" = 200 ] || fail "dashboard down after re-run"
-ok "secrets kept, still one server, dashboard up"
+in_lr sh -c 'cat data/daemon/update/tasks/*/status.json' | grep -q '"manual": true' || fail "the re-run did not go through the update supervisor"
+in_lr sh -c 'cat data/daemon/update/tasks/*/status.json' | grep -q '"outcome": "succeeded"' || fail "the supervised re-run did not succeed"
+in_lr sh -c 'ls data/daemon/update/tasks/*/backup/files.json' >/dev/null || fail "no backup of the managed files"
+in_vps test ! -e "$LR/data/postgres/launchroom-pre-upgrade.dump" || fail "the pre-update database copy was left behind"
+ok "secrets kept, still one server, dashboard up; the re-run was backed up and supervised"
 
 # uninstall_and_check: `launchroom uninstall` leaves nothing behind.
 uninstall_and_check() {
@@ -432,10 +459,11 @@ rm -f "$TMP/restore.log"
 ok "recovery link printed, setup not offered again, no secrets in the output"
 
 step "restored control plane"
+wait_healthy launchroomd in_lr
 in_lr docker compose ps --format '{{.Service}} {{.State}} {{.Health}}' | while read -r service state health; do
 	[ "$state" = running ] || fail "$service is $state after the restore"
 	case "$service:$health" in
-	*:healthy | scheduler: | zot: | launchroomd:) ;;
+	*:healthy | scheduler: | zot:) ;;
 	*) fail "$service health is '$health' after the restore" ;;
 	esac
 done

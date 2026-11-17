@@ -49,7 +49,7 @@ enum RouteFamily
     private const array PATHS = [
         'Daemon' => ['daemon/*', 'move/*'],
         'Edge' => ['auth/preview', 'registry/token'],
-        'Probe' => ['up', '.well-known/launchroom/*'],
+        'Probe' => ['up', 'up/*', '.well-known/launchroom/*'],
         'Installer' => ['install/*'],
         'Api' => ['api/*'],
         'Cli' => ['cli/*'],

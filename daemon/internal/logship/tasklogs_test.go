@@ -151,3 +151,60 @@ func TestLogsFollowEndsAtDeadline(t *testing.T) {
 		t.Fatalf("%d batches", len(cp.Batches))
 	}
 }
+
+// G9: a following tail goes on across a restart of the container (a crash
+// loop), with a system line at the exit and at the new start, and the new
+// run's lines.
+func TestLogsFollowAcrossRestarts(t *testing.T) {
+	d := dockerfake.New(srvID)
+	d.AddImage("img")
+	labels := docker.ManagedLabels(srvID)
+	labels[names.LabelWorkload] = string(wl)
+	id, _ := d.CreateContainer(t.Context(), &docker.ContainerCreate{Name: "lr-r", Config: configWith(labels)})
+	if err := d.StartContainer(t.Context(), id); err != nil {
+		t.Fatal(err)
+	}
+	now := time.Now().UTC()
+	d.Logs[id] = []docker.LogLine{{Stream: "stdout", Time: now.Add(-time.Minute), Text: "run 1"}}
+	cp := &taskstest.ControlPlane{}
+	ctx, cancel := context.WithTimeout(t.Context(), 30*time.Second)
+	defer cancel()
+	done := make(chan error, 1)
+	go func() {
+		_, err := logship.TaskHandler(d, cp)(ctx, taskstest.Task("tsk_01J9Z8X7W6V5T4S3R2Q1P0N9NA", state.TaskLogs, &state.LogsSpec{Workload: wl, Tail: 200, Follow: true}, time.Minute))
+		done <- err
+	}()
+	waitLines := func(n int) []state.LogLine {
+		t.Helper()
+		deadline := time.Now().Add(5 * time.Second)
+		for len(cp.ShippedLines()) < n {
+			if time.Now().After(deadline) {
+				t.Fatalf("shipped %+v, want %d lines", cp.ShippedLines(), n)
+			}
+			time.Sleep(50 * time.Millisecond)
+		}
+		return cp.ShippedLines()
+	}
+	waitLines(1)
+	for d.Waiting(id) == 0 {
+		time.Sleep(10 * time.Millisecond)
+	}
+	d.Exit(id, 1, false, true)
+	time.Sleep(100 * time.Millisecond)
+	d.Logs[id] = append(d.Logs[id], docker.LogLine{Stream: "stdout", Time: time.Now().UTC().Add(time.Hour), Text: "run 2"})
+	d.Restarted(id)
+	got := waitLines(4)
+	want := []struct {
+		stream state.LogStream
+		text   string
+	}{{state.StreamStdout, "run 1"}, {state.StreamSystem, "The container exited with code 1."}, {state.StreamSystem, "The container started again (restart 1)."}, {state.StreamStdout, "run 2"}}
+	for i, w := range want {
+		if got[i].Stream != w.stream || got[i].Text != w.text {
+			t.Fatalf("line %d: %+v (all %+v)", i, got[i], got)
+		}
+	}
+	cancel()
+	if err := <-done; err != nil {
+		t.Fatal(err)
+	}
+}

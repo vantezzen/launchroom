@@ -79,6 +79,9 @@ func run(ctx context.Context, cfg config.Config, log *slog.Logger, refresh <-cha
 	case !cfg.JoinToken.IsZero():
 		log.Info("already enrolled; ignoring the configured join token", "serverId", rec.ServerID)
 	}
+	if err := checkSameInstance(rec, &cfg); err != nil {
+		return err
+	}
 	if rec.ControlPlaneURL != cfg.ControlPlaneURL.String() {
 		log.Warn("control-plane URL differs from the one used at enrollment; using the configured one",
 			"enrolledWith", rec.ControlPlaneURL, "configured", cfg.ControlPlaneURL.String())
@@ -270,4 +273,24 @@ func sleep(ctx context.Context, d time.Duration) error {
 	case <-t.C:
 		return nil
 	}
+}
+
+// checkSameInstance refuses to run against another launchroom: both the
+// control-plane URL and the pinned signing key differ from what this server
+// enrolled with (an add-server command of another instance ran over this
+// install). A new dashboard domain or a control-plane move keeps the key,
+// and a key rotation keeps the URL, so those still start.
+func checkSameInstance(rec *enrollment.Record, cfg *config.Config) error {
+	if len(cfg.PinnedCPKey) == 0 || rec.ControlPlaneURL == cfg.ControlPlaneURL.String() {
+		return nil
+	}
+	pinned := identity.FormatPublicKey(cfg.PinnedCPKey)
+	for _, k := range rec.ControlPlaneKeys {
+		if string(k) == pinned {
+			return nil
+		}
+	}
+	return fmt.Errorf("this server is enrolled with the launchroom at %s, but .env names %s with another signing key; "+
+		"refusing to start against another launchroom. Put back LR_CONTROL_PLANE_URL and LR_CP_KEY in .env, "+
+		"or remove this server there before adding it elsewhere", rec.ControlPlaneURL, cfg.ControlPlaneURL.String())
 }

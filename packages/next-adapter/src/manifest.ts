@@ -21,6 +21,9 @@ export interface LaunchroomNextManifest {
   buildId: string;
   deploymentId: string | null;
   output: string | null;
+  /** next.config basePath ("" when unset): the app's routes, its health check included, live under it. */
+  basePath: string;
+  trailingSlash: boolean;
   /** Paths relative to the Next.js project directory; null without standalone output. */
   standalone: { appDir: string; serverEntry: string } | null;
   middleware: { present: boolean; runtime: string | null; matchers: string[] };
@@ -157,6 +160,8 @@ export function buildManifest(ctx: BuildCompleteContext): LaunchroomNextManifest
     buildId: ctx.buildId,
     deploymentId: config.deploymentId || null,
     output: config.output ?? null,
+    basePath: typeof config.basePath === 'string' ? config.basePath : '',
+    trailingSlash: config.trailingSlash === true,
     standalone: standalonePaths(ctx),
     middleware: { present: Boolean(mw), runtime: mw?.runtime ?? null, matchers },
     imageOptimization: {

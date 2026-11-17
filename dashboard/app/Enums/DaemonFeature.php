@@ -69,4 +69,20 @@ enum DaemonFeature: string
     case PhpExtensions = 'phpExtensions';
     /** `NodeState.volumes[].service`: a volume mounted by several services of one environment (D73, docs/03 §8). */
     case SharedVolumes = 'sharedVolumes';
+    /** `HealthSpec.host`: the probe sends the primary domain as Host, with X-Forwarded-Proto: https. */
+    case ProbeHost = 'probeHost';
+    /** `HealthSpec.restartAfter`: restart a serving workload whose health check keeps failing (issue `unresponsive`). */
+    case LivenessRestart = 'livenessRestart';
+    /** `WorkloadSpec.mounts[].initOwner`: give a new, empty volume to the image's user once. */
+    case VolumeInitOwner = 'volumeInitOwner';
+    /** `RunOnceSpec.mounts`: release commands see the service's volumes. */
+    case ReleaseMounts = 'releaseMounts';
+    /** Recovery `session` tasks (a console in a copy of the container without the app), allowed by LR_INTERACTIVE_SESSIONS. */
+    case RecoverySessions = 'recoverySessions';
+    /** `system.watchdog` and `Report.controlPlane`: the control-plane watchdog and fallback notifications. */
+    case Watchdog = 'watchdog';
+    /** The `cleanup` task ("Free space now"). */
+    case CleanupTask = 'cleanupTask';
+    /** The `cert_retry` task ("Retry now" on a certificate). */
+    case CertificateRetry = 'certificateRetry';
 }

@@ -41,6 +41,6 @@ final readonly class SessionGate
         $user->forgetTeamRoles();
 
         return Gate::forUser($user)->allows('use', $session)
-            && $this->targets->stillPlaced($session->serviceInstance, $session->workload_id, $session->server_id);
+            && $this->targets->stillPlaced($session->serviceInstance, $session->workload_id, $session->server_id, $session->kind);
     }
 }

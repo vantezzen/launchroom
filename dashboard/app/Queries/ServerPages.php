@@ -9,6 +9,7 @@ use App\Data\Servers\EnrollmentData;
 use App\Data\Servers\ServerData;
 use App\Data\Servers\ServerDetailData;
 use App\Enums\ServerRole;
+use App\Enums\ServerStatus;
 use App\Enums\ServerTab;
 use App\Models\Placement;
 use App\Models\Server;
@@ -35,6 +36,7 @@ final readonly class ServerPages
         private ServerRetiredVolumes $retiredVolumes,
         private ServerWorkloads $workloads,
         private ServerRoleHints $roleHints,
+        private ServerDisk $disk,
     ) {}
 
     /**
@@ -137,6 +139,8 @@ final readonly class ServerPages
 
         if ($overview) {
             $props['health'] = $this->health->evaluate($server);
+            // What takes the disk, and "Free space now" (G18).
+            $props['disk'] = $server->status === ServerStatus::Revoked ? null : $this->disk->for($server, $gate->allows('update', $server));
         }
 
         if ($overview || $settings) {

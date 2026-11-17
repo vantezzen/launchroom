@@ -21,7 +21,7 @@ final readonly class ResolvedRule
 
     public static function defaults(AlertRule $rule): self
     {
-        return new self($rule, true, $rule->threshold()['default'] ?? null, $rule->duration()['default'] ?? null);
+        return new self($rule, $rule->enabledByDefault(), $rule->threshold()['default'] ?? null, $rule->duration()['default'] ?? null);
     }
 
     public function thresholdValue(): float

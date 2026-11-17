@@ -9,12 +9,14 @@ use App\Data\Sessions\ConsoleTabData;
 use App\Data\Sessions\DataTabData;
 use App\Data\Sessions\OpenSessionData;
 use App\Data\Sessions\QueryHistoryItemData;
+use App\Data\Sessions\RecoveryShellData;
 use App\Data\Sessions\SessionHistoryItemData;
 use App\Data\Sessions\SessionReplicaData;
 use App\Enums\Crypto\ProjectCiphertext;
 use App\Enums\DaemonFeature;
 use App\Enums\Sessions\InteractiveSessionKind;
 use App\Enums\Sessions\SessionEndReason;
+use App\Enums\WorkloadPhase;
 use App\Exceptions\DecryptionFailed;
 use App\Models\Placement;
 use App\Models\ServiceInstance;
@@ -30,7 +32,8 @@ use Illuminate\Support\Facades\Gate;
 use LogicException;
 
 /**
- * Read models of the Console and Data tabs (docs/08 §15).
+ * Read models of the Console and Data tabs (docs/08 §15), with the
+ * Console tab's recovery shell (OD9).
  */
 final readonly class SessionTabs
 {
@@ -56,6 +59,37 @@ final readonly class SessionTabs
             idleMinutes: config()->integer('launchroom.sessions.idle_minutes'),
             maxMinutes: config()->integer('launchroom.sessions.max_minutes'),
             sessions: $this->recent($instance, $user, InteractiveSessionKind::Console),
+            recovery: $this->recovery($instance, $user),
+        );
+    }
+
+    /**
+     * The recovery shell (OD9): only while a replica's container won't stay
+     * up, or while someone's recovery session is still listed.
+     */
+    public function recovery(ServiceInstance $instance, User $user): ?RecoveryShellData
+    {
+        $stuck = $this->targets->stuckReplicas($instance);
+        $sessions = $this->recent($instance, $user, InteractiveSessionKind::Recovery);
+
+        if ($stuck->isEmpty() && $sessions === []) {
+            return null;
+        }
+
+        $allowed = $stuck->filter(static fn (Placement $placement): bool => $placement->server->supportsDaemonFeature(InteractiveSessionKind::Recovery->feature()))->values();
+        $outdated = $stuck->first();
+        $instance->loadMissing('service');
+        $hasData = $instance->service->kind->isStateful() || $instance->mountedVolumes()->isNotEmpty();
+
+        return new RecoveryShellData(
+            available: $this->relay->available() && $allowed->isNotEmpty(),
+            unavailableReason: $this->unavailable($stuck->isNotEmpty(), 'Every replica of this service is running. Open a console instead.')
+                ?? ($allowed->isEmpty() && $outdated instanceof Placement
+                    ? "{$outdated->server->name} can’t open recovery shells yet. Update it in Settings → Updates, and check that its LR_INTERACTIVE_SESSIONS setting is on."
+                    : null),
+            replicas: array_values($allowed->map(static fn (Placement $placement): SessionReplicaData => SessionReplicaData::fromPlacement($placement))->all()),
+            changesNeedStop: $hasData && $allowed->contains(static fn (Placement $placement): bool => in_array($placement->phase, WorkloadPhase::running(), true)),
+            sessions: $sessions,
         );
     }
 

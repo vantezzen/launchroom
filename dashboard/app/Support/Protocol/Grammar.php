@@ -24,6 +24,10 @@ final class Grammar
 
     public const string BUCKET_BODY = '[a-z0-9][a-z0-9.-]{1,61}[a-z0-9]';
 
+    public const string COMPOSER_PACKAGE = '/^(?:[a-z0-9](?:[_.-]?[a-z0-9]+)*\\/[a-z0-9](?:(?:[_.]|-{1,2})?[a-z0-9]+)*)$/D';
+
+    public const string COMPOSER_PACKAGE_BODY = '(?:[a-z0-9](?:[_.-]?[a-z0-9]+)*/[a-z0-9](?:(?:[_.]|-{1,2})?[a-z0-9]+)*)';
+
     public const string CONTAINER_PATH = '/^\\/[A-Za-z0-9._@+=,-]+(?:\\/[A-Za-z0-9._@+=,-]+)*$/D';
 
     public const string CONTAINER_PATH_BODY = '/[A-Za-z0-9._@+=,-]+(?:/[A-Za-z0-9._@+=,-]+)*';
@@ -43,6 +47,10 @@ final class Grammar
     public const string ED25519_KEY = '/^ed25519:[A-Za-z0-9+\\/]{43}=$/D';
 
     public const string ED25519_KEY_BODY = 'ed25519:[A-Za-z0-9+/]{43}=';
+
+    public const string EMAIL = '/^[A-Za-z0-9._%+-]{1,64}@(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\\.)+[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$/D';
+
+    public const string EMAIL_BODY = '[A-Za-z0-9._%+-]{1,64}@(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\\.)+[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?';
 
     public const string ENV_NAME = '/^[A-Za-z_][A-Za-z0-9_]{0,255}$/D';
 
@@ -92,6 +100,10 @@ final class Grammar
 
     public const string OBJECT_PREFIX_BODY = '(?:[A-Za-z0-9._-]+/)*[A-Za-z0-9._-]*';
 
+    public const string PHP_EXTENSION_IDENT = '/^[a-z][a-z0-9_]{0,31}$/D';
+
+    public const string PHP_EXTENSION_IDENT_BODY = '[a-z][a-z0-9_]{0,31}';
+
     public const string PUBLIC_ID = '/^[a-z]{2,4}_[0-7][0-9A-HJKMNP-TV-Z]{25}$/D';
 
     public const string PUBLIC_ID_BODY = '[a-z]{2,4}_[0-7][0-9A-HJKMNP-TV-Z]{25}';
@@ -128,6 +140,10 @@ final class Grammar
 
     public const string SSH_FINGERPRINT_BODY = 'SHA256:[A-Za-z0-9+/]{43}';
 
+    public const string TEAM_MIRROR_REPOSITORY = '/^(?:mirror\\/team_[0-7][0-9a-hjkmnp-tv-z]{25}\\/[a-z0-9-]+(?:\\.[a-z0-9-]+)+(?:\\/[a-z0-9]+(?:(?:\\.|_|__|-+)[a-z0-9]+)*)+)$/D';
+
+    public const string TEAM_MIRROR_REPOSITORY_BODY = '(?:mirror/team_[0-7][0-9a-hjkmnp-tv-z]{25}/[a-z0-9-]+(?:\\.[a-z0-9-]+)+(?:/[a-z0-9]+(?:(?:\\.|_|__|-+)[a-z0-9]+)*)+)';
+
     public const string TIMEZONE = '/^[A-Za-z][A-Za-z0-9_+-]{0,31}(\\/[A-Za-z0-9_+-]{1,32}){0,2}$/D';
 
     public const string TIMEZONE_BODY = '[A-Za-z][A-Za-z0-9_+-]{0,31}(/[A-Za-z0-9_+-]{1,32}){0,2}';
@@ -156,7 +172,7 @@ final class Grammar
 
     public const string API_VERSION = 'launchroom.vantezzen.io/v1';
 
-    public const string BUILD_RECIPE = 'r2 laravel2 django2 python-web1 nextjs2 static-spa1 node-server1';
+    public const string BUILD_RECIPE = 'r3 laravel3 symfony1 rails1 phoenix1 django3 python-web2 jvm1 dotnet1 rocket1 php1 nextjs3 nuxt1 sveltekit1 astro1 react-router1 tanstack-start1 angular-ssr1 gatsby1 static-spa1 node-server2';
 
     public const string MESH_RANGE = '100.64.0.0/10';
 

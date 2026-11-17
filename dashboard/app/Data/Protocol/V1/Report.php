@@ -58,6 +58,13 @@ final class Report extends Data
         public array|null|Optional $walArchives = new Optional,
         /** Container lifecycle events (D68), recorded by App\Actions\Servers\RecordWorkloadEvents. */
         public array|null|Optional $events = new Optional,
+        /**
+         * What the control-plane watchdog saw and did (system.watchdog; restarts
+         * and fallback notices are repeated until accepted).
+         *
+         * @var array<string, mixed>|null|Optional
+         */
+        public array|null|Optional $controlPlane = new Optional,
     ) {}
 
     /**
@@ -87,6 +94,24 @@ final class Report extends Data
             'walArchives.*.lastSegment' => ['sometimes', 'string', 'regex:'.Grammar::WAL_SEGMENT],
             'walArchives.*.pendingSegments' => ['required', 'integer', 'min:0'],
             'walArchives.*.message' => ['sometimes', 'string', 'max:1024'],
+            'controlPlane' => ['sometimes', 'nullable', 'array', 'required_array_keys:checkedAt'],
+            'controlPlane.checkedAt' => ['sometimes', 'string', 'regex:'.self::TIME_PATTERN],
+            'controlPlane.ready' => ['sometimes', 'nullable', 'boolean'],
+            'controlPlane.services' => ['sometimes', 'nullable', 'array', 'max:16'],
+            'controlPlane.services.*.name' => ['required', 'string', 'in:dashboard,horizon,reverb,scheduler,zot,postgres,valkey'],
+            'controlPlane.services.*.state' => ['required', 'string', 'in:running,unhealthy,restarting,stopped,missing'],
+            'controlPlane.services.*.startedAt' => ['sometimes', 'nullable', 'string', 'regex:'.self::TIME_PATTERN],
+            'controlPlane.services.*.restarts' => ['required', 'integer', 'min:0'],
+            'controlPlane.services.*.oomKilled' => ['sometimes', 'boolean'],
+            'controlPlane.restarts' => ['sometimes', 'nullable', 'array', 'max:64'],
+            'controlPlane.restarts.*.service' => ['required', 'string', 'in:dashboard,horizon,reverb,scheduler,zot'],
+            'controlPlane.restarts.*.at' => ['required', 'string', 'regex:'.self::TIME_PATTERN],
+            'controlPlane.restarts.*.reason' => ['required', 'string', 'in:unhealthy,not_ready,exited'],
+            'controlPlane.notices' => ['sometimes', 'nullable', 'array', 'max:32'],
+            'controlPlane.notices.*.kind' => ['required', 'string', 'in:down,still_down,back'],
+            'controlPlane.notices.*.at' => ['required', 'string', 'regex:'.self::TIME_PATTERN],
+            'controlPlane.notices.*.sent' => ['required', 'boolean'],
+            'controlPlane.notices.*.error' => ['sometimes', 'string', 'max:512'],
         ];
     }
 }

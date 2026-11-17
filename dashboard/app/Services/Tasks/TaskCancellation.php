@@ -4,17 +4,26 @@ declare(strict_types=1);
 
 namespace App\Services\Tasks;
 
+use App\Enums\DaemonNudge;
 use App\Enums\DaemonTaskPurpose;
 use App\Enums\DaemonTaskStatus;
 use App\Models\DaemonTask;
+use App\Models\Server;
+use App\Services\Daemon\DaemonNudger;
 
 /**
  * Cancels daemon tasks: pending ones directly, leased ones by flagging them so
  * the next heartbeat tells the daemon to cancel (by context, never pkill); the
- * daemon then completes them as cancelled.
+ * daemon then completes them as cancelled. The holding server is nudged
+ * ("task.cancelled", after commit) to heartbeat at once, so a closed session
+ * or access stops within a round trip, not at its next scheduled heartbeat.
  */
-final class TaskCancellation
+final readonly class TaskCancellation
 {
+    public function __construct(
+        private DaemonNudger $nudger,
+    ) {}
+
     public function cancel(DaemonTask $task): void
     {
         $task = DaemonTask::query()->whereKey($task->id)->lockForUpdate()->first();
@@ -31,6 +40,12 @@ final class TaskCancellation
 
         if ($task->cancel_requested_at === null) {
             $task->forceFill(['cancel_requested_at' => now()])->save();
+        }
+
+        $server = $task->server_id === null ? null : Server::query()->whereKey($task->server_id)->value('public_id');
+
+        if (is_string($server)) {
+            $this->nudger->nudge([$server], DaemonNudge::TaskCancelled);
         }
     }
 

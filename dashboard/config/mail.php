@@ -16,7 +16,10 @@ return [
     |
     */
 
-    'default' => env('MAIL_MAILER', 'log'),
+    // launchroom (OD20): without mail set up, messages are dropped, not
+    // logged: a password reset link in a log file is a secret in a log
+    // (docs/09 R4). `./launchroom reset-password` prints a sign-in link instead.
+    'default' => env('MAIL_MAILER', 'array'),
 
     /*
     |--------------------------------------------------------------------------

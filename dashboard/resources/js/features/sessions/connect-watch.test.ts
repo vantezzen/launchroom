@@ -89,7 +89,7 @@ describe('connect watch', () => {
         const failures: string[] = [];
         watchConnect(
             'ses_1',
-            'control plane',
+            (seconds) => `nothing after ${seconds} seconds`,
             (m) => failures.push(m),
             fake.deps,
         );
@@ -108,7 +108,7 @@ describe('connect watch', () => {
         const failures: string[] = [];
         watchConnect(
             'ses_1',
-            'control plane',
+            (seconds) => `nothing after ${seconds} seconds`,
             (m) => failures.push(m),
             fake.deps,
             10_000,
@@ -117,9 +117,7 @@ describe('connect watch', () => {
         await fake.advance(10_000);
         expect(fake.ended).toEqual(['ses_1']);
         expect(failures).toHaveLength(1);
-        expect(failures[0]).toContain(
-            'control plane didn’t answer within 10 seconds',
-        );
+        expect(failures).toEqual(['nothing after 10 seconds']);
         expect(fake.timers.size).toBe(0);
     });
 
@@ -128,7 +126,7 @@ describe('connect watch', () => {
         const failures: string[] = [];
         const stop = watchConnect(
             'ses_1',
-            'x',
+            () => 'x',
             (m) => failures.push(m),
             fake.deps,
         );

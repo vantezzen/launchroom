@@ -26,5 +26,7 @@ final class ConsoleTabData extends Data
         public int $idleMinutes,
         public int $maxMinutes,
         public array $sessions,
+        /** A recovery shell, while a replica's container won't stay up; null otherwise. */
+        public ?RecoveryShellData $recovery = null,
     ) {}
 }

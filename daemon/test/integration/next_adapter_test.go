@@ -52,7 +52,7 @@ func TestBuildNextAdapterAndRun(t *testing.T) {
 	adapterBuild := time.Since(start)
 	s := out.Summary
 	t.Logf("adapter build: %s in %s; start=%q framework=%s", out.Image, adapterBuild.Round(time.Second), s.StartCommand, s.Framework)
-	if len(s.Presets) != 1 || s.Presets[0].Name != "nextjs" || s.Presets[0].Version != 2 {
+	if len(s.Presets) != 1 || s.Presets[0].Name != "nextjs" || s.Presets[0].Version != 3 {
 		t.Fatalf("presets %+v", s.Presets)
 	}
 	var ids []string

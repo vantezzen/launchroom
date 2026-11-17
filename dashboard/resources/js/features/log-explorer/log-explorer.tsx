@@ -222,6 +222,8 @@ export function LogExplorer({
     );
     const autoLiveChecked = useRef(autoLive !== 'when-empty');
     const [following, setFollowing] = useState<number | null>(null);
+    // Why a replica has no live tail, or isn't running (G9).
+    const [tailNotes, setTailNotes] = useState<string[]>([]);
     // `?line=` (a copied line link) opens on that line, marked.
     const [linkedLine] = useState(() =>
         syncUrl && typeof window !== 'undefined'
@@ -385,6 +387,7 @@ export function LogExplorer({
                 .then((result) => {
                     if (!stopped) {
                         setFollowing(result.following);
+                        setTailNotes(result.notes ?? []);
                         renew = window.setTimeout(
                             () => void start(),
                             result.renewAfterSeconds * 1000,
@@ -394,6 +397,7 @@ export function LogExplorer({
                 .catch(() => {
                     if (!stopped) {
                         setFollowing(0);
+                        setTailNotes([]);
                         renew = window.setTimeout(() => void start(), RETRY_MS);
                     }
                 });
@@ -421,6 +425,7 @@ export function LogExplorer({
             window.clearTimeout(renew);
             stopPolling();
             setFollowing(null);
+            setTailNotes([]);
             void http
                 .getClient()
                 .request({
@@ -941,6 +946,16 @@ export function LogExplorer({
                                       : `following ${following} ${following === 1 ? 'replica' : 'replicas'}`)}
                         </MetaLine>
                     </p>
+                    {live && tailNotes.length > 0 && (
+                        <ul
+                            aria-label="Replicas without live logs"
+                            className="flex flex-col gap-0.5 type-small text-muted-foreground"
+                        >
+                            {tailNotes.map((note) => (
+                                <li key={note}>{note}</li>
+                            ))}
+                        </ul>
+                    )}
                 </div>
             </div>
 

@@ -21,6 +21,11 @@ use Throwable;
  * environment raises an alert for its service; the service's next live
  * deployment resolves it. Previews never alert. A listener never changes
  * the deployment's outcome, so failures are reported, not thrown.
+ *
+ * An automatic rollback (probation, OD1) going live raises it too: the new
+ * version failed after it went live, and auto-deploy stays paused until
+ * someone resumes it. The next live deployment that isn't such a rollback
+ * resolves it.
  */
 final readonly class RaiseDeployFailedAlerts
 {
@@ -57,6 +62,25 @@ final readonly class RaiseDeployFailedAlerts
         $environment = $deployment->environment;
         $subject = 'service:'.$instance->public_id;
         $sha = $deployment->commit_sha !== null ? substr($deployment->commit_sha, 0, 7) : null;
+
+        if ($event->to === DeploymentStatus::Active && is_string($deployment->rollback_reason) && $deployment->rollback_reason !== '') {
+            $this->raise->handle(new AlertSignal(
+                team: $deployment->team,
+                rule: AlertRule::DeployFailed,
+                subject: $subject,
+                title: "{$instance->service->name} was rolled back in {$environment->name}",
+                summary: mb_substr(rtrim($deployment->rollback_reason).' New pushes don’t go live until you resume deploys.', 0, 1000),
+                severity: $environment->kind === EnvironmentKind::Production ? AlertSeverity::Critical : AlertSeverity::Warning,
+                href: Links::deployment($deployment),
+                project: $environment->project,
+                environment: $environment,
+                serviceInstance: $instance,
+                facts: ['Now live' => $sha ?? $deployment->public_id],
+                occurrence: $deployment->public_id,
+            ));
+
+            return;
+        }
 
         if ($event->to === DeploymentStatus::Active) {
             $this->resolve->handle($deployment->team_id, AlertRule::DeployFailed, $subject, ($sha !== null ? "{$sha} is live" : 'A new deployment is live').' in '.$environment->name.'.');

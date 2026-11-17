@@ -337,6 +337,8 @@ type TaskResults struct {
 	Inventory *InventoryResult `json:"inventory,omitzero" jsonschema:"nullable"`
 	// ContainerInspection is set for succeeded inspect_container tasks (docs/03 §13.2).
 	ContainerInspection *ContainerInspectionResult `json:"containerInspection,omitzero" jsonschema:"nullable"`
+	// Cleanup is set for succeeded cleanup tasks (trigger "manual").
+	Cleanup *CleanupResult `json:"cleanup,omitzero" jsonschema:"nullable"`
 }
 
 // ForOutcome returns the results reported for an attempt with outcome o. A
@@ -493,6 +495,9 @@ func (c *TaskCompletion) Validate() error {
 	if c.ContainerInspection != nil {
 		c.ContainerInspection.validate(&e)
 	}
+	if c.Cleanup != nil {
+		c.Cleanup.validate(&e, "cleanup")
+	}
 	return e.err()
 }
 
@@ -528,6 +533,9 @@ type Report struct {
 	// Events are container lifecycle events not delivered yet (D68), oldest
 	// first; omitted when there are none.
 	Events []WorkloadEvent `json:"events,omitzero" jsonschema:"nullable,maxItems=256"`
+	// ControlPlane is what the watchdog saw and did (system.watchdog);
+	// omitted on servers without one.
+	ControlPlane *ControlPlaneHealth `json:"controlPlane,omitzero" jsonschema:"nullable"`
 }
 
 // Rejection describes a NodeState launchroomd refused (Report.stateRejected).
@@ -588,6 +596,16 @@ type HostStatus struct {
 	// pulls images from (D68): checked every few minutes, so a server that
 	// can't download images shows before a deploy hangs on it.
 	Registry *RegistryReach `json:"registry,omitzero" jsonschema:"nullable"`
+	// Docker is whether launchroomd reaches Docker (through dockerd-guard).
+	Docker *DockerReach `json:"docker,omitzero" jsonschema:"nullable"`
+	// Reconcile is how the last reconcile passes went.
+	Reconcile *ReconcileStatus `json:"reconcile,omitzero" jsonschema:"nullable"`
+	// Daemon is when launchroomd and the host started and how launchroomd's
+	// previous run ended.
+	Daemon *DaemonRun `json:"daemon,omitzero" jsonschema:"nullable"`
+	// LastRefusal is the dashboard's last refusal of a signed request,
+	// until a report carrying it was accepted.
+	LastRefusal *Refusal `json:"lastRefusal,omitzero" jsonschema:"nullable"`
 }
 
 // RegistryReach is the latest check of the image registry from this server
@@ -650,6 +668,14 @@ type IngressStatus struct {
 	// Waf is the web firewall's state at this edge (docs/03 §13.4); sent by
 	// edges announcing the daemon feature "waf".
 	Waf *WafStatus `json:"waf,omitzero" jsonschema:"nullable"`
+	// Reason classifies why Caddy isn't serving (state not applied).
+	Reason IngressFailureReason `json:"reason,omitzero"`
+	// Port is the port another process holds (port_in_use).
+	Port *Port `json:"port,omitzero" jsonschema:"nullable"`
+	// Process is the name of that process (/proc/<pid>/comm), if found.
+	Process string `json:"process,omitzero" jsonschema:"maxLength=64"`
+	// Output are Caddy's last log lines (at most 30, 2 KiB each, masked).
+	Output []LogLine `json:"output,omitzero" jsonschema:"nullable,maxItems=30"`
 }
 
 // ProbeStatus is the result of the daemon's external health probe.
@@ -663,6 +689,11 @@ type ProbeStatus struct {
 	// Attempts counts the checks since the container started, including
 	// those in the start period (D68: "attempt 3" on the Health step).
 	Attempts int `json:"attempts,omitzero" jsonschema:"minimum=0"`
+	// Body is the start of the last failing answer (at most 300 bytes,
+	// masked like log lines), for HTTP probes that got one.
+	Body string `json:"body,omitzero" jsonschema:"maxLength=300"`
+	// Hint names what the last failing answer means.
+	Hint ProbeHint `json:"hint,omitzero"`
 }
 
 // WorkloadStatus is the observed state of one workload.
@@ -690,6 +721,12 @@ type WorkloadStatus struct {
 	// PortHint names the port misconfiguration the message explains, while
 	// the health check fails (the ports are in detectedPorts).
 	PortHint PortHint `json:"portHint,omitzero"`
+	// Failure is why the container can't be pulled, created or started right
+	// now (typed at the source); omitted once it runs.
+	Failure *WorkloadFailure `json:"failure,omitzero" jsonschema:"nullable"`
+	// Image is what the workload's image config says (user, exposed ports),
+	// once pulled.
+	Image *ImageFacts `json:"image,omitzero" jsonschema:"nullable"`
 }
 
 // PortHint is a known port misconfiguration of a workload.
@@ -768,6 +805,16 @@ func (r *Report) Validate() error {
 			if h.Attempts < 0 {
 				e.addf(p+".health.attempts", "must be >= 0")
 			}
+			checkText(&e, p+".health.body", h.Body, MaxProbeBody)
+			if h.Hint != "" {
+				e.check(p+".health.hint", h.Hint)
+			}
+		}
+		if w.Failure != nil {
+			w.Failure.validate(&e, p+".failure")
+		}
+		if w.Image != nil {
+			w.Image.validate(&e, p+".image")
 		}
 		if w.Issue != nil {
 			w.Issue.validate(&e, p+".issue")
@@ -824,6 +871,21 @@ func (r *Report) Validate() error {
 		if h.PublicAddresses != nil {
 			h.PublicAddresses.validate(&e, "host.publicAddresses")
 		}
+		if d := h.Docker; d != nil {
+			if d.CheckedAt.IsZero() {
+				e.addf("host.docker.checkedAt", "is required")
+			}
+			checkText(&e, "host.docker.error", d.Error, 512)
+		}
+		if h.Reconcile != nil {
+			h.Reconcile.validate(&e, "host.reconcile")
+		}
+		if h.Daemon != nil {
+			h.Daemon.validate(&e, "host.daemon")
+		}
+		if h.LastRefusal != nil {
+			h.LastRefusal.validate(&e, "host.lastRefusal")
+		}
 	}
 	if m := r.Metrics; m != nil {
 		m.validate(&e, "metrics")
@@ -837,6 +899,25 @@ func (r *Report) Validate() error {
 		in.validateCerts(&e)
 		if in.Waf != nil {
 			in.Waf.validate(&e, "ingress.waf")
+		}
+		if in.Reason != "" {
+			e.check("ingress.reason", in.Reason)
+		}
+		if in.Port != nil {
+			e.check("ingress.port", *in.Port)
+		}
+		checkText(&e, "ingress.process", in.Process, maxIngressProcess)
+		if hasControl(in.Process) {
+			e.addf("ingress.process", "contains control characters")
+		}
+		checkCount(&e, "ingress.output", len(in.Output), 0, MaxIngressOutputLines)
+		for j, l := range in.Output {
+			lp := idx("ingress.output", j)
+			if l.Time.IsZero() {
+				e.addf(lp+".time", "is required")
+			}
+			e.check(lp+".stream", l.Stream)
+			checkText(&e, lp+".text", l.Text, maxEventOutputLine)
 		}
 	}
 	if sr := r.StateRejected; sr != nil {
@@ -872,6 +953,9 @@ func (r *Report) Validate() error {
 	checkCount(&e, "events", len(r.Events), 0, MaxReportEvents)
 	for i := range r.Events {
 		r.Events[i].validate(&e, idx("events", i))
+	}
+	if r.ControlPlane != nil {
+		r.ControlPlane.validate(&e, "controlPlane")
 	}
 	return e.err()
 }

@@ -5,9 +5,11 @@ import {
     DatabaseBackup,
     FileCode2,
     Fingerprint,
+    Gauge,
     GitBranch,
     Globe,
     KeyRound,
+    LockKeyhole,
     Network,
     Palette,
     RefreshCw,
@@ -37,9 +39,11 @@ import { edit as editMove } from '@/routes/move';
 import { edit as editNetwork } from '@/routes/network-settings';
 import { edit as editNotifications } from '@/routes/notifications';
 import { edit as editProfile } from '@/routes/profile';
+import { index as editRegistryCredentials } from '@/routes/registry-credentials';
 import { edit as editRegistry } from '@/routes/registry-settings';
 import { edit as editSecurity } from '@/routes/security';
 import { index as settingsIndex } from '@/routes/settings';
+import { show as showSystem } from '@/routes/system';
 import { edit as editTeam } from '@/routes/team';
 import { edit as editUpdates } from '@/routes/updates';
 
@@ -52,8 +56,10 @@ const routes = {
     team: editTeam,
     git: editGit,
     backups: editBackups,
+    registries: editRegistryCredentials,
     notifications: editNotifications,
     'dockerfile-generation': editDockerfileGeneration,
+    system: showSystem,
     updates: editUpdates,
     network: editNetwork,
     'dashboard-domain': editDashboardDomain,
@@ -73,9 +79,11 @@ const descriptions: Partial<Record<AccountPage, string>> = {
     team: 'Who is in this team and what they may do.',
     git: 'Where your repositories come from.',
     backups: 'Where backups go and what they protect.',
+    registries: 'Sign-in details for registries that hold your private images.',
     notifications: 'Where launchroom tells you when something needs you.',
     'dockerfile-generation':
         'Suggest a Dockerfile when launchroom can’t detect how to build an app.',
+    system: 'How launchroom itself is doing on the main server.',
     updates: 'The version of launchroom and its servers.',
     network: 'Your apps’ domain, the private network and public traffic.',
     'dashboard-domain': 'The address this dashboard answers on.',
@@ -162,6 +170,20 @@ export default function SettingsLayout({ children }: PropsWithChildren) {
                     summary: 'Destinations and schedules',
                     keywords: ['s3', 'destination', 'snapshot', 'restore'],
                 },
+                // D91: private images, copied into launchroom's registry on deploy.
+                {
+                    id: 'registries',
+                    label: 'Private registries',
+                    icon: LockKeyhole,
+                    summary: 'Sign-in details for private images',
+                    keywords: [
+                        'registry',
+                        'private image',
+                        'docker hub',
+                        'ghcr',
+                        'credentials',
+                    ],
+                },
                 {
                     id: 'notifications',
                     label: 'Notifications',
@@ -185,6 +207,22 @@ export default function SettingsLayout({ children }: PropsWithChildren) {
             label: 'This launchroom',
             pages: owner
                 ? [
+                      // Control-plane health (services, queues, backups, storage).
+                      {
+                          id: 'system',
+                          label: 'System',
+                          icon: Gauge,
+                          summary: 'Services, queues and storage',
+                          keywords: [
+                              'health',
+                              'status',
+                              'horizon',
+                              'queue',
+                              'failed jobs',
+                              'disk',
+                              'database size',
+                          ],
+                      },
                       {
                           id: 'updates',
                           label: 'Updates',

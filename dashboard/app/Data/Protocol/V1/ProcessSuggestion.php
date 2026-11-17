@@ -19,6 +19,9 @@ final class ProcessSuggestion extends Data
         #[Max(64)]
         public string $name,
         public array $args,
+        /** How long the process needs to finish its work on SIGTERM (a default for the stop timeout, 1s to 5m). */
+        #[Max(16)]
+        public ?string $stopTimeout = null,
     ) {}
 
     /**

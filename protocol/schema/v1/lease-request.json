@@ -36,7 +36,9 @@
           "volume_export",
           "access",
           "inventory",
-          "inspect_container"
+          "inspect_container",
+          "cleanup",
+          "cert_retry"
         ]
       },
       "type": "array",

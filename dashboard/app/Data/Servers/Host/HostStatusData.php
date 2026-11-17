@@ -26,6 +26,10 @@ final class HostStatusData extends Data
         public ?string $dockerVersion = null,
         public ?HostHealthData $health = null,
         public ?RegistryReachData $registry = null,
+        public ?DockerReachData $docker = null,
+        public ?ReconcileStatusData $reconcile = null,
+        public ?DaemonRunData $daemon = null,
+        public ?DaemonRefusalData $lastRefusal = null,
     ) {}
 
     public static function fromProtocol(HostStatus $host): self
@@ -46,6 +50,70 @@ final class HostStatusData extends Data
                 latencyMs: is_int($registry['latencyMs'] ?? null) ? $registry['latencyMs'] : null,
                 error: is_string($registry['error'] ?? null) ? mb_substr($registry['error'], 0, 512) : null,
             ) : null,
+            docker: self::docker($host->docker),
+            reconcile: self::reconcile($host->reconcile),
+            daemon: is_array($host->daemon) && is_string($host->daemon['startedAt'] ?? null) ? new DaemonRunData(
+                startedAt: $host->daemon['startedAt'],
+                hostBootedAt: is_string($host->daemon['hostBootedAt'] ?? null) ? $host->daemon['hostBootedAt'] : null,
+            ) : null,
+            lastRefusal: self::refusal($host->lastRefusal),
+        );
+    }
+
+    /**
+     * @param  array<array-key, mixed>|null|Optional  $docker
+     */
+    private static function docker(array|null|Optional $docker): ?DockerReachData
+    {
+        if (! is_array($docker) || ! is_bool($docker['reachable'] ?? null) || ! is_string($docker['checkedAt'] ?? null)) {
+            return null;
+        }
+
+        return new DockerReachData($docker['reachable'], $docker['checkedAt'], is_string($docker['error'] ?? null) ? mb_substr($docker['error'], 0, 512) : null);
+    }
+
+    /**
+     * @param  array<array-key, mixed>|null|Optional  $reconcile
+     */
+    private static function reconcile(array|null|Optional $reconcile): ?ReconcileStatusData
+    {
+        if (! is_array($reconcile) || ! is_string($reconcile['lastPassAt'] ?? null)) {
+            return null;
+        }
+
+        $errors = [];
+
+        foreach (is_array($reconcile['errors'] ?? null) ? $reconcile['errors'] : [] as $error) {
+            if (is_array($error) && is_string($error['code'] ?? null)) {
+                $errors[] = new ReconcileErrorData(
+                    $error['code'],
+                    is_string($error['target'] ?? null) ? $error['target'] : null,
+                    is_string($error['message'] ?? null) ? mb_substr($error['message'], 0, 512) : null,
+                );
+            }
+        }
+
+        return new ReconcileStatusData(
+            lastPassAt: $reconcile['lastPassAt'],
+            lastCompleteAt: is_string($reconcile['lastCompleteAt'] ?? null) ? $reconcile['lastCompleteAt'] : null,
+            errors: array_slice($errors, 0, 16),
+        );
+    }
+
+    /**
+     * @param  array<array-key, mixed>|null|Optional  $refusal
+     */
+    private static function refusal(array|null|Optional $refusal): ?DaemonRefusalData
+    {
+        if (! is_array($refusal) || ! is_string($refusal['at'] ?? null) || ! is_int($refusal['status'] ?? null)) {
+            return null;
+        }
+
+        return new DaemonRefusalData(
+            at: $refusal['at'],
+            status: $refusal['status'],
+            clockSkewMs: is_int($refusal['clockSkewMs'] ?? null) ? $refusal['clockSkewMs'] : null,
+            message: is_string($refusal['message'] ?? null) ? mb_substr($refusal['message'], 0, 256) : null,
         );
     }
 

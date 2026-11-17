@@ -9,6 +9,13 @@
 # carries launchroom.managed=true + launchroom.role=control-plane, which is
 # what `./launchroom uninstall` selects by.
 #
+# Memory priority (docs/02 §4.1): when the server runs out of memory the
+# kernel stops apps first. Control-plane services get a negative OOM score
+# (Postgres, Valkey and launchroomd -900, the dashboard's processes -500,
+# zot and headscale -200) and a memory reservation (cgroup v2 memory.low)
+# that adds up to about the 768 MB the scheduler keeps free on this server.
+# `./launchroom doctor` warns when a container runs without it.
+#
 # Ingress: nothing here publishes 80/443. The local launchroomd runs Caddy as a
 # system container (host network) and routes the dashboard host (APP_URL) to
 # the dashboard on 127.0.0.1:${LR_DASHBOARD_PORT} (a "system route" in the
@@ -61,7 +68,7 @@ x-dashboard-env: &dashboard-env
   REVERB_SCHEME: http
   REVERB_SERVER_HOST: 0.0.0.0
   REVERB_SERVER_PORT: "6001"
-  MAIL_MAILER: ${MAIL_MAILER:-log}
+  MAIL_MAILER: ${MAIL_MAILER:-array}
   MAIL_SCHEME: ${MAIL_SCHEME:-}
   MAIL_HOST: ${MAIL_HOST:-}
   MAIL_PORT: ${MAIL_PORT:-}
@@ -144,6 +151,8 @@ services:
       - ./data/headscale/lib:/data/headscale:ro
     ports:
       - 127.0.0.1:${LR_DASHBOARD_PORT:-8000}:8000
+    oom_score_adj: -500
+    mem_reservation: 192m
     healthcheck:
       test: ["CMD", "curl", "-fsS", "-o", "/dev/null", "http://127.0.0.1:8000/up"]
       interval: 10s
@@ -155,6 +164,8 @@ services:
     <<: *dashboard
     command: ["php", "artisan", "horizon"]
     stop_grace_period: 60s
+    oom_score_adj: -500
+    mem_reservation: 192m
     healthcheck:
       test: ["CMD", "php", "artisan", "horizon:status"]
       interval: 30s
@@ -165,6 +176,7 @@ services:
   reverb:
     <<: *dashboard
     command: ["php", "artisan", "reverb:start"]
+    oom_score_adj: -500
     healthcheck:
       test: ["CMD", "php", "-r", "exit(@fsockopen('127.0.0.1', 6001) ? 0 : 1);"]
       interval: 15s
@@ -175,9 +187,18 @@ services:
   scheduler:
     <<: *dashboard
     command: ["php", "artisan", "schedule:work"]
-    # No probe: schedule:work is a foreground loop; a crash restarts the container.
+    oom_score_adj: -500
+    # The scheduler writes a heartbeat every minute; the check fails when it
+    # is older than 3 minutes (a hung loop). Dashboards from before the
+    # heartbeat have no such command and count as healthy.
     healthcheck:
-      disable: true
+      test:
+        - CMD-SHELL
+        - out=$$(php artisan launchroom:scheduler:alive 2>&1) && exit 0; case "$$out" in *"not defined"*) exit 0 ;; esac; echo "$$out"; exit 1
+      interval: 60s
+      timeout: 20s
+      start_period: 180s
+      retries: 3
 
   postgres:
     image: ${LR_POSTGRES_IMAGE:?}
@@ -188,6 +209,11 @@ services:
       POSTGRES_USER: launchroom
       POSTGRES_PASSWORD: ${DB_PASSWORD:?}
       POSTGRES_DB: launchroom
+    # Time for a clean shutdown (checkpoint) instead of crash recovery on
+    # the next start.
+    stop_grace_period: 60s
+    oom_score_adj: -900
+    mem_reservation: 256m
     volumes:
       # Postgres 18 images keep data in a versioned subdirectory; mount the parent.
       - ./data/postgres:/var/lib/postgresql
@@ -205,12 +231,17 @@ services:
     environment:
       VALKEY_PASSWORD: ${VALKEY_PASSWORD:?}
       REDISCLI_AUTH: ${VALKEY_PASSWORD:?}
+      # A hard ceiling with noeviction: queued jobs and sessions are never
+      # dropped; at the limit, writes are refused and the doctor says so.
+      VALKEY_MAXMEMORY: ${LR_VALKEY_MAXMEMORY:-512mb}
     # The password goes into a config file inside the container (printf is a
     # shell builtin), so it never appears in the host's process list.
     command:
       - sh
       - -c
-      - printf 'requirepass "%s"\n' "$$VALKEY_PASSWORD" > /tmp/valkey.conf && exec valkey-server /tmp/valkey.conf --appendonly yes --dir /data
+      - printf 'requirepass "%s"\nmaxmemory %s\nmaxmemory-policy noeviction\n' "$$VALKEY_PASSWORD" "$$VALKEY_MAXMEMORY" > /tmp/valkey.conf && exec valkey-server /tmp/valkey.conf --appendonly yes --dir /data
+    oom_score_adj: -900
+    mem_reservation: 64m
     volumes:
       - ./data/valkey:/data
     # Loopback only, for launchroomd on this host: with two or more edges it
@@ -244,7 +275,9 @@ services:
       - ./data/zot/storage:/var/lib/registry
       # Only the public half of the registry token key.
       - ./data/keys/registry-public:/etc/zot/keys:ro
+    oom_score_adj: -200
     # No healthcheck: the image is distroless (no shell, no curl).
+    # `./launchroom doctor` and launchroomd's watchdog probe GET /v2/.
 
   # Mesh coordination (docs/05 §2): Headscale with its embedded DERP relay.
   # It idles until a second server joins (the dashboard then turns the mesh
@@ -258,6 +291,7 @@ services:
     logging: *logging
     restart: unless-stopped
     command: ["serve"]
+    oom_score_adj: -200
     ports:
       - 3478:3478/udp
     volumes:
@@ -297,7 +331,8 @@ services:
       LR_ALLOWED_LOCAL_UPSTREAMS: 127.0.0.1:${LR_DASHBOARD_PORT:-8000}
     volumes:
       - ./data/daemon:/data
-    # No healthcheck: distroless image; `./launchroom status` shows enrollment.
+      - docker-fs:/run/docker-fs:ro
+    # Healthcheck (`launchroomd healthcheck`): from daemon-compose.yml.
 
 networks:
   default:
@@ -307,4 +342,8 @@ networks:
 volumes:
   # dockerd-guard's socket for launchroomd.
   guard-socket:
+    labels: *labels
+  # Empty, read-only: lives on Docker's own filesystem, so launchroomd can
+  # measure the disk Docker writes images and volumes to.
+  docker-fs:
     labels: *labels

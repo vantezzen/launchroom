@@ -6,12 +6,15 @@ namespace App\Models;
 
 use App\Data\Ingress\IngressReportData;
 use App\Data\Security\WafReportData;
+use App\Data\Servers\ControlPlaneHealthData;
 use App\Data\Servers\ControlPlaneUrlReportData;
+use App\Data\Servers\DaemonExitData;
 use App\Data\Servers\Host\HostStatusData;
 use App\Data\Servers\HostFactsData;
 use App\Data\Servers\MeshReportData;
 use App\Data\Servers\PinnedLocationData;
 use App\Data\Servers\RenderErrorData;
+use App\Data\Servers\RequestRejectionData;
 use App\Data\Servers\ServerRuntimeData;
 use App\Data\Servers\StateRejectionData;
 use App\Enums\Contracts\HasTransitionTable;
@@ -93,6 +96,9 @@ use Illuminate\Support\Collection;
  * @property Carbon|null $client_certificate_seen_at last signed request with a verified client certificate of this server (docs/03 §4.3)
  * @property Carbon|null $client_certificate_missing_at last signed request without one while the instance checks certificates
  * @property Carbon|null $client_certificate_reissue_until an instance owner allowed a new certificate while certificates are required
+ * @property RequestRejectionData|null $last_rejection the last correctly signed request the dashboard still refused (clock skew, revoked key, certificate)
+ * @property DaemonExitData|null $last_daemon_exit launchroomd's last unclean exit or host reboot (Report.host.daemon)
+ * @property ControlPlaneHealthData|null $control_plane_health the control-plane server's Report.controlPlane (watchdog)
  * @property-read Server|null $replacedBy
  * @property Carbon|null $created_at
  * @property Carbon|null $updated_at
@@ -421,6 +427,9 @@ final class Server extends Model
             'daemon_features' => 'array',
             'daemon_control_plane' => ControlPlaneUrlReportData::class,
             'runtime' => ServerRuntimeData::class,
+            'last_rejection' => RequestRejectionData::class,
+            'last_daemon_exit' => DaemonExitData::class,
+            'control_plane_health' => ControlPlaneHealthData::class,
         ];
     }
 }

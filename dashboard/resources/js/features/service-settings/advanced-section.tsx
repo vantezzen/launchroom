@@ -210,7 +210,11 @@ function ContainerSettings({ context }: { context: SettingsContext }) {
             <SettingsCard
                 setting="capabilities"
                 title="Capabilities"
-                description="Containers start with no Linux capabilities. Grant one only when the image needs it to start."
+                description={
+                    settings.advanced.rootImage
+                        ? 'This image starts as root, so launchroom adds all of these when it runs to let it switch to its own user. Every other capability stays dropped.'
+                        : 'Containers start with no Linux capabilities. Grant one only when the image needs it to start.'
+                }
                 footer={
                     capabilitiesError ? (
                         <InputError message={capabilitiesError} />

@@ -25,8 +25,8 @@ test('classifies keys by the docs/06 §3.3 tables', function (string $key, Varia
     ['UV_INDEX_URL', VariableExposure::Both],
     ['BUNDLE_GEMFILE', VariableExposure::Both],
     ['NEXT_SERVER_ACTIONS_ENCRYPTION_KEY', VariableExposure::Both],
-    ['AUTH_SECRET', VariableExposure::Both],
-    ['NEXTAUTH_SECRET', VariableExposure::Both],
+    ['AUTH_SECRET', VariableExposure::Runtime],
+    ['NEXTAUTH_SECRET', VariableExposure::Runtime],
     // Nitro reads NUXT_PUBLIC_* at runtime.
     ['NUXT_PUBLIC_API', VariableExposure::Runtime],
     ['DATABASE_URL', VariableExposure::Runtime],

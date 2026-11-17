@@ -39,6 +39,24 @@ final readonly class RaiseServerOfflineAlerts
         }
     }
 
+    /**
+     * Why, when the dashboard knows: it refused the server's correctly signed
+     * requests (clock skew, revoked key, certificate).
+     */
+    private function summary(Server $server): string
+    {
+        $rejection = $server->last_rejection;
+        $base = 'It has not been in touch for 5 minutes. Apps with replicas on other servers keep serving.';
+
+        if ($rejection === null || ! $rejection->current($server->last_report_at)) {
+            return $base.' The server page lists what to check.';
+        }
+
+        $why = $rejection->explain();
+
+        return mb_substr("{$base} {$why['title']}. {$why['detail']}", 0, 1000);
+    }
+
     private function apply(ServerStatusChanged $event): void
     {
         $server = Server::query()->whereKey($event->serverId)->with('team')->first();
@@ -57,7 +75,7 @@ final readonly class RaiseServerOfflineAlerts
                 rule: AlertRule::ServerOffline,
                 subject: $subject,
                 title: "{$server->name} is offline",
-                summary: 'It has not been in touch for 5 minutes. Apps with replicas on other servers keep serving. The server page lists what to check.',
+                summary: $this->summary($server),
                 href: Links::server($server),
                 server: $server,
                 facts: array_filter(['Last seen' => $server->last_seen_at?->toDayDateTimeString()], static fn (?string $v): bool => $v !== null),

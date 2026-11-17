@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Data\Deployments;
 
 use App\Enums\PortHint;
+use App\Enums\ProbeHint;
 use Spatie\LaravelData\Data;
 
 /**
@@ -23,6 +24,10 @@ final class ProbeProgressData extends Data
         public ?string $checkedAt = null,
         public ?PortHint $portHint = null,
         public array $listening = [],
+        /** What the failing answer means (Report `health.hint`, e.g. `host_not_allowed`). */
+        public ?ProbeHint $hint = null,
+        /** The failing answer's first ≤ 300 bytes as text, masked before it is stored (Report `health.body`). */
+        public ?string $body = null,
     ) {}
 
     /**
@@ -32,6 +37,6 @@ final class ProbeProgressData extends Data
     public function movedFrom(?self $before): bool
     {
         return ! $before instanceof self
-            || [$this->attempts, $this->failures, $this->lastError, $this->portHint, $this->listening] !== [$before->attempts, $before->failures, $before->lastError, $before->portHint, $before->listening];
+            || [$this->attempts, $this->failures, $this->lastError, $this->portHint, $this->listening, $this->hint] !== [$before->attempts, $before->failures, $before->lastError, $before->portHint, $before->listening, $before->hint];
     }
 }

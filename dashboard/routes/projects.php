@@ -9,6 +9,7 @@ use App\Http\Controllers\Logs\LogDownloadController;
 use App\Http\Controllers\Projects\CanvasController;
 use App\Http\Controllers\Projects\ConfigFileController;
 use App\Http\Controllers\Projects\ConnectionController;
+use App\Http\Controllers\Projects\DomainCertificateController;
 use App\Http\Controllers\Projects\DomainController;
 use App\Http\Controllers\Projects\ImportController;
 use App\Http\Controllers\Projects\LogRetentionController;
@@ -171,6 +172,10 @@ Route::middleware(['web', 'auth', 'verified'])
             ->middleware('throttle:20,1')
             ->name('projects.domains.verify');
         Route::delete('p/{project}/{environment}/s/{service}/domains/{domain}', [DomainController::class, 'destroy'])->name('projects.domains.destroy');
+        // "Retry now" for a failed certificate (one cert_retry task per edge, G16).
+        Route::post('p/{project}/{environment}/s/{service}/domains/{domain}/certificate/retry', [DomainCertificateController::class, 'retry'])
+            ->middleware('throttle:6,1')
+            ->name('projects.domains.certificate.retry');
 
         Route::get('p/{project}/{environment}/connections/preview', [ConnectionController::class, 'preview'])
             ->middleware('throttle:120,1')

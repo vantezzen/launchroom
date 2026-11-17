@@ -127,6 +127,25 @@ test('pushes are matched by installation, repository, branch, watch paths and pa
     expect(gdDeployments($this->web))->toBe($before + 1);
 });
 
+test('a monorepo app without watch paths deploys on its folder and the workspace packages it uses', function (): void {
+    $web = resolve(CreateService::class)->handle($this->project, CreateServiceData::from([
+        'name' => 'shop', 'kind' => ServiceKind::App,
+        'source' => ['type' => 'git', 'repositoryId' => 555, 'fullName' => 'octo-org/web', 'installationId' => $this->installation->id, 'rootDirectory' => 'apps/shop'],
+    ]), null, AuditActor::system());
+    resolve(DeployEnvironment::class)->handle($this->production, null, AuditActor::system());
+    ServiceInstance::query()->where('service_id', $web->id)->sole()->forceFill(['plan' => ['status' => 'ready', 'summary' => [
+        'builder' => 'railpack', 'builderReason' => 'preset', 'provider' => 'node',
+        'workspace' => ['packageName' => '@acme/shop', 'manager' => 'pnpm', 'dependsOn' => ['packages/ui']],
+    ]]])->save();
+    $before = gdDeployments($web);
+
+    gdPush($this->installation, GD_SHA_2, files: ['apps/admin/page.tsx']);
+    expect(gdDeployments($web))->toBe($before);
+
+    gdPush($this->installation, GD_SHA_2, files: ['packages/ui/button.tsx']);
+    expect(gdDeployments($web))->toBe($before + 1);
+});
+
 test('watch paths: prefixes and globs, unknown file lists always deploy', function (?array $files, bool $deploys): void {
     expect(WatchPaths::matches(['apps/web', 'packages/*/src/**'], $files))->toBe($deploys);
 })->with([

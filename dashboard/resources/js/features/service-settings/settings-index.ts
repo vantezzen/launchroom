@@ -299,6 +299,15 @@ export function settingsIndex(
         },
         {
             target: 'deploy',
+            label: 'Restart when stuck',
+            hint: 'Restarts a replica whose check keeps failing',
+            keywords: ['liveness', 'hung', 'restart', 'unresponsive'],
+            anchor: 'health-restart',
+            fallback: 'health-check',
+            when: kind !== 'database',
+        },
+        {
+            target: 'deploy',
             label: 'Drain time',
             hint: 'How long old replicas keep answering',
             keywords: [
@@ -309,6 +318,27 @@ export function settingsIndex(
                 'draining',
             ],
             anchor: 'drain',
+        },
+        {
+            target: 'deploy',
+            label: 'Two copies during a deploy',
+            hint: 'Start the new version before the old one stops',
+            keywords: ['volume', 'downtime', 'overlap', 'zero downtime'],
+            anchor: 'volume-overlap',
+            when: kind !== 'database' && settings.volumes.length > 0,
+        },
+        {
+            target: 'deploy',
+            label: 'Stop timeout',
+            hint: 'How long a stopping replica may finish its work',
+            keywords: [
+                'graceful shutdown',
+                'sigterm',
+                'grace',
+                'stop_grace_period',
+            ],
+            anchor: 'stop-timeout',
+            when: kind !== 'database',
         },
         {
             target: 'deploy',

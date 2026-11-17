@@ -85,7 +85,8 @@ final readonly class DaemonTasks
             DaemonTaskType::DbExport, DaemonTaskType::VolumeExport => 2,
             DaemonTaskType::RunOnce, DaemonTaskType::Backup, DaemonTaskType::Restore, DaemonTaskType::BackupMaintenance,
             DaemonTaskType::BackupSnapshots, DaemonTaskType::VerifyRestore, DaemonTaskType::Logs, DaemonTaskType::Session,
-            DaemonTaskType::DbImport, DaemonTaskType::VolumeImport, DaemonTaskType::Access, DaemonTaskType::InspectContainer => 1,
+            DaemonTaskType::DbImport, DaemonTaskType::VolumeImport, DaemonTaskType::Access, DaemonTaskType::InspectContainer,
+            DaemonTaskType::Cleanup, DaemonTaskType::CertRetry => 1,
         };
     }
 }

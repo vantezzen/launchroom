@@ -320,8 +320,12 @@ SecAuditLogType https
 SecAuditLog http://127.0.0.1:2023/waf  # LR_INGRESS_WAF_LOG_ADDR, loopback only
 # body processors (Coraza's recommended rules), so JSON and XML fields become ARGS:
 SecRule REQUEST_HEADERS:Content-Type "^(?:application(?:/soap\+|/)|text/)xml" "id:10000,phase:1,t:none,t:lowercase,pass,nolog,ctl:requestBodyProcessor=XML"
-SecRule REQUEST_HEADERS:Content-Type "^application/json" "id:10001,phase:1,t:none,t:lowercase,pass,nolog,ctl:requestBodyProcessor=JSON"
+SecRule REQUEST_HEADERS:Content-Type "^application/(?:json|csp-report|reports\+json)" "id:10001,phase:1,t:none,t:lowercase,pass,nolog,ctl:requestBodyProcessor=JSON"
 SecAction "id:10002,phase:1,pass,nolog,ctl:requestBodyLimit=32768"   # inspect the first 32 KiB by default
+# Next.js server actions: arguments are JSON whatever the content type
+SecRule REQUEST_HEADERS:Next-Action "@rx ^[0-9a-f]{40,64}$" "id:10003,phase:1,t:none,t:lowercase,pass,nolog,ctl:requestBodyProcessor=JSON"
+# CRS 4.25's default content types (rule 901162) plus text/plain and the two report types
+SecAction "id:10004,phase:1,pass,nolog,setvar:'tx.allowed_request_content_type=|application/x-www-form-urlencoded| |multipart/form-data| |text/xml| |application/xml| |application/soap+xml| |application/json| |text/plain| |application/csp-report| |application/reports+json|'"
 Include @crs-setup.conf.example
 # per Log only route:
 SecRule REQUEST_HEADERS:X-Lr-Waf-Route "@streq rt_…" "id:<n>,phase:1,pass,nolog,ctl:ruleEngine=DetectionOnly"
@@ -336,7 +340,8 @@ Include @owasp_crs/*.conf
 ```
 
 - Coraza sizes a transaction's body buffer from `SecRequestBodyLimit`, so `ctl:requestBodyLimit` can only lower it. The engine allows the largest setting, rule 10002 lowers every request to 32 KiB, and a route's own rule raises it again.
-- Per-route rule ids are assigned in route id order from 10003; a route rule set that would leave the local range fails rendering, and the routes are served without the firewall (§6.6). Exclusions without a path render without `chain`; without a target they use `ctl:ruleRemoveById`.
+- **Content types**: allowed request content types are CRS's defaults plus `text/plain`, `application/csp-report` and `application/reports+json`. Browsers send `text/plain` from `navigator.sendBeacon` and from Next.js server actions called in client code, and send CSP and Reporting API reports with the other two types; CRS refuses them in Block otherwise (rule 920420, reproduced with the `next16-stock` fixture). A request with a `Next-Action` header (40–64 hex) has its body parsed as JSON, so an action's arguments are inspected like any JSON API (`["1' OR 1=1--"]` is still refused by 942100). Reports are parsed as JSON too (form parsing made the whole body one argument name, which 934190 flagged). Other `text/plain` bodies get the default form parsing, so their tokens are still inspected. A `Next-Action` request whose body isn't JSON gets a body processor error and passes uninspected (Next refuses such a body itself); blocking on `REQBODY_ERROR` would block malformed JSON API bodies everywhere. `TestWafAllowsBrowserBodies` covers each case.
+- Per-route rule ids are assigned in route id order from 10005; a route rule set that would leave the local range fails rendering, and the routes are served without the firewall (§6.6). Exclusions without a path render without `chain`; without a target they use `ctl:ruleRemoveById`.
 - The firewall module logs every match with the client address, the URI and the matched data. Its logger `http.handlers.waf` is excluded from Caddy's log, so none of it reaches the container log.
 - Responses are not inspected (`SecResponseBodyAccess Off`): it would buffer every response and break streaming; CRS's data-leakage rules are the price.
 - Request bodies are inspected up to the route's limit (32 KiB by default) and then streamed to the app; the rest of a larger body is not inspected, and no body is refused for its size.

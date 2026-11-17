@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Data\Projects;
 
 use App\Data\Protocol\V1\BuildSummary;
+use App\Enums\DatabaseEngine;
 use App\Support\Projects\DatabaseSuggestions;
 use Spatie\LaravelData\Data;
 
@@ -13,7 +14,8 @@ use Spatie\LaravelData\Data;
  * worker processes from framework presets and databases from the variables
  * its code references. Database suggestions repeat what the repository
  * inspection found in `.env.example` when both agree; the import flow merges
- * them by engine.
+ * them by engine. A fallback suggestion (Postgres for Laravel) only joins
+ * when the app has no database of that kind yet.
  */
 final class PlanSuggestionsData extends Data
 {
@@ -22,6 +24,8 @@ final class PlanSuggestionsData extends Data
      * references say nothing about the database actually used.
      */
     private const array REFERENCES_EVERY_DRIVER = ['laravel', 'symfony', 'rails', 'django'];
+
+    public const string LARAVEL_SQLITE_REASON = 'Laravel uses SQLite by default, and its file would be reset on every deploy';
 
     /**
      * @param  list<SuggestedProcessData>  $processes
@@ -41,8 +45,16 @@ final class PlanSuggestionsData extends Data
         }
 
         $databases = [];
+        $framework = strtolower((string) $summary->framework);
 
-        if (! in_array(strtolower((string) $summary->framework), self::REFERENCES_EVERY_DRIVER, true)) {
+        // Laravel 11+ defaults to a SQLite file inside the container, which
+        // every deploy resets (OD22): a Postgres database is preselected
+        // unless the repository already asks for a database server.
+        if ($framework === 'laravel') {
+            $databases[] = new SuggestedDatabaseData(DatabaseEngine::Postgres, self::LARAVEL_SQLITE_REASON, [trim($rootDirectory, '/')], fallback: true);
+        }
+
+        if (! in_array($framework, self::REFERENCES_EVERY_DRIVER, true)) {
             $names = array_filter($summary->envReferences ?? [], is_string(...));
 
             foreach (DatabaseSuggestions::fromVariables(array_fill_keys($names, ''), 'the code') as $suggestion) {

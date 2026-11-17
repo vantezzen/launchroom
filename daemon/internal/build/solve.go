@@ -3,9 +3,11 @@ package build
 import (
 	"bytes"
 	"context"
+	"errors"
 	"fmt"
 	"maps"
 	"regexp"
+	"slices"
 	"strings"
 	"sync"
 	"time"
@@ -35,6 +37,20 @@ type solveRequest struct {
 	CacheRef  string
 	StepOf    func(vertexName string) string
 	Sink      LogSink
+	// Idle cancels the solve when BuildKit reports nothing (no vertex, log or
+	// progress update) for this long; 0 = no idle limit.
+	Idle time.Duration
+}
+
+// errBuildIdle is the cause of a solve canceled for printing nothing for
+// solveRequest.Idle.
+type errBuildIdle struct {
+	idle time.Duration
+	step string
+}
+
+func (e errBuildIdle) Error() string {
+	return fmt.Sprintf("the build printed nothing for %s during %s", e.idle.Round(time.Minute), e.step)
 }
 
 type solveResult struct {
@@ -79,7 +95,10 @@ func solve(ctx context.Context, c *bkclient.Client, r solveRequest) (*solveResul
 	statusCh := make(chan *bkclient.SolveStatus)
 	lg := newLogMapper(r.StepOf, r.Sink)
 	var resp *bkclient.SolveResponse
-	eg, egctx := errgroup.WithContext(ctx)
+	sctx, cancel := context.WithCancelCause(ctx)
+	defer cancel(nil)
+	activity := make(chan struct{}, 1)
+	eg, egctx := errgroup.WithContext(sctx)
 	eg.Go(func() error {
 		var err error
 		resp, err = c.Solve(egctx, nil, opt, statusCh)
@@ -88,11 +107,24 @@ func solve(ctx context.Context, c *bkclient.Client, r solveRequest) (*solveResul
 	eg.Go(func() error {
 		for st := range statusCh {
 			lg.status(st)
+			select {
+			case activity <- struct{}{}:
+			default:
+			}
 		}
 		return nil
 	})
+	if r.Idle > 0 {
+		go watchIdle(sctx, r.Idle, activity, func() { cancel(errBuildIdle{idle: r.Idle, step: lg.currentStep()}) })
+	}
 	err := eg.Wait()
+	lg.flush()
 	out := &solveResult{Tail: lg.tail(), FailedStep: lg.failedStep()}
+	var idle errBuildIdle
+	if err != nil && errors.As(context.Cause(sctx), &idle) {
+		out.FailedStep = idle.step
+		return out, idle
+	}
 	if err != nil {
 		return out, err
 	}
@@ -100,6 +132,23 @@ func solve(ctx context.Context, c *bkclient.Client, r solveRequest) (*solveResul
 		out.Digest = resp.ExporterResponse["containerimage.digest"]
 	}
 	return out, nil
+}
+
+// watchIdle calls idle when no activity arrives for d, until ctx ends.
+func watchIdle(ctx context.Context, d time.Duration, activity <-chan struct{}, idle func()) {
+	t := time.NewTimer(d)
+	defer t.Stop()
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-activity:
+			t.Reset(d)
+		case <-t.C:
+			idle()
+			return
+		}
+	}
 }
 
 // LogSink receives build log lines (already grouped by step).
@@ -117,6 +166,8 @@ type logMapper struct {
 	last     []string
 	failed   string
 	partial  map[digest.Digest][]byte
+	// current is the step of the last line (what an idle build was doing).
+	current string
 }
 
 type vertexInfo struct {
@@ -134,6 +185,7 @@ func newLogMapper(stepOf func(string) string, sink LogSink) *logMapper {
 const tailLines = 50
 
 func (m *logMapper) emit(step string, stream state.LogStream, text string) {
+	m.current = step
 	m.last = append(m.last, text)
 	if len(m.last) > tailLines {
 		m.last = m.last[len(m.last)-tailLines:]
@@ -214,6 +266,34 @@ func (m *logMapper) status(st *bkclient.SolveStatus) {
 		}
 		m.emit(step, state.StreamStderr, "WARNING: "+string(w.Short))
 	}
+}
+
+// flush emits the unterminated last line of every vertex: the last thing a
+// build printed before it was killed is often the reason.
+func (m *logMapper) flush() {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	for _, d := range slices.Sorted(maps.Keys(m.partial)) {
+		data := m.partial[d]
+		if len(bytes.TrimSpace(data)) == 0 {
+			continue
+		}
+		step, num := "build", 0
+		if vi := m.vertices[d]; vi != nil {
+			step, num = vi.step, vi.num
+		}
+		m.emit(step, state.StreamStdout, fmt.Sprintf("#%d %s", num, strings.TrimRight(string(data), "\r")))
+	}
+	clear(m.partial)
+}
+
+func (m *logMapper) currentStep() string {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if m.current == "" {
+		return "build"
+	}
+	return m.current
 }
 
 func (m *logMapper) tail() string {

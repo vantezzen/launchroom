@@ -135,7 +135,17 @@ func (pg *postgres) query(ctx context.Context, statement string, allowWrites boo
 	return pg.exec(ctx, statement, !allowWrites)
 }
 
-const pgSchemaSQL = `SELECT n.nspname, c.relname, c.relkind, GREATEST(c.reltuples, 0)::bigint
+// pgSchemaSQL lists the table-like objects with the catalog estimate
+// (reltuples, -1 or 0 until analyzed), the heap size and whether count(*)
+// may run (privilege, populated, no foreign partitions). A partitioned
+// table sums its leaves.
+const pgSchemaSQL = `SELECT n.nspname, c.relname, c.relkind,
+  CASE WHEN c.relkind = 'p' THEN (SELECT sum(GREATEST(l.reltuples, 0)) FROM pg_partition_tree(c.oid) t JOIN pg_class l ON l.oid = t.relid WHERE t.isleaf)::bigint
+       WHEN c.relkind IN ('r','m') THEN c.reltuples::bigint END,
+  CASE WHEN c.relkind = 'p' THEN COALESCE((SELECT sum(pg_relation_size(t.relid)) FROM pg_partition_tree(c.oid) t WHERE t.isleaf), 0)::bigint
+       WHEN c.relkind IN ('r','m') THEN pg_relation_size(c.oid) END,
+  c.relkind IN ('r','m','p') AND has_table_privilege(c.oid, 'SELECT') AND (c.relkind <> 'm' OR c.relispopulated)
+    AND (c.relkind <> 'p' OR NOT EXISTS (SELECT 1 FROM pg_partition_tree(c.oid) t JOIN pg_class l ON l.oid = t.relid WHERE l.relkind = 'f'))
 FROM pg_class c JOIN pg_namespace n ON n.oid = c.relnamespace
 WHERE c.relkind IN ('r','v','m','p','f') AND n.nspname NOT IN ('pg_catalog','information_schema') AND n.nspname NOT LIKE 'pg_toast%'
 ORDER BY 1, 2 LIMIT 2000`
@@ -147,24 +157,36 @@ func (pg *postgres) schema(ctx context.Context) *Result {
 	if r.Status != state.CommandOK {
 		return r
 	}
+	info, targets := pgSchemaInfo(r)
+	if picked := pickCounts(targets); len(picked) > 0 {
+		applyCounts(info, picked, pg.exec(ctx, "SET statement_timeout = "+strconv.Itoa(countTimeoutMs)+"; "+countSQL(picked, `"`), true))
+	}
+	return &Result{Status: state.CommandOK, Truncated: r.Truncated, Schema: info}
+}
+
+// pgSchemaInfo groups pgSchemaSQL rows by schema and returns the tables count(*) may run on.
+func pgSchemaInfo(r *Result) (*SchemaInfo, []countTarget) {
 	info := &SchemaInfo{Engine: state.EnginePostgres, Groups: []SchemaGroup{}}
+	var targets []countTarget
 	for _, row := range r.Rows {
-		if len(row) != 4 || row[0] == nil || row[1] == nil || row[2] == nil {
+		if len(row) != 6 || row[0] == nil || row[1] == nil || row[2] == nil {
 			continue
 		}
 		if len(info.Groups) == 0 || info.Groups[len(info.Groups)-1].Name != *row[0] {
 			info.Groups = append(info.Groups, SchemaGroup{Name: *row[0], Items: []SchemaItem{}})
 		}
-		item := SchemaItem{Name: *row[1], Kind: pgKinds[*row[2]]}
-		if row[3] != nil {
-			if n, err := strconv.ParseInt(*row[3], 10, 64); err == nil {
-				item.Rows = &n
+		item := SchemaItem{Name: *row[1], Kind: pgKinds[*row[2]], Rows: estimate(row[3])}
+		item.Estimate = item.Rows != nil
+		g := &info.Groups[len(info.Groups)-1]
+		if row[4] != nil && row[5] != nil && *row[5] == "t" && countable(*row[0], *row[1]) {
+			if size, err := strconv.ParseInt(*row[4], 10, 64); err == nil {
+				targets = append(targets, countTarget{group: len(info.Groups) - 1, item: len(g.Items),
+					schema: state.TableName(*row[0]), table: state.TableName(*row[1]), size: size})
 			}
 		}
-		g := &info.Groups[len(info.Groups)-1]
 		g.Items = append(g.Items, item)
 	}
-	return &Result{Status: state.CommandOK, Truncated: r.Truncated, Schema: info}
+	return info, targets
 }
 
 // quoteIdent quotes a grammar-checked identifier for SQL ("" doubling).

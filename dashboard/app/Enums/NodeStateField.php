@@ -24,6 +24,10 @@ enum NodeStateField: string
     case WorkloadStop = 'workloads[].stop';
     case WorkloadWalArchive = 'workloads[].walArchive';
     case IngressDnsProvider = 'ingress.dns.provider';
+    case SystemWatchdog = 'system.watchdog';
+    case HealthHost = 'workloads[].health.host';
+    case HealthRestartAfter = 'workloads[].health.restartAfter';
+    case MountInitOwner = 'workloads[].mounts[].initOwner';
 
     public function feature(): DaemonFeature
     {
@@ -41,6 +45,10 @@ enum NodeStateField: string
             self::WorkloadStop => DaemonFeature::StopSpec,
             self::WorkloadWalArchive => DaemonFeature::PointInTime,
             self::IngressDnsProvider => DaemonFeature::DnsProviders,
+            self::SystemWatchdog => DaemonFeature::Watchdog,
+            self::HealthHost => DaemonFeature::ProbeHost,
+            self::HealthRestartAfter => DaemonFeature::LivenessRestart,
+            self::MountInitOwner => DaemonFeature::VolumeInitOwner,
         };
     }
 
@@ -52,13 +60,16 @@ enum NodeStateField: string
      * database keeps Docker's default stop and doesn't archive WAL; a
      * workload that mounts another service's volume is left out (with its
      * routes); generated domains get no wildcard certificate from a DNS
-     * provider the daemon doesn't know.
+     * provider the daemon doesn't know; the watchdog is off; the probe
+     * sends the container address as Host and never restarts; a new volume
+     * keeps Docker's owner.
      */
     public function downgrade(): FeatureDowngrade
     {
         return match ($this) {
             self::LinkProbe, self::ControlPlane, self::RouteClientAuth, self::RouteWaf,
-            self::WorkloadShipLogs, self::WorkloadFiles => FeatureDowngrade::DropField,
+            self::WorkloadShipLogs, self::WorkloadFiles, self::SystemWatchdog, self::HealthHost,
+            self::HealthRestartAfter, self::MountInitOwner => FeatureDowngrade::DropField,
             self::PreparedVolume => FeatureDowngrade::DropItem,
             self::RouteStopped, self::SharedVolume, self::WorkloadSchedule, self::WorkloadStop,
             self::WorkloadWalArchive, self::IngressDnsProvider => FeatureDowngrade::RenderWithout,

@@ -31,7 +31,7 @@ final class InteractiveSessionPolicy
      */
     public function viewRecording(User $user, InteractiveSession $session): bool
     {
-        return $session->kind === InteractiveSessionKind::Console
+        return in_array($session->kind, [InteractiveSessionKind::Console, InteractiveSessionKind::Recovery], true)
             && $session->record
             && $user->hasTeamPermission($session->team_id, Permission::ExecContainers)
             && ($this->owns($user, $session) || $this->oversee($user, $session->team_id));

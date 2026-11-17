@@ -20,6 +20,7 @@ use App\Models\DaemonTask;
 use App\Models\Server;
 use App\Services\Daemon\DaemonNudger;
 use App\Services\Tasks\DaemonTasks;
+use App\Services\Tasks\TaskCancellation;
 use Illuminate\Support\Facades\DB;
 use Tests\Support\FakeDaemon;
 use Tests\Support\ProtocolSchemas;
@@ -126,6 +127,28 @@ test('queued tasks nudge the servers that may lease them', function (): void {
     $pinned->transitionTo(DaemonTaskStatus::Leased);
     resolve(RequeueExpiredLeases::class)->handle();
     expect($this->spy->pairs())->toBe(['task.available private-daemon.'.$this->server->public_id]);
+});
+
+test('cancelling a running task nudges its server after commit; a pending one needs no nudge', function (): void {
+    $team = $this->server->team_id;
+    $running = DaemonTask::query()->create(['team_id' => $team, 'type' => DaemonTaskType::Access, 'spec' => (object) [], 'server_id' => $this->server->id, 'pinned_to_server' => true]);
+    $running->forceFill(['attempt' => 1, 'lease_expires_at' => now()->addMinute()]);
+    $running->transitionTo(DaemonTaskStatus::Leased);
+    $pending = DaemonTask::query()->create(['team_id' => $team, 'type' => DaemonTaskType::Session, 'spec' => (object) [], 'server_id' => $this->server->id, 'pinned_to_server' => true]);
+    $this->spy->sent = [];
+
+    DB::transaction(function () use ($running): void {
+        resolve(TaskCancellation::class)->cancel($running);
+        expect($this->spy->sent)->toBe([]); // not before the commit
+    });
+
+    expect($this->spy->pairs())->toBe(['task.cancelled private-daemon.'.$this->server->public_id])
+        ->and($running->refresh()->cancel_requested_at)->not->toBeNull();
+
+    $this->spy->sent = [];
+    resolve(TaskCancellation::class)->cancel($pending);
+    expect($pending->refresh()->status)->toBe(DaemonTaskStatus::Cancelled)
+        ->and($this->spy->sent)->toBe([]);
 });
 
 test('only servers that can lease a task get nudged: platform and launchroomd features count', function (): void {

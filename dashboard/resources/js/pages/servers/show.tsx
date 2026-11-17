@@ -18,10 +18,12 @@ import {
     EdgeTraffic,
     ServerConnection,
 } from '@/features/servers/server-connection';
+import { ServerDisk } from '@/features/servers/server-disk';
 import { ServerGlance } from '@/features/servers/server-glance';
 import { ServerHealth } from '@/features/servers/server-health';
 import { ServerHero } from '@/features/servers/server-hero';
 import { ServerLinks } from '@/features/servers/server-links';
+import { ServerNotices } from '@/features/servers/server-notices';
 import { ServerRoles } from '@/features/servers/server-roles';
 import { ServerRuntime } from '@/features/servers/server-runtime';
 import { ServerSettings } from '@/features/servers/server-settings';
@@ -55,6 +57,8 @@ type Props = {
     mesh: App.Data.Servers.ServerMeshData;
     /** Overview. */
     health?: App.Data.Servers.ServerHealthData;
+    /** Overview: what takes the disk and "Free space now"; null for a revoked server. */
+    disk?: App.Data.Servers.ServerDiskData | null;
     /** Overview, Settings. */
     retiredVolumes?: App.Data.Servers.RetiredVolumeData[];
     placement?: App.Data.Servers.ServerPlacementData;
@@ -313,6 +317,7 @@ export default function ShowServer({
     tab,
     server,
     health,
+    disk = null,
     retiredVolumes,
     canConfirmVolumeDeletion,
     mesh,
@@ -379,6 +384,11 @@ export default function ShowServer({
 
                     {server.canApprove && <ApprovalCallout server={server} />}
 
+                    <ServerNotices
+                        notices={server.notices}
+                        diskHref={`${show(server.id).url}#disk`}
+                    />
+
                     <div ref={barRef} className="scroll-mt-4 border-b pb-3">
                         <PillTabs
                             label={`${server.name} pages`}
@@ -424,6 +434,10 @@ export default function ShowServer({
                             )}
                             {health && <ServerHealth health={health} />}
                         </div>
+
+                        {disk && (
+                            <ServerDisk serverId={server.id} disk={disk} />
+                        )}
 
                         <ServerGlance
                             server={server}

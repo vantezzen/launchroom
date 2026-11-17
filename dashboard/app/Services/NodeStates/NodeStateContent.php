@@ -6,6 +6,7 @@ namespace App\Services\NodeStates;
 
 use App\Data\Protocol\V1\AmbassadorSpec;
 use App\Data\Protocol\V1\HealthSpec;
+use App\Data\Protocol\V1\ImageFacts;
 use App\Data\Protocol\V1\MeshAllowRule;
 use App\Data\Protocol\V1\NetworkSpec;
 use App\Data\Protocol\V1\RouteSpec;
@@ -13,10 +14,14 @@ use App\Data\Protocol\V1\VolumeSpec;
 use App\Data\Protocol\V1\WorkloadSpec;
 use App\Data\Services\ConfigFile;
 use App\Data\Services\DatabaseSource;
+use App\Data\Services\DeploySettings;
+use App\Data\Services\HealthcheckSettings;
 use App\Data\Services\ScheduleSettings;
 use App\Data\Specs\DomainSpec;
 use App\Data\Specs\ServiceSpec;
 use App\Drivers\DatabaseEngines\DatabaseEngines;
+use App\Enums\DaemonTaskPurpose;
+use App\Enums\DaemonTaskType;
 use App\Enums\DeploymentStatus;
 use App\Enums\DeploymentTrigger;
 use App\Enums\DomainKind;
@@ -28,6 +33,7 @@ use App\Enums\WorkloadCapability;
 use App\Enums\WorkloadPhase;
 use App\Enums\WorkloadRole;
 use App\Models\Backups\WalArchive;
+use App\Models\DaemonTask;
 use App\Models\Deployment;
 use App\Models\Environment;
 use App\Models\Placement;
@@ -46,6 +52,8 @@ use App\Support\Crypto\WorkloadEnvSealer;
 use App\Support\Deployments\EffectiveDeploy;
 use App\Support\Ingress\DomainRoute;
 use App\Support\Ingress\RouteId;
+use App\Support\Protocol\Limits;
+use App\Support\Variables\SystemVariables;
 use Illuminate\Contracts\Database\Query\Builder;
 use Illuminate\Database\Eloquent\Collection;
 use Illuminate\Support\Facades\Cache;
@@ -65,6 +73,10 @@ use Illuminate\Support\Facades\Log;
  *   serving ones) and replicas on other servers through their mesh-published
  *   port (MeshLinks; skipped while a replica has none). EdgeRouting
  *   then applies DNS-01 wildcard certificates and HSTS.
+ * - Lifecycle (docs/04 §8): how a workload stops (stop timeout for every
+ *   kind), the probe's Host and expectation (OD3), the liveness restart
+ *   (OD2), capabilities for images that start as root (OD10) and the owner
+ *   of a fresh volume for images that don't (G76).
  *
  * Queries are fixed in number (eager loading); no N+1 over placements.
  */
@@ -148,6 +160,12 @@ final readonly class NodeStateContent
             }
         }
 
+        // A release command mounts the service's volumes (G62): declared here
+        // while it waits or runs, also before the service's first workload.
+        foreach ($this->releaseVolumes($server) as $volume) {
+            $volumes[$volume->public_id] ??= new VolumeSpec($volume->public_id, $volume->dockerName());
+        }
+
         // A volume mounted by workloads of several services names its owner (D73).
         foreach ($sharedOwners as $id => $owner) {
             $volumes[$id] = new VolumeSpec($id, $volumes[$id]->name, $owner);
@@ -193,6 +211,7 @@ final readonly class NodeStateContent
         $source = $spec->source();
 
         $mounts = [];
+        $owner = $source instanceof DatabaseSource ? null : $this->initOwner($deployment->imageFacts());
 
         // Mount paths come from the deployment's revision, so a changed path
         // or a removal applies with the next deploy (staged, docs/14 §9.12).
@@ -205,7 +224,13 @@ final readonly class NodeStateContent
                 continue;
             }
 
-            $mounts[] = ['volume' => $volume->public_id, 'target' => $recorded->mountPath ?? $volume->mount_path];
+            $mounts[] = [
+                'volume' => $volume->public_id,
+                'target' => $recorded->mountPath ?? $volume->mount_path,
+                // An image that runs as another user gets a fresh volume it
+                // can write to (launchroomd chowns it once while empty).
+                ...($owner === null ? [] : ['initOwner' => $owner]),
+            ];
         }
 
         // Volumes of other services (D73), as the revision recorded them. A
@@ -247,6 +272,8 @@ final readonly class NodeStateContent
             $argv['command'] = $this->engines->for($source->engine)->entrypoint();
         }
 
+        $stop ??= $this->processStop($server, $spec, $deployment, $source);
+
         // Scheduled cron services (docs/04 §1): created, started by launchroomd
         // at every due minute, never restarted.
         $schedule = $spec->kind === ServiceKind::Cron && $spec->deploy->schedule instanceof ScheduleSettings && FeatureGate::accepts($server, NodeStateField::WorkloadSchedule)
@@ -277,7 +304,7 @@ final readonly class NodeStateContent
             command: $argv['command'],
             args: $wal['args'] ?? $argv['args'],
             port: $port,
-            health: $port === null ? null : HealthSpec::fromSettings($effective->healthcheck),
+            health: $port === null ? null : $this->health($effective->healthcheck, $spec, $source),
             capabilities: $source instanceof DatabaseSource
                 ? $this->engines->for($source->engine)->capabilities()
                 : $this->appCapabilities($spec->deploy->capabilities, $deployment),
@@ -332,6 +359,162 @@ final readonly class NodeStateContent
         $driver = $this->engines->for($source->engine);
 
         return ['signal' => $driver->stopSignal(), 'timeout' => $driver->stopTimeout(), 'noInit' => true];
+    }
+
+    /**
+     * Every other service stops with its stop signal and timeout (G30): the
+     * service's setting, else the build's hint for the process, else 30 s
+     * for workers and crons. A web service without a setting keeps
+     * launchroomd's default (10 s, nothing rendered, so its container
+     * isn't recreated). Init stays on: it forwards the signal.
+     *
+     * @return array{signal: string, timeout: string}|null
+     */
+    private function processStop(Server $server, ServiceSpec $spec, Deployment $deployment, mixed $source): ?array
+    {
+        if ($source instanceof DatabaseSource || ! FeatureGate::accepts($server, NodeStateField::WorkloadStop)) {
+            return null;
+        }
+
+        $deploy = $spec->deploy;
+        $timeout = $deploy->stopTimeout($spec->kind, $this->stopHint($spec, $deployment));
+
+        if ($spec->kind->isWeb() && $deploy->stopTimeoutSeconds === null && $deploy->stopSignal === null && $timeout === DeploySettings::STOP_TIMEOUT_WEB) {
+            return null;
+        }
+
+        return ['signal' => $deploy->stopSignal ?? 'SIGTERM', 'timeout' => "{$timeout}s"];
+    }
+
+    /**
+     * The build's stop timeout for a worker or cron that runs one of its
+     * suggested processes (protocol ProcessSuggestion.stopTimeout: a
+     * Laravel queue worker or Celery needs 60 s to finish a job).
+     */
+    private function stopHint(ServiceSpec $spec, Deployment $deployment): ?int
+    {
+        if (! $spec->kind->requiresParent()) {
+            return null;
+        }
+
+        foreach ($deployment->plan->summary->processes ?? [] as $process) {
+            if ($process->name === $spec->slug && $process->stopTimeout !== null) {
+                $seconds = $this->seconds($process->stopTimeout);
+
+                return $seconds === null ? null : max(1, min(Limits::STOP_TIMEOUT_SECONDS, $seconds));
+            }
+        }
+
+        return null;
+    }
+
+    /**
+     * The probe (docs/04 §8):
+     * - http probes send the service's primary domain as Host (with
+     *   X-Forwarded-Proto: https), so host allow-lists (Django, Rails)
+     *   accept it as they accept visitors (OD3);
+     * - the implicit `/` accepts any answer below 500, so an app without a
+     *   root route deploys; explicit and preset paths keep 2xx-3xx (OD3);
+     * - a replica whose check keeps failing is restarted after the
+     *   service's restart time, never a database's (OD2).
+     *
+     * Servers without the features drop `host` and `restartAfter` (FeatureGate).
+     */
+    private function health(HealthcheckSettings $settings, ServiceSpec $spec, mixed $source): ?HealthSpec
+    {
+        $health = HealthSpec::fromSettings($settings);
+
+        if (! $health instanceof HealthSpec) {
+            return null;
+        }
+
+        $http = $health->type === 'http';
+        $restartAfter = $source instanceof DatabaseSource ? null : $settings->restartAfter();
+
+        return new HealthSpec(
+            $health->type,
+            $health->startPeriod,
+            $health->interval,
+            $health->timeout,
+            $health->failureThreshold,
+            $health->path,
+            $http && $settings->implicitPath() ? '2xx-4xx' : $health->expectStatus,
+            $http ? SystemVariables::primaryDomain($spec) : null,
+            $restartAfter === null ? null : "{$restartAfter}s",
+        );
+    }
+
+    /**
+     * The owner a fresh volume gets (G76): the image's user when it is a
+     * numeric non-root uid (`1000` or `1000:1000`; a user name can't be
+     * resolved here, so it gets none). Unknown facts: none.
+     *
+     * @return array{uid: int, gid: int}|null
+     */
+    private function initOwner(?ImageFacts $facts): ?array
+    {
+        if (! $facts instanceof ImageFacts || $facts->startsAsRoot() || preg_match('/^(\d{1,10})(?::(\d{1,10}))?$/D', (string) $facts->user, $m) !== 1) {
+            return null;
+        }
+
+        $uid = (int) $m[1];
+        $gid = isset($m[2]) ? (int) $m[2] : $uid;
+
+        return $uid > 0 && $uid <= 2_147_483_647 && $gid <= 2_147_483_647 ? ['uid' => $uid, 'gid' => $gid] : null;
+    }
+
+    /**
+     * Volumes the release commands pinned to this server mount (G62,
+     * RunOnceSpec.mounts): their service's own volumes, on this server.
+     *
+     * @return list<Volume>
+     */
+    private function releaseVolumes(Server $server): array
+    {
+        $ids = [];
+
+        $tasks = DaemonTask::query()
+            ->where('server_id', $server->id)
+            ->where('type', DaemonTaskType::RunOnce->value)
+            ->where('purpose', DaemonTaskPurpose::Release->value)
+            ->open()
+            ->get(['id', 'spec']);
+
+        foreach ($tasks as $task) {
+            $mounts = $task->spec->mounts ?? null;
+
+            foreach (is_array($mounts) ? $mounts : [] as $mount) {
+                if (is_object($mount) && is_string($mount->volume ?? null)) {
+                    $ids[$mount->volume] = true;
+                }
+            }
+        }
+
+        if ($ids === []) {
+            return [];
+        }
+
+        return array_values(Volume::query()
+            ->where('team_id', $server->team_id)
+            ->where('server_id', $server->id)
+            ->whereIn('public_id', array_keys($ids))
+            ->orderBy('id')
+            ->get()
+            ->all());
+    }
+
+    private function seconds(string $duration): ?int
+    {
+        if (preg_match('/^(\d{1,6})(ms|s|m|h)$/D', $duration, $m) !== 1) {
+            return null;
+        }
+
+        return (int) ceil((int) $m[1] * match ($m[2]) {
+            'ms' => 0.001,
+            's' => 1,
+            'm' => 60,
+            default => 3600,
+        });
     }
 
     /**
@@ -607,7 +790,12 @@ final readonly class NodeStateContent
 
     /**
      * Capabilities of an app workload: the service's own (within the
-     * allow-list) plus what its build needs at runtime.
+     * allow-list) plus what its build needs at runtime. An image that starts
+     * as root (empty user, root or 0) gets the whole allow-list (OD10):
+     * stock images like nginx chown their directories and switch to their
+     * own user at start, which fails with every capability dropped.
+     * no-new-privileges stays, and Docker's other defaults (KILL, NET_RAW,
+     * MKNOD, SETFCAP, …) stay dropped.
      *
      * @param  list<string>  $requested
      * @return list<string>|null
@@ -615,7 +803,11 @@ final readonly class NodeStateContent
     private function appCapabilities(array $requested, Deployment $deployment): ?array
     {
         $capabilities = array_values(array_intersect($requested, WorkloadCapability::values()));
-        $capabilities = array_values(array_unique([...$capabilities, ...$deployment->plan?->runtimeCapabilities() ?? []]));
+        $capabilities = array_values(array_unique([
+            ...$capabilities,
+            ...$deployment->plan?->runtimeCapabilities() ?? [],
+            ...($deployment->imageFacts()?->startsAsRoot() ?? false) ? WorkloadCapability::values() : [],
+        ]));
 
         return $capabilities === [] ? null : $capabilities;
     }

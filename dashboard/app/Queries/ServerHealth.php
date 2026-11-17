@@ -7,10 +7,13 @@ namespace App\Queries;
 use App\Data\Servers\HealthCheckData;
 use App\Data\Servers\Host\DiskCleanupData;
 use App\Data\Servers\Host\DiskUsageData;
+use App\Data\Servers\Host\DockerReachData;
 use App\Data\Servers\Host\HostHealthData;
+use App\Data\Servers\Host\HostStatusData;
 use App\Data\Servers\Host\InotifyLimitsData;
 use App\Data\Servers\Host\MemoryUsageData;
 use App\Data\Servers\Host\NetworkCountData;
+use App\Data\Servers\Host\ReconcileStatusData;
 use App\Data\Servers\Host\RegistryReachData;
 use App\Data\Servers\ServerHealthData;
 use App\Enums\HealthCheckState;
@@ -47,12 +50,13 @@ final readonly class ServerHealth
             $this->buildCache($health),
             $this->cleanup($health),
             $this->registry($host?->registry),
+            $this->docker($host),
             $this->desiredState($server),
         ];
 
         if ($stale) {
             // Old numbers are not a basis for "ok": show them, but as unknown.
-            $checks = array_map(static fn (HealthCheckData $check): HealthCheckData => in_array($check->key, ['report', 'desired_state'], true) || $check->state === HealthCheckState::Unknown
+            $checks = array_map(static fn (HealthCheckData $check): HealthCheckData => in_array($check->key, ['report', 'desired_state', 'docker'], true) || $check->state === HealthCheckState::Unknown
                 ? $check
                 : new HealthCheckData($check->key, $check->label, HealthCheckState::Unknown, $check->value, $check->detail), $checks);
         }
@@ -77,7 +81,7 @@ final readonly class ServerHealth
             'Health report',
             $stale ? HealthCheckState::Warning : HealthCheckState::Ok,
             $collectedAt->diffForHumans(),
-            $stale ? 'The server has not sent fresh host facts. Check that launchroomd is running on it and can reach the dashboard.' : null,
+            $stale ? 'The server has not sent fresh host facts. Check that launchroom runs on it and can reach the dashboard.' : null,
         );
     }
 
@@ -93,9 +97,21 @@ final readonly class ServerHealth
         [$total, $free] = [$fs->totalMb, $fs->freeMb];
         $percent = $free * 100 / $total;
         $state = $this->below($percent, 'disk_free_warning_percent', 'disk_free_critical_percent');
+        // Many small files (caches, sessions) can fill the inodes while space is left.
+        $inodes = $fs->inodesFreePercent();
+        $inodeState = $inodes === null ? HealthCheckState::Ok : match (true) {
+            $inodes < 5 => HealthCheckState::Critical,
+            $inodes < 10 => HealthCheckState::Warning,
+            default => HealthCheckState::Ok,
+        };
+
+        if ($inodes !== null && $inodeState !== HealthCheckState::Ok && $inodeState->worst($state) === $inodeState) {
+            return new HealthCheckData('disk', $label, $inodeState, sprintf('%d%% of file entries free', (int) floor($inodes)),
+                'The disk has space left but almost no room for new files (inodes). This usually comes from millions of small files, such as caches or sessions in a volume. Delete them or move them to a database.');
+        }
 
         return new HealthCheckData('disk', $label, $state, sprintf('%s free of %s (%d%%)', $this->size($free), $this->size($total), (int) round($percent)),
-            $state === HealthCheckState::Ok ? null : 'Free up space. launchroom removes unused images daily and when the disk is 85% full, but it doesn’t touch old databases, volumes or other software on the server.');
+            $state === HealthCheckState::Ok ? null : 'Free up space. launchroom removes unused images daily and when the disk is 85% full, but it doesn’t touch old databases, volumes or other software on the server. The Disk section shows what takes the space.');
     }
 
     private function memory(HostHealthData $health): HealthCheckData
@@ -277,6 +293,45 @@ final readonly class ServerHealth
         $latency = $registry->latencyMs;
 
         return new HealthCheckData('registry', 'Image registry', HealthCheckState::Ok, $latency === null ? 'Reachable' : "Reachable ({$latency} ms)");
+    }
+
+    /**
+     * Whether launchroom reaches Docker on the server and can run apps there
+     * (Report.host.docker and the last reconcile pass, G3). Not derived from
+     * the health snapshot, so never "unknown" when facts are stale.
+     */
+    private function docker(?HostStatusData $host): HealthCheckData
+    {
+        $docker = $host?->docker;
+        $reconcile = $host?->reconcile;
+
+        if (! $docker instanceof DockerReachData && ! $reconcile instanceof ReconcileStatusData) {
+            return new HealthCheckData('docker', 'Docker', HealthCheckState::Unknown, 'Not reported yet');
+        }
+
+        if ($docker instanceof DockerReachData && ! $docker->reachable) {
+            return new HealthCheckData('docker', 'Docker', HealthCheckState::Critical, 'Not reachable since '.CarbonImmutable::parse($docker->checkedAt)->diffForHumans(),
+                'launchroom can’t start, stop or check apps on this server. The ones running keep running. Check that Docker runs on the machine.'.($docker->error !== null ? ' Docker said: '.$docker->error : ''));
+        }
+
+        if ($reconcile instanceof ReconcileStatusData && $reconcile->has('docker_unreachable', 'guard_refused')) {
+            return new HealthCheckData('docker', 'Docker', HealthCheckState::Critical, 'Online, but can’t run apps',
+                'launchroom couldn’t change containers in its last pass, so new versions and restarts wait.');
+        }
+
+        if ($reconcile instanceof ReconcileStatusData && $reconcile->has('not_isolated')) {
+            return new HealthCheckData('docker', 'Docker', HealthCheckState::Critical, 'Apps held: firewall not working',
+                'launchroom only starts apps once their networks are isolated from each other. Check the server’s firewall (iptables or nftables) and Docker’s network settings.');
+        }
+
+        $complete = $reconcile?->lastCompleteAt !== null ? CarbonImmutable::parse($reconcile->lastCompleteAt) : null;
+
+        if ($reconcile instanceof ReconcileStatusData && $reconcile->errors !== [] && (! $complete instanceof CarbonImmutable || $complete->lt(now()->subMinutes(30)))) {
+            return new HealthCheckData('docker', 'Docker', HealthCheckState::Warning, 'Reachable, with errors',
+                'launchroom’s last passes over the apps on this server didn’t finish. '.($reconcile->errors[0]->message ?? $reconcile->errors[0]->code));
+        }
+
+        return new HealthCheckData('docker', 'Docker', HealthCheckState::Ok, 'Reachable');
     }
 
     private function rangeUsedPercent(): float

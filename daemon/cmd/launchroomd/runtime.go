@@ -49,10 +49,12 @@ import (
 	"github.com/vantezzen/launchroom/daemon/internal/registry"
 	"github.com/vantezzen/launchroom/daemon/internal/sealed"
 	"github.com/vantezzen/launchroom/daemon/internal/secret"
+	"github.com/vantezzen/launchroom/daemon/internal/session"
 	"github.com/vantezzen/launchroom/daemon/internal/state"
 	"github.com/vantezzen/launchroom/daemon/internal/tasks"
 	"github.com/vantezzen/launchroom/daemon/internal/traffic"
 	"github.com/vantezzen/launchroom/daemon/internal/waf"
+	"github.com/vantezzen/launchroom/daemon/internal/watchdog"
 )
 
 const (
@@ -174,6 +176,23 @@ type daemonRuntime struct {
 	// a walArchive (point-in-time recovery, docs/14 §10). Both nil without exec support.
 	backupEngine *backup.Engine
 	walArchive   *backup.WalArchiver
+
+	// launchroomd's own run, its self-watchdog and what it sees of Docker
+	// and its reconcile passes (Report.host.daemon/docker/reconcile, docs/03 §9).
+	daemonRun   *hostinfo.DaemonRun
+	self        *watchdog.SelfWatch
+	dockerCheck *hostinfo.DockerCheck
+	passes      hostinfo.ReconcileTracker
+	// hostAPI: Docker is the local Engine (not a test double), so the
+	// moby client (updateAPI) reaches it too.
+	hostAPI bool
+	// disk is the latest disk breakdown (HostHealth.disk), measured every
+	// DiskBreakdownInterval; diskAt is when.
+	disk   atomic.Pointer[state.DiskBreakdown]
+	diskAt time.Time
+	// watchdog watches the control plane and sends fallback notifications
+	// (system.watchdog, Report.controlPlane, docs/03 §5).
+	watchdog *watchdog.Watchdog
 }
 
 func newRuntime(ctx context.Context, cfg config.Config, id *identity.Identity, serverID state.ServerID,
@@ -189,6 +208,8 @@ func newRuntime(ctx context.Context, cfg config.Config, id *identity.Identity, s
 	if rt.ports = d.ports; rt.ports == nil {
 		rt.ports = health.ProcScanner{}
 	}
+	rt.hostAPI = d.docker == nil
+	rt.setupSelf()
 	// Report sequence numbers must keep increasing across restarts (the
 	// dashboard drops older ones), so they start from the clock.
 	rt.seq.Store(uint64(max(rt.now().UnixMicro(), 1))) //nolint:gosec // positive
@@ -263,6 +284,7 @@ func newRuntime(ctx context.Context, cfg config.Config, id *identity.Identity, s
 		},
 		WafLogAddress: cfg.WafLogAddr.String(),
 		WafDropped:    rt.waf.Dropped,
+		ProcRoot:      "/proc",
 		Render: caddy.Options{
 			AdminListen: caddy.DefaultAdminListen, AskURL: "http://" + cfg.AskAddr.String() + caddy.AskPath,
 			HTTPPort: 80, HTTPSPort: 443, RedirectHTTPSPort: cfg.HTTPSRedirectPort,
@@ -307,7 +329,9 @@ func newRuntime(ctx context.Context, cfg config.Config, id *identity.Identity, s
 			return rt.ambassador.Detach(ctx, network)
 		},
 		Networks: rt.networks,
-		Log:      log.With("component", "reconcile"),
+		// Exits while launchroomd was down are reported once (docs/03 §9).
+		MarksFile: filepath.Join(cfg.DataDir, "lifecycle.json"),
+		Log:       log.With("component", "reconcile"),
 	})
 	rt.logship = logship.New(logship.Options{
 		Docker: dc, Client: client, Dir: filepath.Join(cfg.DataDir, "logship"), Log: log.With("component", "logship"), Now: rt.now,
@@ -317,7 +341,44 @@ func newRuntime(ctx context.Context, cfg config.Config, id *identity.Identity, s
 	rt.setupLinkProbe(id)
 	rt.setupHealth(dc)
 	rt.setupBackups()
+	rt.setupWatchdog(priv)
 	return rt, nil
+}
+
+// setupWatchdog creates the control-plane watchdog. It idles until the
+// NodeState turns it on (system.watchdog); the host owner can still turn it
+// down locally ($LR_WATCHDOG, validated by config).
+func (rt *daemonRuntime) setupWatchdog(priv *ecdh.PrivateKey) {
+	mode, err := watchdog.ParseMode(rt.cfg.Watchdog)
+	if err != nil {
+		rt.log.Warn("the watchdog setting is invalid; it only notifies", "err", err)
+		mode = watchdog.ModeNotify
+	}
+	var engine watchdog.Engine
+	if rt.hostAPI {
+		if api := rt.updateAPI(); api != nil { // DOCKER_HOST: dockerd-guard where it runs
+			engine = watchdog.NewEngine(api)
+		}
+	}
+	readyURL := ""
+	if len(rt.cfg.AllowedLocalUpstreams) > 0 { // the control-plane host's dashboard (127.0.0.1:8000)
+		readyURL = "http://" + rt.cfg.AllowedLocalUpstreams[0].String() + "/up/ready"
+	}
+	rt.watchdog = watchdog.New(watchdog.Options{
+		Engine: engine, ReadyURL: readyURL, Mode: mode, DataDir: rt.cfg.DataDir,
+		DashboardHost: rt.cfg.ControlPlaneURL.Hostname(),
+		Spec: func() *state.WatchdogSpec {
+			if cur := rt.store.Current(); cur != nil {
+				return cur.State.System.Watchdog
+			}
+			return nil
+		},
+		Open: func(s state.Sealed) (map[string]secret.Secret, error) {
+			return sealed.OpenIngressSecret(s, priv, rt.serverID, state.IngressSecretFallbackChannel)
+		},
+		LastContact: rt.client.LastAccepted,
+		Now:         rt.now, Log: rt.log.With("component", "watchdog"), OnChange: rt.kickReport,
+	})
 }
 
 // setupBuilds prepares the registry forwarders, the buildkitd manager and the
@@ -352,7 +413,10 @@ func (rt *daemonRuntime) setupBuilds(ctx context.Context, dc docker.Client, pol 
 		InsecureGitHosts: rt.cfg.InsecureGitHosts,
 		Isolate:          rt.firewall.Sync,
 		Resources:        rt.buildkit.Resources,
-		Log:              rt.log.With("component", "build"),
+		// rt.cleaner is created after setupBuilds: looked up when a build
+		// runs out of disk.
+		FreeDisk: func(ctx context.Context) state.CleanupResult { return rt.cleaner.FreeSpace(ctx) },
+		Log:      rt.log.With("component", "build"),
 	})
 }
 
@@ -627,6 +691,9 @@ func (rt *daemonRuntime) run(ctx context.Context, syncState func(context.Context
 	start(func() { rt.runtimeLoop(ctx) })
 	start(func() { rt.watchLoop(ctx) })
 	start(func() { rt.registryCheck.Run(ctx) })
+	start(func() { rt.self.Run(ctx) })
+	start(func() { rt.dockerCheck.Run(ctx) })
+	start(func() { rt.watchdog.Run(ctx) })
 	rt.kickReconcile()
 
 	err := syncState(ctx)
@@ -636,11 +703,60 @@ func (rt *daemonRuntime) run(ctx context.Context, syncState func(context.Context
 		rt.walArchive.Stop(ctx)
 	}
 	rt.monitor.Close()
+	rt.rec.StopWatchers()
+	if rt.daemonRun != nil && (err == nil || errors.Is(err, context.Canceled)) {
+		rt.daemonRun.Stop() // a clean shutdown: the next run reports nothing
+	}
 	return err
 }
 
+// Self-watchdog deadlines (docs/03 §9): how long one unit of a loop's work
+// may take before launchroomd counts itself as stuck and restarts.
+const (
+	reconcileDeadline = 20 * time.Minute
+	reportDeadline    = 5 * time.Minute
+	watchDeadline     = 5 * time.Minute
+	healthDeadline    = 30 * time.Minute
+)
+
+// setupSelf records this run (unclean previous exits, crash output, boot
+// time), creates the self-watchdog and the Docker reachability check.
+func (rt *daemonRuntime) setupSelf() {
+	run, err := hostinfo.StartRun(rt.cfg.DataDir, "/proc", rt.now())
+	if err != nil {
+		rt.log.Warn("could not record this run; restarts and crashes are not reported", "err", err)
+	} else {
+		rt.daemonRun = run
+		if p := run.Status().PreviousExit; p != nil {
+			rt.log.Warn("the previous launchroomd run ended without a clean shutdown", "lastSeen", p.At, "crashed", p.Panic != "")
+		}
+	}
+	rt.self = watchdog.NewSelfWatch(watchdog.SelfWatchOptions{
+		File: filepath.Join(rt.cfg.DataDir, hostinfo.HeartbeatFile), Now: rt.now, Log: rt.log.With("component", "selfwatch"),
+		OnStall: func(note []byte) {
+			if rt.daemonRun != nil {
+				rt.daemonRun.WriteCrash(note)
+			}
+		},
+	})
+	ping := func(ctx context.Context) error { _, err := rt.docker.Info(ctx); return err }
+	if rt.hostAPI {
+		ping = func(ctx context.Context) error {
+			api := rt.updateAPI()
+			if api == nil {
+				_, err := rt.docker.Info(ctx)
+				return err
+			}
+			_, err := api.Ping(ctx, mobyclient.PingOptions{})
+			return err
+		}
+	}
+	rt.dockerCheck = hostinfo.NewDockerCheck(ping, rt.now, rt.kickReport)
+}
+
 // nudges keeps the realtime nudge subscription (docs/03 §4): "state.changed"
-// fetches the desired state now, "task.available"/"logs.requested" lease now.
+// fetches the desired state now, "task.available"/"logs.requested" lease now,
+// "task.cancelled" heartbeats running tasks now (they learn of it at once).
 // After every (re)subscription both happen once, since nudges sent while
 // disconnected are lost. Polling continues regardless.
 func (rt *daemonRuntime) nudges(ctx context.Context, runners ...*tasks.Runner) {
@@ -656,6 +772,10 @@ func (rt *daemonRuntime) nudges(ctx context.Context, runners ...*tasks.Runner) {
 			case state.NudgeTaskAvailable, state.NudgeLogsRequested:
 				for _, r := range runners {
 					r.Kick()
+				}
+			case state.NudgeTaskCancelled:
+				for _, r := range runners {
+					r.HeartbeatAll()
 				}
 			}
 		},
@@ -688,7 +808,13 @@ func (rt *daemonRuntime) reconcileLoop(ctx context.Context) {
 		// Repair drift (rules flushed or edited by something else) every
 		// pass; containers joining a network check it again themselves.
 		_ = rt.firewall.Sync(ctx)
-		if err := rt.rec.Reconcile(ctx, cur.State); err != nil && ctx.Err() == nil {
+		end := rt.self.Begin("a reconcile pass", reconcileDeadline)
+		err := rt.rec.Reconcile(ctx, cur.State)
+		if ctx.Err() == nil {
+			rt.passes.Pass(rt.now(), err)
+			rt.dockerCheck.ObservePass(err)
+		}
+		if err != nil && ctx.Err() == nil {
 			rt.log.Warn("reconcile pass incomplete", "version", cur.State.Version, "err", err)
 		}
 		rt.sweepAccessRoles(ctx)
@@ -698,6 +824,7 @@ func (rt *daemonRuntime) reconcileLoop(ctx context.Context) {
 		if rt.walArchive != nil {
 			rt.walArchive.Sync(ctx, cur.State)
 		}
+		end()
 		if rt.meshIP() != meshIP {
 			// The mesh address appeared or changed: publish mesh ports and
 			// update the firewall right away (docs/05 §3).
@@ -721,10 +848,12 @@ func (rt *daemonRuntime) watchLoop(ctx context.Context) {
 			return
 		case <-tick.C:
 		}
+		end := rt.self.Begin("watching starting workloads", watchDeadline)
 		if rt.rec.Watch(ctx) {
 			rt.kickReport()
 		}
 		rt.logship.SyncStartup(ctx, rt.rec.Starting())
+		end()
 	}
 }
 
@@ -763,11 +892,15 @@ func (rt *daemonRuntime) reportLoop(ctx context.Context) {
 			}
 		}
 		last = time.Now()
+		end := rt.self.Begin("sending a report", reportDeadline)
 		rep := rt.buildReport(ctx)
 		if rep == nil {
+			end()
 			continue
 		}
-		if err := rt.client.Report(ctx, rep); err != nil {
+		err := rt.client.Report(ctx, rep)
+		end()
+		if err != nil {
 			if ctx.Err() == nil {
 				rt.log.Warn("sending report failed", "err", err, "seq", rep.Seq)
 			}
@@ -783,7 +916,12 @@ func (rt *daemonRuntime) reportLoop(ctx context.Context) {
 		}
 		if rep.Host != nil {
 			rt.hardware.Ack(rep.Host.Hardware, rt.now())
+			rt.client.AckRefusal(rep.Host.LastRefusal)
+			if rt.daemonRun != nil {
+				rt.daemonRun.Ack(rep.Host.Daemon)
+			}
 		}
+		rt.watchdog.Ack(rep.ControlPlane)
 	}
 }
 
@@ -808,6 +946,7 @@ func (rt *daemonRuntime) buildReport(ctx context.Context) *state.Report {
 		Metrics:         rt.pendingMetrics(),
 		WalArchives:     rt.walArchiveStatus(),
 		Events:          rt.rec.PendingEvents(),
+		ControlPlane:    rt.watchdog.Pending(),
 	}
 }
 
@@ -868,6 +1007,12 @@ func (rt *daemonRuntime) hostStatus(ctx context.Context) *state.HostStatus {
 	if rt.registryCheck != nil {
 		h.Registry = rt.registryCheck.Snapshot()
 	}
+	h.Docker = rt.dockerCheck.Snapshot()
+	h.Reconcile = rt.passes.Snapshot()
+	if rt.daemonRun != nil {
+		h.Daemon = rt.daemonRun.Status()
+	}
+	h.LastRefusal = rt.client.LastRefusal()
 	return h
 }
 
@@ -886,7 +1031,8 @@ func (rt *daemonRuntime) setupHealth(dc docker.Client) {
 	rt.cleaner = cleanup.New(cleanup.Options{
 		Docker: dc, Host: host, RegistryPrefix: registry.DefaultAddress + "/",
 		DesiredImages: rt.desiredImages, PruneBuildCache: rt.buildCachePrune,
-		Log: rt.log.With("component", "cleanup"), Now: rt.now,
+		LeftoverPrefixes: []string{session.RecoveryPrefix},
+		Log:              rt.log.With("component", "cleanup"), Now: rt.now,
 	})
 	rt.collector = hostinfo.New(hostinfo.Options{
 		DataDir: rt.cfg.DataDir, Docker: host, BuildCacheMB: rt.buildCacheMB, ClockSkew: rt.client.ClockSkew, Now: rt.now,
@@ -1003,7 +1149,9 @@ func (rt *daemonRuntime) healthLoop(ctx context.Context) {
 			return
 		}
 		wait = controlplane.Jitter(healthInterval)
+		end := rt.self.Begin("the host health check", healthDeadline)
 		rt.collectHardware(ctx)
+		rt.measureDisk(ctx)
 		h := rt.collectHealth(ctx)
 		now := rt.now()
 		trigger := state.CleanupTrigger("")
@@ -1015,17 +1163,49 @@ func (rt *daemonRuntime) healthLoop(ctx context.Context) {
 			trigger = state.CleanupDiskPressure
 		}
 		if trigger == "" {
+			end()
 			continue
 		}
 		rt.cleaner.Run(ctx, trigger)
 		lastCleanup = rt.now()
 		rt.collectHealth(ctx)
+		end()
+	}
+}
+
+// measureDisk measures the disk breakdown when it is due: this server's
+// volumes by size through Docker's disk usage, and the WAL backlog.
+func (rt *daemonRuntime) measureDisk(ctx context.Context) {
+	now := rt.now()
+	if !rt.hostAPI || !rt.diskAt.IsZero() && now.Sub(rt.diskAt) < hostinfo.DiskBreakdownInterval {
+		return
+	}
+	api := rt.updateAPI()
+	if api == nil {
+		return
+	}
+	rt.diskAt = now
+	in := hostinfo.DiskBreakdownInput{Now: now, WalPendingSegments: -1}
+	if cur := rt.store.Current(); cur != nil {
+		for _, v := range cur.State.Volumes {
+			in.Declared = append(in.Declared, v.ID)
+		}
+	}
+	if st := rt.walArchiveStatus(); len(st) > 0 {
+		in.WalPendingSegments = 0
+		for _, s := range st {
+			in.WalPendingSegments += s.PendingSegments
+		}
+	}
+	if d := hostinfo.DiskBreakdown(ctx, api, string(rt.serverID), in); d != nil {
+		rt.disk.Store(d)
 	}
 }
 
 func (rt *daemonRuntime) collectHealth(ctx context.Context) *state.HostHealth {
 	h := rt.collector.Collect(ctx)
 	h.Cleanup = rt.cleaner.Last()
+	h.Disk = rt.disk.Load()
 	h.Firewall = rt.firewall.Status()
 	if err := (&state.Report{TypeMeta: state.NewTypeMeta(state.KindReport), ServerID: rt.serverID, ObservedAt: h.CollectedAt, Seq: 1,
 		Host: &state.HostStatus{CPUs: 1, DaemonVersion: state.Semver(version), Health: h}}).Validate(); err != nil {
@@ -1038,13 +1218,18 @@ func (rt *daemonRuntime) collectHealth(ctx context.Context) *state.HostHealth {
 }
 
 // diskPressure reports whether Docker's filesystem (or the data dir's, when
-// Docker's root is not visible) is at least 85 % full.
+// Docker's root is not visible) is at least 85 % full, in space or inodes.
 func diskPressure(h *state.HostHealth) bool {
 	fs := h.DockerDisk
 	if fs == nil {
 		fs = h.DataDisk
 	}
-	return fs != nil && fs.TotalMB > 0 && (fs.TotalMB-fs.FreeMB)*100 >= diskPressurePercent*fs.TotalMB
+	if fs == nil {
+		return false
+	}
+	space := fs.TotalMB > 0 && (fs.TotalMB-fs.FreeMB)*100 >= diskPressurePercent*fs.TotalMB
+	inodes := fs.InodesTotal > 0 && (fs.InodesTotal-fs.InodesFree)*100 >= diskPressurePercent*fs.InodesTotal
+	return space || inodes
 }
 
 func (rt *daemonRuntime) handlers() map[state.TaskType]tasks.Handler {
@@ -1053,7 +1238,7 @@ func (rt *daemonRuntime) handlers() map[state.TaskType]tasks.Handler {
 		state.TaskRunOnce: tasks.RunOnceHandler(tasks.RunOnceOptions{
 			ServerID: rt.serverID, SealingKey: rt.sealingKey, Docker: rt.docker, Client: rt.client,
 			Policy: rt.policy, Forget: rt.tokens.Forget, Networks: rt.networks,
-			Ports: rt.ports,
+			Ports: rt.ports, NodeState: rt.verifiedState,
 		}),
 	}
 	if rt.builder != nil {
@@ -1075,6 +1260,8 @@ func (rt *daemonRuntime) handlers() map[state.TaskType]tasks.Handler {
 	}
 	rt.addBackupHandlers(h)
 	rt.addUpdateHandler(h)
+	h[state.TaskCleanup] = rt.cleanupTask
+	h[state.TaskCertRetry] = rt.certRetryTask
 	if d, ok := rt.docker.(inspect.Docker); ok {
 		h[state.TaskInspectContainer] = inspect.Handler(inspect.Options{
 			Docker: d, Workload: rt.workloadSpec, Now: rt.now,
@@ -1084,6 +1271,41 @@ func (rt *daemonRuntime) handlers() map[state.TaskType]tasks.Handler {
 		})
 	}
 	return h
+}
+
+// cleanupTask frees disk now ("Free space now", task cleanup): the
+// disk-pressure cleanup with trigger manual, then a fresh health snapshot.
+func (rt *daemonRuntime) cleanupTask(ctx context.Context, _ state.Task) (state.TaskResults, error) {
+	res := rt.cleaner.Run(ctx, state.CleanupManual)
+	if ctx.Err() != nil {
+		return state.TaskResults{}, ctx.Err()
+	}
+	rt.collectHealth(ctx)
+	return state.TaskResults{Cleanup: &res}, nil
+}
+
+// certRetryTask tries obtaining certificates for the task's hosts again
+// now (task cert_retry); the outcome shows in the certificate statuses.
+func (rt *daemonRuntime) certRetryTask(ctx context.Context, t state.Task) (state.TaskResults, error) {
+	spec, ok := t.Spec.(*state.CertRetrySpec)
+	if !ok {
+		return state.TaskResults{}, errors.New("cert_retry: unexpected spec")
+	}
+	started, err := rt.ingress.RetryCertificates(ctx, context.WithoutCancel(ctx), spec.Hosts)
+	if err != nil {
+		return state.TaskResults{}, err
+	}
+	rt.log.Info("certificate retry started", "hosts", started)
+	rt.kickReport()
+	return state.TaskResults{}, nil
+}
+
+// verifiedState is the verified NodeState (nil before the first one).
+func (rt *daemonRuntime) verifiedState() *state.NodeState {
+	if cur := rt.store.Current(); cur != nil {
+		return cur.State
+	}
+	return nil
 }
 
 // workloadSpec is a workload of the verified NodeState (nil when absent).

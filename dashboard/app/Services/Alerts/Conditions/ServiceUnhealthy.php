@@ -8,9 +8,11 @@ use App\Data\Alerts\AlertSignal;
 use App\Enums\Alerts\AlertKind;
 use App\Enums\Alerts\AlertRule;
 use App\Enums\Alerts\AlertSeverity;
+use App\Enums\DeploymentStatus;
 use App\Enums\EnvironmentKind;
 use App\Enums\ServerStatus;
 use App\Enums\WorkloadPhase;
+use App\Models\Deployment;
 use App\Models\ServiceInstance;
 use App\Support\Links;
 use App\Support\Metrics\Cast;
@@ -37,6 +39,9 @@ final readonly class ServiceUnhealthy extends AlertCondition
     public const int CRASH_RESTARTS = 3;
 
     public const int CRASH_WINDOW_MINUTES = 10;
+
+    /** A service deployed this recently gets "Roll back to dpl_…" (G22). */
+    public const int ROLLBACK_HOURS = 24;
 
     public function __construct(
         private Cache $cache,
@@ -90,7 +95,7 @@ final readonly class ServiceUnhealthy extends AlertCondition
             $bad = $state['down'] > 0;
             $badFor = $this->since("alerts:unhealthy:{$id}", $bad, $now);
             $goodFor = $this->since("alerts:healthy:{$id}", ! $bad, $now);
-            $instance = ServiceInstance::query()->whereKey($id)->with(['service', 'environment.project'])->first();
+            $instance = ServiceInstance::query()->whereKey($id)->with(['service', 'environment.project', 'activeDeployment'])->first();
 
             if (! $instance instanceof ServiceInstance) {
                 continue;
@@ -119,16 +124,23 @@ final readonly class ServiceUnhealthy extends AlertCondition
                     $facts['Last message'] = $state['message'];
                 }
 
+                $rollback = $this->rollbackTarget($instance, $now);
+
+                if ($rollback instanceof Deployment) {
+                    $facts['Roll back to'] = $rollback->public_id;
+                }
+
                 return new AlertSignal(
                     team: $this->team($instance->team_id),
                     rule: AlertRule::ServiceUnhealthy,
                     subject: 'service:'.$instance->public_id,
                     title: $crashing ? "{$name} keeps restarting in {$environment->name}" : "{$name} is unhealthy in {$environment->name}",
-                    summary: $crashing
+                    summary: ($crashing
                         ? "It restarted {$state['restarts']} times in the last ".self::CRASH_WINDOW_MINUTES.' minutes. Its logs usually say why.'
                         : ($state['down'] === $state['total']
                             ? 'No replica is passing its health check. Its logs usually say why.'
-                            : "{$state['down']} of {$state['total']} replicas are down. The others keep serving."),
+                            : "{$state['down']} of {$state['total']} replicas are down. The others keep serving."))
+                        .($rollback instanceof Deployment ? " If the version deployed in the last day caused it, roll back to {$rollback->public_id} on the Deployments tab." : ''),
                     severity: $environment->kind === EnvironmentKind::Production ? AlertSeverity::Critical : AlertSeverity::Warning,
                     // Lifecycle events (exits, OOM, failed health checks) are runtime log lines too.
                     href: Links::serviceLogs($instance, 'level:error', $now->subMinutes(self::CRASH_WINDOW_MINUTES), $now),
@@ -142,6 +154,29 @@ final readonly class ServiceUnhealthy extends AlertCondition
         }
 
         return $out;
+    }
+
+    /**
+     * The version to go back to when the live one went out within
+     * ROLLBACK_HOURS (the newest earlier version that can be rolled back to).
+     */
+    private function rollbackTarget(ServiceInstance $instance, CarbonImmutable $now): ?Deployment
+    {
+        $live = $instance->activeDeployment;
+
+        if (! $live instanceof Deployment || $live->went_live_at === null || $live->went_live_at->lessThan($now->subHours(self::ROLLBACK_HOURS))) {
+            return null;
+        }
+
+        return Deployment::query()
+            ->where('service_instance_id', $instance->id)
+            ->where('status', DeploymentStatus::Superseded->value)
+            ->whereNotNull('went_live_at')
+            ->where('id', '<', $live->id)
+            ->latest('went_live_at')
+            ->limit(5)
+            ->get()
+            ->first(static fn (Deployment $deployment): bool => $deployment->isRollbackTarget());
     }
 
     /**

@@ -22,6 +22,9 @@ const (
 	NudgeStateChanged  = "state.changed"
 	NudgeTaskAvailable = "task.available"
 	NudgeLogsRequested = "logs.requested"
+	// NudgeTaskCancelled: a running task was cancelled; heartbeat now so it
+	// stops at once (sessions, temporary access).
+	NudgeTaskCancelled = "task.cancelled"
 )
 
 // DaemonChannelPrefix + the server id is the daemon's private Pusher channel.

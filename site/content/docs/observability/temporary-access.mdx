@@ -90,6 +90,8 @@ An access ends:
 - after 5 wrong passwords,
 - when you lose the permission, the replica moves, the volume is removed or restored, or the server loses its connection to the dashboard for more than a few seconds.
 
+After **End now** the dialog shows "Closing the port…" until the server confirms, usually within a second or two. A shell still open in the container gets a hang-up.
+
 When it ends, the port closes, the volume's helper container is removed, the temporary database user is removed and its connections end. Nothing stays behind when launchroomd restarts: the port, keys and firewall rules exist only while it runs, and temporary database users left by a crash are removed on its next start. PostgreSQL users also expire on their own shortly after the time limit.
 
 ## Network

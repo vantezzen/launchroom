@@ -5,6 +5,7 @@ declare(strict_types=1);
 use App\Models\User;
 use Illuminate\Auth\Notifications\ResetPassword;
 use Illuminate\Support\Facades\Notification;
+use Inertia\Testing\AssertableInertia;
 use Laravel\Fortify\Features;
 
 beforeEach(function (): void {
@@ -14,6 +15,17 @@ beforeEach(function (): void {
 test('reset password link screen can be rendered', function (): void {
     $this->get(route('password.request'))->assertOk();
 });
+
+test('the reset page knows whether the dashboard can send mail', function (string $mailer, bool $configured): void {
+    config(['mail.default' => $mailer]);
+
+    $this->get(route('password.request'))
+        ->assertInertia(fn (AssertableInertia $page): AssertableInertia => $page->component('auth/forgot-password')->where('mailConfigured', $configured));
+})->with([
+    'not configured' => ['array', false],
+    'only logged' => ['log', false],
+    'smtp' => ['smtp', true],
+]);
 
 test('reset password link can be requested', function (): void {
     Notification::fake();

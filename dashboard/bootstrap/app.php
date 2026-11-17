@@ -11,6 +11,7 @@ use App\Http\Middleware\SecurityHeaders;
 use App\Http\Middleware\ThrottleRequestsPerRoute;
 use App\Http\Middleware\UseDashboardOrigin;
 use App\Http\Routing\RouteFamily;
+use App\Support\Queue\JobLanes;
 use App\Support\SensitiveInput;
 use Illuminate\Foundation\Application;
 use Illuminate\Foundation\Configuration\Exceptions;
@@ -38,6 +39,10 @@ return Application::configure(basePath: dirname(__DIR__))
             // Settings → API tokens, CLI sign-in approval, API reference (web group inside).
             Route::group([], __DIR__.'/../routes/api-tokens.php');
 
+            // Private registries: a team's sign-in details for upstream
+            // registries (web group inside).
+            Route::group([], __DIR__.'/../routes/registries.php');
+
             // Git providers: dashboard pages (web group inside) and the
             // public, signature-verified webhooks (no web group).
             Route::group([], __DIR__.'/../routes/git.php');
@@ -64,6 +69,9 @@ return Application::configure(basePath: dirname(__DIR__))
             Route::group([], __DIR__.'/../routes/environments.php');
         },
     )
+    // Job lanes (config/queue.php `routes`): long jobs on `redis-long`,
+    // notifications on `alerts` (App\Support\Queue\JobLanes).
+    ->booted(static fn (Application $app) => JobLanes::register($app->make('config'), $app->make('queue.routes')))
     // Channel authorization endpoint requires a session; each channel callback
     // in routes/channels.php additionally authorizes (docs/09-security.md R7).
     ->withBroadcasting(

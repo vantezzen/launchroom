@@ -43,7 +43,7 @@ func (v WorkloadEventKind) Validate() error {
 	return checkEnum("workload event kind", string(v), workloadEventKinds)
 }
 
-// WorkloadEventReason says why launchroomd stopped or removed a container.
+// WorkloadEventReason says why launchroomd stopped, removed or restarted a container.
 type WorkloadEventReason string
 
 // Reasons of stopped/removed events.
@@ -53,10 +53,14 @@ const (
 	ReasonSpecChanged  WorkloadEventReason = "spec_changed"   // recreated with a changed container spec
 	ReasonDuplicate    WorkloadEventReason = "duplicate"      // a second container of the same workload
 	ReasonPortNotBound WorkloadEventReason = "port_not_bound" // recreated to bind its mesh-published port
+	// ReasonHealth: launchroomd restarted it because its health check kept
+	// failing for HealthSpec.restartAfter (restarted events).
+	ReasonHealth WorkloadEventReason = "health"
 )
 
 var workloadEventReasons = []string{
 	string(ReasonDrained), string(ReasonNotDesired), string(ReasonSpecChanged), string(ReasonDuplicate), string(ReasonPortNotBound),
+	string(ReasonHealth),
 }
 
 // ProtocolSchema implements SchemaDescriber.
@@ -79,28 +83,39 @@ type WorkloadEvent struct {
 	Deployment DeploymentID      `json:"deployment,omitzero"`
 	At         time.Time         `json:"at"`
 	Kind       WorkloadEventKind `json:"kind"`
-	// Reason is set on stopped and removed events.
+	// Reason is set on stopped and removed events, and on restarted events
+	// launchroomd caused itself (health).
 	Reason WorkloadEventReason `json:"reason,omitzero"`
 	// ExitCode and OOMKilled describe an exit (exited, restarted).
 	ExitCode  *int `json:"exitCode,omitzero" jsonschema:"nullable"`
 	OOMKilled bool `json:"oomKilled,omitzero"`
+	// Signal is the signal that ended the process (exit codes above 128:
+	// code − 128), when the exit code says so.
+	Signal int `json:"signal,omitzero" jsonschema:"minimum=1,maximum=64"`
+	// ByLaunchroom is true when launchroomd itself stopped or killed the
+	// process (a stop after the grace period ends in 137 without OOM).
+	ByLaunchroom bool `json:"byLaunchroom,omitzero"`
+	// Code classifies a create_failed event (WorkloadStatus.failure codes).
+	Code WorkloadFailureCode `json:"code,omitzero"`
 	// Restarts is Docker's restart count of the container (restarted).
 	Restarts int `json:"restarts,omitzero" jsonschema:"minimum=0"`
 	// Failures is the number of consecutive failed health checks (health_failing).
 	Failures int `json:"failures,omitzero" jsonschema:"minimum=0"`
 	// Message is a short, secret-free detail: the probe error, the create error.
 	Message string `json:"message,omitzero" jsonschema:"maxLength=1024"`
-	// Output is the container's last lines before an exit (at most 30;
-	// the dashboard masks them like any other deployment log line).
-	Output []LogLine `json:"output,omitzero" jsonschema:"nullable,maxItems=30"`
+	// Output is the container's last lines before an exit, a stop or a
+	// removal (at most 100 lines and 16 KiB together; the dashboard masks
+	// them like any other deployment log line).
+	Output []LogLine `json:"output,omitzero" jsonschema:"nullable,maxItems=100"`
 }
 
 // Limits of events.
 const (
 	// MaxReportEvents bounds Report.events.
 	MaxReportEvents = 256
-	// MaxEventOutputLines bounds WorkloadEvent.output.
-	MaxEventOutputLines = 30
+	// MaxEventOutputLines and MaxEventOutputBytes bound WorkloadEvent.output.
+	MaxEventOutputLines = 100
+	MaxEventOutputBytes = 16 << 10
 	maxEventOutputLine  = 2048
 )
 
@@ -122,15 +137,26 @@ func (ev *WorkloadEvent) validate(e *errs, p string) {
 	if ev.Restarts < 0 || ev.Failures < 0 {
 		e.addf(p, "counts must be >= 0")
 	}
+	if ev.Signal != 0 && (ev.Signal < 1 || ev.Signal > 64) {
+		e.addf(p+".signal", "must be between 1 and 64")
+	}
+	if ev.Code != "" {
+		e.check(p+".code", ev.Code)
+	}
 	checkText(e, p+".message", ev.Message, 1024)
 	checkCount(e, p+".output", len(ev.Output), 0, MaxEventOutputLines)
+	total := 0
 	for j, l := range ev.Output {
+		total += len(l.Text)
 		lp := idx(p+".output", j)
 		if l.Time.IsZero() {
 			e.addf(lp+".time", "is required")
 		}
 		e.check(lp+".stream", l.Stream)
 		checkText(e, lp+".text", l.Text, maxEventOutputLine)
+	}
+	if total > MaxEventOutputBytes {
+		e.addf(p+".output", "has %d bytes of text, at most %d allowed", total, MaxEventOutputBytes)
 	}
 }
 
@@ -147,9 +173,13 @@ const (
 	// the same code (the dashboard maps one to the other).
 	IssueLoopbackOnly WorkloadIssueKind = WorkloadIssueKind(PortHintLoopbackOnly)
 	IssueWrongPort    WorkloadIssueKind = WorkloadIssueKind(PortHintWrongPort)
+	// IssueUnresponsive: launchroomd restarted a serving workload whose
+	// health check kept failing (HealthSpec.restartAfter) 3 times within an
+	// hour and leaves it alone now. Reported in steady state only.
+	IssueUnresponsive WorkloadIssueKind = "unresponsive"
 )
 
-var workloadIssueKinds = []string{string(IssueCrashLoop), string(IssueLoopbackOnly), string(IssueWrongPort)}
+var workloadIssueKinds = []string{string(IssueCrashLoop), string(IssueLoopbackOnly), string(IssueWrongPort), string(IssueUnresponsive)}
 
 // ProtocolSchema implements SchemaDescriber.
 func (WorkloadIssueKind) ProtocolSchema() ScalarSchema { return enumSchema(workloadIssueKinds) }

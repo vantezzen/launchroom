@@ -166,6 +166,8 @@ final class DeploymentSummaries
             canRollback: $instance->stopped_at === null && Gate::allows('rollback', $deployment),
             commitAuthorAvatarUrl: AvatarOrigins::allowed($deployment->commit_author_avatar_url),
             stopped: $stopped,
+            rollbackReason: $deployment->rollback_reason,
+            probationUntil: $deployment->inProbation() ? $deployment->probation_until : null,
         );
     }
 

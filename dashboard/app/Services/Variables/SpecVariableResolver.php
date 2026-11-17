@@ -122,7 +122,7 @@ final readonly class SpecVariableResolver
         foreach ($spec->services as $service) {
             $values = array_map(
                 static fn (string $value): array => ['value' => $value, 'secret' => false],
-                SystemVariables::for($spec->environment, $service, $service->deploy->port),
+                SystemVariables::for($spec->environment, $service, $service->deploy->port, $service->parentId === null ? null : $spec->service($service->parentId)),
             );
 
             foreach ($spec->variablesInPrecedence($service) as $variable) {

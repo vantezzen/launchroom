@@ -21,7 +21,7 @@ final class WorkloadSpec extends Data
      * @param  list<string>|null  $args
      * @param  list<string>|null  $capabilities
      * @param  list<array{network: string, aliases: list<string>}>  $networks
-     * @param  list<array{volume: string, target: string}>|null  $mounts
+     * @param  list<array{volume: string, target: string, readOnly?: bool, initOwner?: array{uid: int, gid: int}}>|null  $mounts  initOwner: feature `volumeInitOwner`
      */
     public function __construct(
         public string $id,
@@ -79,6 +79,24 @@ final class WorkloadSpec extends Data
         public ?array $files = null,
     ) {}
 
+    /**
+     * @return array{volume: string, target: string, readOnly?: bool, initOwner?: array{uid: int, gid: int}}
+     */
+    private static function mountFromProtocol(object $mount): array
+    {
+        $out = ['volume' => Wire::string($mount, 'volume'), 'target' => Wire::string($mount, 'target')];
+
+        if (($mount->readOnly ?? false) === true) {
+            $out['readOnly'] = true;
+        }
+
+        if (is_object($mount->initOwner ?? null)) {
+            $out['initOwner'] = ['uid' => Wire::int($mount->initOwner, 'uid'), 'gid' => Wire::int($mount->initOwner, 'gid')];
+        }
+
+        return $out;
+    }
+
     public static function fromProtocol(object $wire): self
     {
         $resources = Wire::object($wire, 'resources') ?? new \stdClass;
@@ -103,7 +121,7 @@ final class WorkloadSpec extends Data
             port: Wire::nullableInt($wire, 'port'),
             health: $health === null ? null : HealthSpec::fromProtocol($health),
             capabilities: Wire::strings($wire, 'capabilities'),
-            mounts: $mounts === null ? null : array_map(static fn (object $mount): array => ['volume' => Wire::string($mount, 'volume'), 'target' => Wire::string($mount, 'target')], $mounts),
+            mounts: $mounts === null ? null : array_map(self::mountFromProtocol(...), $mounts),
             restart: Wire::nullableString($wire, 'restart') ?? 'unless-stopped',
             drainUntil: Wire::nullableString($wire, 'drainUntil'),
             publishOnMesh: ($mesh = Wire::object($wire, 'publishOnMesh')) === null ? null : Wire::int($mesh, 'port'),

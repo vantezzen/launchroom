@@ -27,8 +27,10 @@ type FixAction = {
 };
 
 /**
- * The one-click fix of a known failure (flows §6): `set_port` and
- * `raise_health_timeout` stage the setting and redeploy (POST …/fix);
+ * The one-click fix of a known failure (flows §6): `set_port`,
+ * `raise_health_timeout`, `use_tcp_healthcheck`, `accept_4xx`,
+ * `add_capabilities` stage the setting and redeploy (POST …/fix);
+ * `fix_volume_owner` redeploys; `free_disk` frees space on the server;
  * `add_variable` opens the service's variables with the name filled in;
  * `generate_dockerfile` opens Settings → Build with the guided sheet.
  */
@@ -131,6 +133,56 @@ export function fixAction(detail: Detail, canFix: boolean): FixAction | null {
                 run: () => router.visit(href),
             };
         }
+        case 'use_tcp_healthcheck':
+        case 'accept_4xx':
+        case 'add_capabilities':
+        case 'fix_volume_owner': {
+            const action = explanation.action;
+
+            return {
+                label: redeployLabel(action, params),
+                run: (done) =>
+                    router.post(fix(args).url, { action }, { onFinish: done }),
+            };
+        }
+        case 'free_disk': {
+            const server = String(params.server ?? '');
+
+            return server
+                ? {
+                      label: `Free space on ${String(params.serverName ?? 'the server')}`,
+                      run: (done) =>
+                          router.post(
+                              fix(args).url,
+                              { action: 'free_disk', server },
+                              { onFinish: done, preserveScroll: true },
+                          ),
+                  }
+                : null;
+        }
+        default:
+            return null;
+    }
+}
+
+/** The button of a fix that stages a setting and redeploys. */
+function redeployLabel(
+    action: App.Enums.FailureFixAction,
+    params: Explanation['params'],
+): string {
+    switch (action) {
+        case 'use_tcp_healthcheck':
+            return 'Check over TCP and redeploy';
+        case 'accept_4xx':
+            return 'Accept 4xx and redeploy';
+        case 'add_capabilities':
+            return 'Allow it to switch users and redeploy';
+        case 'fix_volume_owner':
+            return params.uid
+                ? `Give new volumes to user ${String(params.uid)} and redeploy`
+                : 'Give new volumes to the app’s user and redeploy';
+        default:
+            return 'Fix and redeploy';
     }
 }
 
@@ -202,6 +254,14 @@ export function FailureCard({
                     {explanation ? (
                         <>
                             <p>{explanation.cause}</p>
+                            {explanation.answer && (
+                                <figure className="flex flex-col gap-1">
+                                    <figcaption>The app answered:</figcaption>
+                                    <blockquote className="rounded-md border bg-recessed px-2.5 py-1.5 type-mono-small break-words whitespace-pre-wrap text-foreground">
+                                        {explanation.answer}
+                                    </blockquote>
+                                </figure>
+                            )}
                             <p>{explanation.fix}</p>
                         </>
                     ) : (

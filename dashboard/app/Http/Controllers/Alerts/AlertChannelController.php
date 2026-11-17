@@ -7,6 +7,7 @@ namespace App\Http\Controllers\Alerts;
 use App\Actions\Alerts\CreateAlertChannel;
 use App\Actions\Alerts\DeleteAlertChannel;
 use App\Actions\Alerts\SendTestNotification;
+use App\Actions\Alerts\SetFallbackChannel;
 use App\Actions\Alerts\UpdateAlertChannel;
 use App\Data\Alerts\AlertChannelInput;
 use App\Data\Alerts\AlertChannelUpdateInput;
@@ -47,9 +48,18 @@ final class AlertChannelController extends Controller
         return back();
     }
 
-    public function update(Request $request, AlertChannel $alertChannel, AlertChannelUpdateInput $input, #[CurrentUser] User $user, UpdateAlertChannel $update): RedirectResponse
+    public function update(Request $request, AlertChannel $alertChannel, AlertChannelUpdateInput $input, #[CurrentUser] User $user, UpdateAlertChannel $update, SetFallbackChannel $setFallback): RedirectResponse
     {
         Gate::authorize('update', $alertChannel);
+
+        if ($input->fallback !== null) {
+            // Instance-wide (launchroom's own notifications): instance owners only.
+            Gate::authorize('manageInstance');
+            $setFallback->handle($alertChannel, $input->fallback, $input->allowPrivateHosts ?? false, $this->auditActor($request, $user));
+            Toast::success($input->fallback ? "launchroom also uses {$alertChannel->name} when the dashboard is down." : "{$alertChannel->name} is no longer used when the dashboard is down.");
+
+            return back();
+        }
 
         $secret = $update->handle($alertChannel, $input, $this->auditActor($request, $user));
 

@@ -1,0 +1,13 @@
+{
+  "apiVersion": "launchroom.vantezzen.io/v1",
+  "kind": "TaskCompletion",
+  "attempt": 1,
+  "outcome": "succeeded",
+  "cleanup": {
+    "at": "2026-11-17T12:00:40Z",
+    "trigger": "manual",
+    "removedImages": 6,
+    "removedContainers": 2,
+    "reclaimedMb": 4100
+  }
+}

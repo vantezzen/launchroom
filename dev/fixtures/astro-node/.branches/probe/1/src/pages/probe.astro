@@ -1,0 +1,17 @@
+---
+// Diagnostic only (probe branch): rendered on demand, accepts a form POST.
+export const prerender = false;
+let echoed = '';
+if (Astro.request.method === 'POST') {
+	const data = await Astro.request.formData();
+	echoed = String(data.get('value') ?? '');
+}
+---
+<html lang="en">
+	<body>
+		<p id="url">{Astro.url.href}</p>
+		<p id="client">{Astro.clientAddress}</p>
+		<form method="POST"><input name="value" value="from the form" /><button>Send</button></form>
+		{echoed && <p id="echoed">{echoed}</p>}
+	</body>
+</html>

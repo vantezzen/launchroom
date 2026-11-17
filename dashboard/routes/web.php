@@ -10,6 +10,7 @@ use App\Http\Controllers\DashboardController;
 use App\Http\Controllers\Dev\DesignVisualsController;
 use App\Http\Controllers\Instance\ClientVersionController;
 use App\Http\Controllers\Instance\OnboardingController;
+use App\Http\Controllers\Instance\ReadinessController;
 use App\Http\Controllers\Instance\RecoveryController;
 use App\Http\Controllers\Logs\LogDownloadController;
 use App\Http\Controllers\Logs\TeamLogsController;
@@ -19,10 +20,12 @@ use App\Http\Controllers\Servers\MeshController;
 use App\Http\Controllers\Servers\RetiredVolumeController;
 use App\Http\Controllers\Servers\ServerAppearanceController;
 use App\Http\Controllers\Servers\ServerController;
+use App\Http\Controllers\Servers\ServerDiskController;
 use App\Http\Controllers\Servers\ServerEnrollmentController;
 use App\Http\Controllers\Servers\ServerMetricsController;
 use App\Http\Controllers\Servers\ServerMoveController;
 use App\Http\Controllers\Servers\ServerReplacementController;
+use App\Http\Controllers\Settings\SystemController;
 use App\Http\Controllers\SetupController;
 use App\Http\Controllers\Teams\CurrentTeamController;
 use App\Http\Controllers\Teams\InvitationAcceptanceController;
@@ -63,6 +66,12 @@ Route::get('up/version', ClientVersionController::class)
     ->withoutMiddleware('web')
     ->middleware('throttle:240,1')
     ->name('client-version');
+
+// Readiness (G34): the database and the cache answer. Asked by launchroomd's
+// watchdog and `./launchroom doctor` on 127.0.0.1; public and sessionless like /up.
+Route::get('up/ready', ReadinessController::class)
+    ->withoutMiddleware('web')
+    ->name('ready');
 
 // Docker token-auth realm for the registry (docs/05 §6): public by necessity,
 // no session; the Basic password must be a registry token this dashboard issued.
@@ -114,6 +123,9 @@ Route::middleware(['auth', 'verified'])->group(function (): void {
         ->name('teams.store');
 
     Route::get('activity', TeamActivityController::class)->name('activity.index');
+
+    // Settings → System (G41): control-plane health, instance owners.
+    Route::get('settings/system', [SystemController::class, 'show'])->name('system.show');
 
     // Request analytics of every project (docs/15 §5.4).
     Route::get('analytics', [TeamAnalyticsController::class, 'show'])->name('analytics.index');
@@ -192,6 +204,10 @@ Route::middleware(['auth', 'verified'])->group(function (): void {
     Route::post('servers/{server}/revoke', [ServerController::class, 'revoke'])
         ->middleware('throttle:20,1')
         ->name('servers.revoke');
+    // "Free space now" (a typed cleanup task, G18).
+    Route::post('servers/{server}/free-space', [ServerDiskController::class, 'freeSpace'])
+        ->middleware('throttle:6,1')
+        ->name('servers.free-space');
     // Replace a dead server (docs/14 §5.3).
     Route::get('servers/{server}/replace', [ServerReplacementController::class, 'show'])->name('servers.replace');
     Route::post('servers/{server}/replace', [ServerReplacementController::class, 'store'])

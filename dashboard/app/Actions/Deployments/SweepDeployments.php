@@ -10,15 +10,24 @@ use App\Events\NodeStateInvalidated;
 use App\Jobs\AdvanceDeploymentJob;
 use App\Models\Deployment;
 use App\Models\Placement;
+use App\Services\Tasks\StalePendingTasks;
+use Illuminate\Contracts\Database\Query\Builder;
 use Illuminate\Support\Facades\DB;
 
 /**
  * Periodic housekeeping (every minute): drops drained workloads from the
- * desired state once they stopped (or long after their drain deadline), and
- * re-advances unfinished deployments so timeouts fire without new reports.
+ * desired state once they stopped (or long after their drain deadline),
+ * re-advances unfinished deployments so timeouts fire without new reports,
+ * and live ones in probation so their "down for 2 minutes" is noticed
+ * (CheckProbation). Tasks waiting for a server that stays offline end with
+ * the reason (StalePendingTasks): a release that waits on one fails.
  */
-final class SweepDeployments
+final readonly class SweepDeployments
 {
+    public function __construct(
+        private StalePendingTasks $staleTasks,
+    ) {}
+
     /** Drained workloads that never reported stopping are dropped after this. */
     private const int FORGET_AFTER_SECONDS = 600;
 
@@ -50,9 +59,13 @@ final class SweepDeployments
         });
 
         NodeStateInvalidated::servers($servers);
+        $this->staleTasks->cancel();
 
         $unfinished = Deployment::query()
             ->unfinished()
+            ->orWhere(static fn (Builder $query) => $query
+                ->where('status', DeploymentStatus::Active->value)
+                ->where('probation_until', '>', now()))
             ->pluck('id');
 
         foreach ($unfinished as $id) {

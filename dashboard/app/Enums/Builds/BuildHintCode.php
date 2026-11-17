@@ -28,4 +28,8 @@ enum BuildHintCode: string
     case NoStartCommand = 'no-start-command';
     case RegistryRateLimit = 'registry-rate-limit';
     case ViteEnvUndefined = 'vite-env-undefined';
+    case DiskFull = 'disk-full';
+    case BuildDns = 'build-dns';
+    case BuildDatabase = 'build-database';
+    case BuildIdle = 'build-idle';
 }

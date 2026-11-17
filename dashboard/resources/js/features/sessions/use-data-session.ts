@@ -1,9 +1,10 @@
 import { usePage } from '@inertiajs/react';
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { endOnUnload, openSession, sendCommand } from './api';
+import { endOnUnload, endSession, openSession, sendCommand } from './api';
 import type { ServiceRef } from './api';
 import { watchConnect } from './connect-watch';
 import { endSentence } from './format';
+import { joinFailure } from './join-progress';
 import type { DataResult } from './result-types';
 import { SessionClient } from './session-client';
 
@@ -130,13 +131,33 @@ export function useDataSession(ref: ServiceRef, onEnded: () => void) {
                         });
                         onEnded();
                     },
+                    // The browser's own join failed: the session never
+                    // started, so it is ended and can be tried again.
+                    onJoinFailed: (message) => {
+                        unwatch.current?.();
+                        unwatch.current = null;
+                        void endSession(session.id).catch(() => undefined);
+
+                        if (!current()) {
+                            return;
+                        }
+
+                        client.current = null;
+                        setPhase({ kind: 'idle', error: message });
+                        onEnded();
+                    },
                 },
                 () => ({ t: 'hello' }),
             );
             client.current = live;
             unwatch.current = watchConnect(
                 session.id,
-                session.replica.serverName,
+                (seconds) =>
+                    joinFailure(
+                        live.progress(),
+                        session.replica.serverName,
+                        seconds,
+                    ),
                 (message) => {
                     if (!current()) {
                         return;

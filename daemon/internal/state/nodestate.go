@@ -79,6 +79,10 @@ type SystemSpec struct {
 	// omitted on the control-plane host and for daemons without the
 	// controlPlaneUrl feature.
 	ControlPlane ControlPlaneSpec `json:"controlPlane,omitzero" lr:"feature=controlPlaneUrl"`
+	// Watchdog turns on the control-plane watchdog (role control_plane, on
+	// the control-plane host) or the fallback notifier (role peer). Omitted
+	// when off (daemon feature "watchdog").
+	Watchdog *WatchdogSpec `json:"watchdog,omitzero" jsonschema:"nullable" lr:"feature=watchdog"`
 }
 
 // Workload returns the workload with id (nil: not in this document).
@@ -316,7 +320,24 @@ type HealthSpec struct {
 	Interval         Duration    `json:"interval"`
 	Timeout          Duration    `json:"timeout"`
 	FailureThreshold int         `json:"failureThreshold" jsonschema:"minimum=1,maximum=100"`
+	// Host is sent as the Host header of http probes, with
+	// X-Forwarded-Proto: https, so apps that check their own domain
+	// (allowed hosts, forced https) answer as they do for visitors. The
+	// dashboard renders the primary domain (daemon feature "probeHost").
+	// Omitted: the container address.
+	Host Hostname `json:"host,omitzero" lr:"feature=probeHost"`
+	// RestartAfter makes launchroomd restart a serving workload whose probe
+	// has failed continuously for this long in steady state (1m to 1h; at
+	// most 3 times an hour, then issue "unresponsive"). Omitted: never
+	// (daemon feature "livenessRestart").
+	RestartAfter Duration `json:"restartAfter,omitzero" lr:"feature=livenessRestart"`
 }
+
+// Bounds of HealthSpec.restartAfter.
+const (
+	MinRestartAfter = time.Minute
+	MaxRestartAfter = time.Hour
+)
 
 // Resources are container limits.
 type Resources struct {
@@ -336,6 +357,11 @@ type Mount struct {
 	Volume   VolumeID      `json:"volume"`
 	Target   ContainerPath `json:"target"`
 	ReadOnly bool          `json:"readOnly,omitzero"`
+	// InitOwner makes launchroomd give the volume's top folder to this
+	// owner once, when the volume is new or still empty (images that run
+	// as a non-root user; daemon feature "volumeInitOwner"). Never with
+	// readOnly; never changes a volume that has files.
+	InitOwner *FileOwner `json:"initOwner,omitzero" jsonschema:"nullable" lr:"feature=volumeInitOwner"`
 }
 
 // MeshPublish publishes the workload port on the mesh IP.
@@ -640,6 +666,9 @@ func (s SystemSpec) validate(e *errs) {
 	if s.ControlPlane.URL != "" {
 		e.check("system.controlPlane.url", s.ControlPlane.URL)
 	}
+	if s.Watchdog != nil {
+		s.Watchdog.validate(e, "system.watchdog")
+	}
 	if s.Registry.ForwardTo != "" {
 		e.check("system.registry.forwardTo", s.Registry.ForwardTo)
 		if s.Registry.ServeOnMesh {
@@ -699,6 +728,12 @@ func (w *WorkloadSpec) validate(e *errs, p string, nets map[NetworkID]bool, vols
 			e.addf(mp+".volume", "references unknown volume %s", m.Volume)
 		}
 		e.check(mp+".target", m.Target)
+		if m.InitOwner != nil {
+			m.InitOwner.validate(e, mp+".initOwner")
+			if m.ReadOnly {
+				e.addf(mp+".initOwner", "is not allowed on a read-only mount")
+			}
+		}
 		targets = append(targets, m.Target)
 	}
 	unique(e, p+".mounts.target", targets)
@@ -743,9 +778,18 @@ func (h *HealthSpec) validate(e *errs, p string) {
 		if h.ExpectStatus != "" {
 			e.check(p+".expectStatus", h.ExpectStatus)
 		}
+		if h.Host != "" {
+			e.check(p+".host", h.Host)
+		}
 	case HealthTCP:
-		if h.Path != "" || h.ExpectStatus != "" {
-			e.addf(p, "path and expectStatus are only valid for http probes")
+		if h.Path != "" || h.ExpectStatus != "" || h.Host != "" {
+			e.addf(p, "path, expectStatus and host are only valid for http probes")
+		}
+	}
+	if h.RestartAfter != "" {
+		e.check(p+".restartAfter", h.RestartAfter)
+		if d := h.RestartAfter.Std(); h.RestartAfter.Validate() == nil && (d < MinRestartAfter || d > MaxRestartAfter) {
+			e.addf(p+".restartAfter", "must be between %s and %s", MinRestartAfter, MaxRestartAfter)
 		}
 	}
 	for name, d := range map[string]Duration{"startPeriod": h.StartPeriod, "interval": h.Interval, "timeout": h.Timeout} {

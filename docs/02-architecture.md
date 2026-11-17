@@ -112,6 +112,19 @@ Roles are chosen at enrollment (join token) and can be changed later on Servers 
 ```
 No mesh and no extra moving parts. Builds run locally. On servers with less than 2 GB of memory the server page suggests a separate build server, and a build that runs out of memory says so in its failure hints.
 
+**Memory priority** (D90): apps and the control plane share one machine, so when it runs out of memory the kernel should kill an app, not Postgres. Compose sets it for the control plane ([11](11-installation-and-dev.md) §2.1):
+
+| Service | `oom_score_adj` | `mem_reservation` |
+|---|---|---|
+| postgres, valkey | -900 | 256m, 64m |
+| dockerd-guard, launchroomd | -900 | |
+| dashboard, horizon | -500 | 192m each |
+| reverb, scheduler | -500 | |
+| zot, headscale | -200 | |
+| BuildKit | +1000 ([04](04-build-and-deploy.md) §5.2) | |
+
+Rootless Docker can't set negative values; there the guard and launchroomd get 0 and the doctor warns. A positive score for app containers on the control-plane host (300, databases 100) through the policy floor is planned, not built.
+
 ### 4.2 VPS plus home build machine behind NAT
 
 ```
@@ -154,13 +167,15 @@ Rule of thumb for the UI: **never hide a single point of failure**. Show it calm
 
 | Failure | Effect | Response |
 |---|---|---|
-| Control plane down | No changes; running apps unaffected | Daemons keep the last NodeState; Docker `restart: unless-stopped`; Caddy config and certs persisted in `data/`; existing WireGuard peers keep working. Certificate renewal pauses (about 2 weeks of headroom with 45-day certs). |
-| Daemon crash or restart | No reconciliation on that server; containers keep running | `restart: always`; on start launchroomd re-reads `state.json`, re-applies firewall rules and the Caddy config, and resumes. |
+| Control plane down | No changes; running apps unaffected | launchroomd on the control-plane host restarts a hung dashboard, Horizon, Reverb, scheduler or Zot (never Postgres or Valkey) and, with a fallback channel, the control-plane host and one peer send a notification ([11](11-installation-and-dev.md) §2.6, D90). `./launchroom doctor` on the host checks and repairs it. Daemons keep the last NodeState; Docker `restart: unless-stopped`; Caddy config and certs persisted in `data/`; existing WireGuard peers keep working. Certificate renewal pauses (about 2 weeks of headroom with 45-day certs). |
+| Daemon crash or restart | No reconciliation on that server; containers keep running | `restart: always`; a stalled loop makes launchroomd exit itself (self-watchdog) and the compose healthcheck reads its heartbeat; the next run reports the crash or stall and exits that happened meanwhile; on start launchroomd re-reads `state.json`, re-applies firewall rules and the Caddy config, and resumes. |
 | Server down | Its replicas are gone; edges drop them through health checks within seconds | After `node_dead_after` (90 s) the scheduler re-places **stateless** replicas elsewhere. Stateful services are never auto-moved; alert and offer restore (§6.1). |
 | Network partition (server alive, CP unreachable) | CP thinks the server is dead | Temporary over-provisioning is fine for stateless services. On rejoin, launchroomd sees a newer NodeState version and stops orphans. Stateful services are never rescheduled automatically (no fencing, so no split-brain). |
 | Registry down | No new pulls or pushes | Already-pulled images keep running and restarting from the local Docker image store. |
 | Build server offline mid-build | Lease expires | The task is re-queued on another build server (builds are idempotent: same SHA, same plan, same tag). |
 | Deployment health check fails | New version never receives traffic | New containers are removed and the old version keeps serving. The deployment is `failed` with a classified reason and the last 100 log lines. |
+| New version fails after going live | Production app keeps crashing or every replica is down | Probation (10 min): one automatic, health-gated rollback to the previous version, at most once an hour, auto-deploy paused (D89, [04](04-build-and-deploy.md) §8). |
+| App hangs while running | The probe keeps failing | After 5 min (Restart when stuck) launchroomd restarts the replica, at most 3 times an hour, then reports it unresponsive (D89). Meanwhile the edge still routes to running replicas when none is ready (fail open). |
 
 Stateful services never move on their own. Moving them is a request: **Move to another server** (and Settings → Move launchroom for the dashboard's server) copies each database and volume live with a short stop per service, while the source keeps running (D56, [14](14-backup-and-restore.md) §13). A server that is gone is replaced from backups instead (§6.1, [14](14-backup-and-restore.md) §5.3).
 

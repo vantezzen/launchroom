@@ -456,7 +456,7 @@
                     {
                       "handle": [
                         {
-                          "directives": "SecRuleEngine On\nSecRequestBodyAccess On\nSecRequestBodyLimit 1048576\nSecRequestBodyInMemoryLimit 131072\nSecRequestBodyLimitAction ProcessPartial\nSecRequestBodyJsonDepthLimit 1024\nSecArgumentsLimit 256\nSecResponseBodyAccess Off\nSecAuditEngine RelevantOnly\nSecAuditLogRelevantStatus \"^403$\"\nSecAuditLogParts AKZ\nSecAuditLogFormat json\nSecAuditLogType https\nSecAuditLog http://127.0.0.1:2023/waf\nSecRule REQUEST_HEADERS:Content-Type \"^(?:application(?:/soap\\+|/)|text/)xml\" \"id:10000,phase:1,t:none,t:lowercase,pass,nolog,ctl:requestBodyProcessor=XML\"\nSecRule REQUEST_HEADERS:Content-Type \"^application/json\" \"id:10001,phase:1,t:none,t:lowercase,pass,nolog,ctl:requestBodyProcessor=JSON\"\nSecAction \"id:10002,phase:1,pass,nolog,ctl:requestBodyLimit=32768\"\nInclude @crs-setup.conf.example\nInclude @owasp_crs/*.conf\n",
+                          "directives": "SecRuleEngine On\nSecRequestBodyAccess On\nSecRequestBodyLimit 1048576\nSecRequestBodyInMemoryLimit 131072\nSecRequestBodyLimitAction ProcessPartial\nSecRequestBodyJsonDepthLimit 1024\nSecArgumentsLimit 256\nSecResponseBodyAccess Off\nSecAuditEngine RelevantOnly\nSecAuditLogRelevantStatus \"^403$\"\nSecAuditLogParts AKZ\nSecAuditLogFormat json\nSecAuditLogType https\nSecAuditLog http://127.0.0.1:2023/waf\nSecRule REQUEST_HEADERS:Content-Type \"^(?:application(?:/soap\\+|/)|text/)xml\" \"id:10000,phase:1,t:none,t:lowercase,pass,nolog,ctl:requestBodyProcessor=XML\"\nSecRule REQUEST_HEADERS:Content-Type \"^application/(?:json|csp-report|reports\\+json)\" \"id:10001,phase:1,t:none,t:lowercase,pass,nolog,ctl:requestBodyProcessor=JSON\"\nSecAction \"id:10002,phase:1,pass,nolog,ctl:requestBodyLimit=32768\"\nSecRule REQUEST_HEADERS:Next-Action \"@rx ^[0-9a-f]{40,64}$\" \"id:10003,phase:1,t:none,t:lowercase,pass,nolog,ctl:requestBodyProcessor=JSON\"\nSecAction \"id:10004,phase:1,pass,nolog,setvar:'tx.allowed_request_content_type=|application/x-www-form-urlencoded| |multipart/form-data| |text/xml| |application/xml| |application/soap+xml| |application/json| |text/plain| |application/csp-report| |application/reports+json|'\"\nInclude @crs-setup.conf.example\nInclude @owasp_crs/*.conf\n",
                           "handler": "waf",
                           "load_owasp_crs": true
                         }
@@ -564,6 +564,15 @@
                         {
                           "flush_interval": -1,
                           "handler": "reverse_proxy",
+                          "headers": {
+                            "request": {
+                              "set": {
+                                "X-Real-IP": [
+                                  "{http.vars.client_ip}"
+                                ]
+                              }
+                            }
+                          },
                           "health_checks": {
                             "passive": {
                               "fail_duration": "10s",
@@ -795,6 +804,15 @@
                         {
                           "flush_interval": -1,
                           "handler": "reverse_proxy",
+                          "headers": {
+                            "request": {
+                              "set": {
+                                "X-Real-IP": [
+                                  "{http.vars.client_ip}"
+                                ]
+                              }
+                            }
+                          },
                           "health_checks": {
                             "passive": {
                               "fail_duration": "10s",

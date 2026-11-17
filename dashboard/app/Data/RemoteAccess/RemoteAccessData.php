@@ -67,5 +67,7 @@ final class RemoteAccessData extends Data
         /** Database access: the wire protocol and the engine's command-line client. */
         public ?RemoteAccessProtocol $protocol = null,
         public ?string $client = null,
+        /** Still live, but someone ended it: the server is closing it. */
+        public bool $ending = false,
     ) {}
 }

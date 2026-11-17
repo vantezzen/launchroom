@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace App\Data\Protocol\V1;
 
+use App\Data\Attributes\UnknownCodeAsNull;
+use App\Enums\CertFailureKind;
 use App\Enums\CertStatus;
 use Spatie\LaravelData\Attributes\Validation\Max;
 use Spatie\LaravelData\Attributes\Validation\Regex;
@@ -30,5 +32,11 @@ final class CertificateStatus extends Data
         public string|Optional $lastError = new Optional,
         #[Regex(Report::TIME_PATTERN)]
         public string|null|Optional $lastErrorAt = new Optional,
+        /** What lastError means; unknown kinds read as null. */
+        #[UnknownCodeAsNull]
+        public CertFailureKind|null|Optional $failureKind = new Optional,
+        /** When the certificate authority accepts the next attempt (rate_limited). */
+        #[Regex(Report::TIME_PATTERN)]
+        public string|null|Optional $retryAfter = new Optional,
     ) {}
 }

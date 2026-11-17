@@ -30,6 +30,10 @@ final class AlertChannelUpdateInput extends Data
         #[Max(2048), SensitiveParameter]
         public ?string $secretUrl = null,
         public bool $rotateSecret = false,
+        /** Instance owners: launchroom itself notifies through it while the dashboard is down. */
+        public ?bool $fallback = null,
+        /** With `fallback`: the URL may point at a private address. */
+        public ?bool $allowPrivateHosts = null,
     ) {}
 
     /**

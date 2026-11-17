@@ -1,5 +1,5 @@
 import { usePage } from '@inertiajs/react';
-import { Circle, Radio, SquareTerminal } from 'lucide-react';
+import { Circle, LifeBuoy, Radio, SquareTerminal } from 'lucide-react';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { EmptyState } from '@/components/patterns/empty-state';
 import { LiveWait } from '@/components/patterns/live-wait';
@@ -13,14 +13,16 @@ import {
     SelectValue,
 } from '@/components/ui/select';
 import { Skeleton } from '@/components/ui/skeleton';
+import { Switch } from '@/components/ui/switch';
 import { RemoteAccessButton } from '@/features/remote-access/remote-access';
 import { useNow } from '@/hooks/use-now';
 import { cn } from '@/lib/utils';
-import { endOnUnload, openSession } from './api';
+import { endOnUnload, endSession, openSession } from './api';
 import type { ServiceRef } from './api';
 import { watchConnect } from './connect-watch';
 import { DataTabHint } from './data-tab-hint';
 import { clock, endSentence, shellLabel } from './format';
+import { joinFailure } from './join-progress';
 import { RecentSessions } from './recent-sessions';
 import { SessionClient } from './session-client';
 import { Terminal } from './terminal';
@@ -30,6 +32,9 @@ import { ServiceActivityEvents } from '@/components/channel-events';
 
 type Data = App.Data.Sessions.ConsoleTabData;
 type Opened = App.Data.Sessions.OpenedSessionData;
+type Recovery = App.Data.Sessions.RecoveryShellData;
+/** A console in a running container, or a recovery shell in a copy of one that won't stay up. */
+type Target = 'console' | 'recovery';
 
 type Phase =
     | { kind: 'idle' }
@@ -42,8 +47,10 @@ const IDLE_HINT_SECONDS = 180;
 
 /**
  * The Console tab (docs/08 §15): pick a replica and a shell, open a
- * terminal inside that container. The session ends when the tab, the panel
- * or the page goes away.
+ * terminal inside that container. While a replica's container won't stay
+ * up it also offers a recovery shell: a copy without the app, volumes
+ * read-only unless changes are allowed. The session ends when the tab, the
+ * panel or the page goes away.
  */
 export function ConsoleTab({
     dataHint = false,
@@ -95,6 +102,11 @@ function ConsoleView({
         data.replicas[0]?.workload ?? null,
     );
     const [shell, setShell] = useState('');
+    const [target, setTarget] = useState<Target>('console');
+    const [rescue, setRescue] = useState<string | null>(
+        data.recovery?.replicas[0]?.workload ?? null,
+    );
+    const [allowChanges, setAllowChanges] = useState(false);
     const [phase, setPhase] = useState<Phase>({ kind: 'idle' });
     const [opened, setOpened] = useState<Opened | null>(null);
     const [error, setError] = useState<string | null>(null);
@@ -112,7 +124,12 @@ function ConsoleView({
         data.replicas.find((r) => r.workload === workload) ??
         data.replicas[0] ??
         null;
-
+    const recoveryReplicas = data.recovery?.replicas ?? [];
+    const stuck =
+        recoveryReplicas.find((r) => r.workload === rescue) ??
+        recoveryReplicas[0] ??
+        null;
+    const chosen = target === 'recovery' ? stuck : replica;
     const stop = useCallback(() => {
         const current = client.current;
         client.current = null;
@@ -140,11 +157,12 @@ function ConsoleView({
             setError(null);
 
             try {
-                const session = await openSession(serviceRef, 'console', {
-                    workload: replica?.workload ?? null,
+                const session = await openSession(serviceRef, target, {
+                    workload: chosen?.workload ?? null,
                     shell: shell === '' ? null : shell,
                     cols,
                     rows,
+                    ...(target === 'recovery' ? { allowChanges } : {}),
                 });
                 openedRef.current = session;
                 setOpened(session);
@@ -178,6 +196,17 @@ function ConsoleView({
                             });
                             refresh();
                         },
+                        // The browser's own join failed: the session never
+                        // started, so it is ended and can be tried again.
+                        onJoinFailed: (message) => {
+                            unwatch.current?.();
+                            unwatch.current = null;
+                            client.current = null;
+                            void endSession(session.id).catch(() => undefined);
+                            setError(message);
+                            setPhase({ kind: 'idle' });
+                            refresh();
+                        },
                     },
                     () => ({
                         t: 'hello',
@@ -189,7 +218,12 @@ function ConsoleView({
                 // refusal, offline) says so here instead of "Connecting…".
                 unwatch.current = watchConnect(
                     session.id,
-                    session.replica.serverName,
+                    (seconds) =>
+                        joinFailure(
+                            live.progress(),
+                            session.replica.serverName,
+                            seconds,
+                        ),
                     (message) => {
                         client.current = null;
                         live.close();
@@ -203,13 +237,23 @@ function ConsoleView({
                 const message =
                     failure instanceof Error
                         ? failure.message
-                        : 'The console couldn’t be opened.';
+                        : target === 'recovery'
+                          ? 'The recovery shell couldn’t be opened.'
+                          : 'The console couldn’t be opened.';
 
                 setError(message);
                 setPhase({ kind: 'idle' });
             }
         },
-        [replica?.workload, shell, serviceRef, realtime, refresh],
+        [
+            chosen?.workload,
+            target,
+            allowChanges,
+            shell,
+            serviceRef,
+            realtime,
+            refresh,
+        ],
     );
 
     const end = () => {
@@ -237,6 +281,23 @@ function ConsoleView({
             />
             {phase.kind === 'idle' && (
                 <div className="flex flex-col gap-4">
+                    {data.recovery &&
+                        (data.recovery.available ||
+                            data.recovery.unavailableReason !== null) && (
+                            <RecoveryCard
+                                recovery={data.recovery}
+                                value={stuck?.workload ?? null}
+                                onChange={setRescue}
+                                allowChanges={allowChanges}
+                                onAllowChanges={setAllowChanges}
+                                error={target === 'recovery' ? error : null}
+                                onOpen={() => {
+                                    setTarget('recovery');
+                                    setAttempt((n) => n + 1);
+                                    setPhase({ kind: 'connecting' });
+                                }}
+                            />
+                        )}
                     {!data.available ? (
                         <EmptyState
                             icon={SquareTerminal}
@@ -292,6 +353,7 @@ function ConsoleView({
                                 </Select>
                                 <Button
                                     onClick={() => {
+                                        setTarget('console');
                                         setAttempt((n) => n + 1);
                                         setPhase({ kind: 'connecting' });
                                     }}
@@ -313,7 +375,7 @@ function ConsoleView({
                                     </span>
                                 )}
                             </div>
-                            {error && (
+                            {error && target === 'console' && (
                                 <p className="type-small text-status-error">
                                     {error}
                                 </p>
@@ -354,8 +416,16 @@ function ConsoleView({
                         {phase.kind === 'connecting' && (
                             <LiveWait
                                 className="absolute inset-0 justify-center"
-                                status={`Connecting to ${replica?.label.toLowerCase() ?? 'the replica'}${replica ? ` on ${replica.serverName}` : ''}…`}
-                                hint="Usually a second or two."
+                                status={
+                                    target === 'recovery'
+                                        ? `Starting a recovery copy of ${chosen?.label.toLowerCase() ?? 'the replica'}${chosen ? ` on ${chosen.serverName}` : ''}…`
+                                        : `Connecting to ${chosen?.label.toLowerCase() ?? 'the replica'}${chosen ? ` on ${chosen.serverName}` : ''}…`
+                                }
+                                hint={
+                                    target === 'recovery'
+                                        ? 'Usually a few seconds.'
+                                        : 'Usually a second or two.'
+                                }
                                 timeoutSeconds={20}
                                 fallback={
                                     <Button
@@ -380,9 +450,19 @@ function ConsoleView({
                             </span>
                             <span>
                                 {shellLabel(phase.shell)} in{' '}
+                                {target === 'recovery'
+                                    ? 'a recovery copy of '
+                                    : ''}
                                 {opened?.replica.label.toLowerCase()} on{' '}
                                 {opened?.replica.serverName}
                             </span>
+                            {target === 'recovery' && (
+                                <span>
+                                    {allowChanges
+                                        ? 'Volumes can be changed'
+                                        : 'Volumes are read-only'}
+                                </span>
+                            )}
                             <span className="tabular-nums">
                                 {clock(elapsed)}
                             </span>
@@ -423,14 +503,101 @@ function ConsoleView({
                                 }}
                             >
                                 <SquareTerminal aria-hidden="true" />
-                                Open a new console
+                                {target === 'recovery'
+                                    ? 'Back to the console'
+                                    : 'Open a new console'}
                             </Button>
                         </div>
                     )}
                 </div>
             )}
 
-            <RecentSessions sessions={data.sessions} onChanged={refresh} />
+            <RecentSessions
+                sessions={[
+                    ...data.sessions,
+                    ...(data.recovery?.sessions ?? []),
+                ].sort((a, b) => b.openedAt.localeCompare(a.openedAt))}
+                onChanged={refresh}
+            />
+        </div>
+    );
+}
+
+/**
+ * Offered while a replica's container won't stay up (OD9): a copy of it with
+ * the same image, variables and volumes, without the app running.
+ */
+function RecoveryCard({
+    recovery,
+    value,
+    onChange,
+    allowChanges,
+    onAllowChanges,
+    error,
+    onOpen,
+}: {
+    recovery: Recovery;
+    value: string | null;
+    onChange: (workload: string) => void;
+    allowChanges: boolean;
+    onAllowChanges: (allow: boolean) => void;
+    error: string | null;
+    onOpen: () => void;
+}) {
+    return (
+        <div className="flex flex-col gap-4 rounded-xl border bg-card p-5 shadow-card">
+            <div className="flex flex-col gap-1">
+                <p className="type-heading">Open a recovery shell</p>
+                <p className="type-small text-muted-foreground">
+                    This service’s container won’t stay up. A recovery shell
+                    starts a copy of it with the same image, variables and
+                    volumes, without starting your app, so you can look around.
+                    Volumes are read-only unless you allow changes.
+                </p>
+            </div>
+            {!recovery.available ? (
+                <p className="type-small text-muted-foreground">
+                    {recovery.unavailableReason}
+                </p>
+            ) : (
+                <>
+                    <ReplicaPicker
+                        replicas={recovery.replicas}
+                        value={value}
+                        onChange={onChange}
+                    />
+                    <label className="flex items-start gap-3">
+                        <Switch
+                            checked={allowChanges}
+                            disabled={recovery.changesNeedStop}
+                            onCheckedChange={onAllowChanges}
+                            aria-describedby="recovery-changes-hint"
+                        />
+                        <span className="flex flex-col">
+                            <span className="type-body">
+                                Allow changes to volumes
+                            </span>
+                            <span
+                                id="recovery-changes-hint"
+                                className="type-small text-muted-foreground"
+                            >
+                                {recovery.changesNeedStop
+                                    ? 'The container still runs between restarts, so its data stays read-only. Stop the service first to allow changes.'
+                                    : 'Recorded in the audit log.'}
+                            </span>
+                        </span>
+                    </label>
+                    <div>
+                        <Button variant="outline" onClick={onOpen}>
+                            <LifeBuoy aria-hidden="true" />
+                            {error ? 'Try again' : 'Open recovery shell'}
+                        </Button>
+                    </div>
+                    {error && (
+                        <p className="type-small text-status-error">{error}</p>
+                    )}
+                </>
+            )}
         </div>
     );
 }
@@ -484,6 +651,12 @@ function ReplicaPicker({
                         {replica.phase === 'unhealthy' && (
                             <span className="text-status-progress">
                                 unhealthy
+                            </span>
+                        )}
+                        {(replica.phase === 'exited' ||
+                            replica.phase === 'failed') && (
+                            <span className="text-status-error">
+                                not running
                             </span>
                         )}
                     </button>

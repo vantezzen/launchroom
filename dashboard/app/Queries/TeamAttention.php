@@ -6,6 +6,7 @@ namespace App\Queries;
 
 use App\Data\Attention\AttentionItemData;
 use App\Data\Canvas\ProjectSummaryData;
+use App\Enums\DeploymentStatus;
 use App\Enums\EnvironmentKind;
 use App\Enums\HealthCheckState;
 use App\Enums\NodeStatusReason;
@@ -13,19 +14,21 @@ use App\Enums\Permission;
 use App\Enums\Previews\PreviewStatus;
 use App\Enums\ServerStatus;
 use App\Enums\StatusTone;
+use App\Models\Deployment;
 use App\Models\Environment;
 use App\Models\Previews\Preview;
 use App\Models\Security\SecurityFinding;
 use App\Models\Server;
 use App\Models\Team;
 use App\Models\User;
+use Carbon\CarbonImmutable;
 
 /**
  * "Needs you" on the projects page (docs/08 §13): what in the team needs
  * the user right now, most urgent first, each with a link to the place that
  * fixes it. Failed services come from the project summaries (no second
  * status pass); then servers that are down, waiting for approval or almost
- * full, open security findings that need action, staged changes waiting to
+ * full, known problems live apps log (G12), open security findings that need action, staged changes waiting to
  * deploy, paused auto-deploy and fork pull requests waiting for approval.
  * Healthy, deploying and idle things never show up here.
  */
@@ -49,6 +52,7 @@ final readonly class TeamAttention
         $items = [
             ...$this->services($summaries),
             ...$this->servers($team),
+            ...$this->runtimeFindings($team),
             ...$this->security($team),
             ...$this->environments($team),
             ...$this->previews($team),
@@ -85,6 +89,52 @@ final readonly class TeamAttention
                     );
                 }
             }
+        }
+
+        return $items;
+    }
+
+    /**
+     * Known problems live apps log while they serve (G12): the deploy went
+     * green, but visitors hit them. Only while that deployment is live.
+     *
+     * @return list<AttentionItemData>
+     */
+    private function runtimeFindings(Team $team): array
+    {
+        $items = [];
+        $deployments = Deployment::query()
+            ->where('deployments.team_id', $team->id)
+            ->whereNotNull('runtime_finding')
+            ->where('status', DeploymentStatus::Active->value)
+            ->with(['serviceInstance.service:id,public_id,name,project_id', 'environment:id,public_id,name,kind,project_id', 'environment.project:id,public_id,name'])
+            ->latest('id')
+            ->limit(20)
+            ->get();
+
+        foreach ($deployments as $deployment) {
+            $finding = $deployment->runtime_finding;
+            $instance = $deployment->serviceInstance;
+
+            if ($finding === null || $instance->active_deployment_id !== $deployment->id) {
+                continue;
+            }
+
+            $environment = $deployment->environment;
+            $project = $environment->project;
+            $service = $instance->service;
+
+            $items[] = new AttentionItemData(
+                key: "runtime:{$deployment->public_id}",
+                kind: 'service',
+                state: StatusTone::Warning,
+                title: "{$service->name}: {$finding->title}",
+                context: $environment->kind === EnvironmentKind::Production ? $project->name : "{$project->name}, {$environment->name}",
+                detail: $finding->fix,
+                at: CarbonImmutable::parse($finding->at),
+                href: route('projects.services.show', [$project->public_id, $environment->public_id, $service->public_id, 'logs'], absolute: false),
+                action: 'Open',
+            );
         }
 
         return $items;

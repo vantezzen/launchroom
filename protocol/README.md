@@ -35,7 +35,7 @@ PHP Data objects mirror the Go types by hand. CI validates both sides: Go decode
 | (raw bytes) | CP → daemon | `GET /daemon/v1/transfers/{dtr}/chunks/{n}`: chunk *n* (0-based) of an upload, `application/octet-stream` (`200`; `404` not this server's leased import, `410` transfer gone, `422` bad index) | **yes**, over the exact bytes |
 | (raw bytes) | daemon → CP | `PUT /daemon/v1/transfers/{dtr}/chunks/{n}`: chunk *n* of an export, `application/octet-stream`, exactly `chunkBytes` except the last (`204`) | request (content-digest) |
 
-Task types: `build`, `plan`, `run_once`, `backup`, `restore`, `backup_maintenance`, `backup_snapshots`, `verify_restore`, `session`, `logs`, `self_update`, `db_import`, `volume_import`, `db_export`, `volume_export`, `access`, `inventory`, `inspect_container` (spec types `BuildSpec`, `PlanSpec`, `BackupSnapshotsSpec`, … in `task.json` `$defs`).
+Task types: `build`, `plan`, `run_once`, `backup`, `restore`, `backup_maintenance`, `backup_snapshots`, `verify_restore`, `session`, `logs`, `self_update`, `db_import`, `volume_import`, `db_export`, `volume_export`, `access`, `inventory`, `inspect_container`, `cleanup`, `cert_retry` (spec types `BuildSpec`, `PlanSpec`, `BackupSnapshotsSpec`, … in `task.json` `$defs`).
 
 ## Conventions
 

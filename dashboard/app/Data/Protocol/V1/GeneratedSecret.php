@@ -29,6 +29,12 @@ final class GeneratedSecret extends Data
         public int $length,
         #[In(self::ENCODINGS)]
         public string $encoding,
+        /** Where it is used: runtime (null) or build (part of the build key). */
+        #[In(['runtime', 'build'])]
+        public ?string $scope = null,
+        /** Which environments share one value: environment (null, D86) or service (build scope only, not fork previews). */
+        #[In(['environment', 'service'])]
+        public ?string $shared = null,
     ) {}
 
     /**

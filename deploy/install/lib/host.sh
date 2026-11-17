@@ -323,3 +323,29 @@ host_timezone() {
 		printf '%s' "$tz"
 	fi
 }
+
+# check_host_health DIR: warns (never stops) when the disk that will hold
+# DIR is nearly full, or when the clock isn't synchronised: launchroom's
+# servers sign every request with a timestamp, so a clock that drifts by
+# minutes cuts a server off. Never during an update.
+check_host_health() {
+	[ "${LR_BUNDLE_VERIFIED:-}" != 1 ] || return 0
+	target="$1"
+	while [ ! -d "$target" ] && [ "$target" != / ] && [ "$target" != . ]; do target="$(dirname "$target")"; done
+	free_kb="$(df -Pk "$HOST_ROOT$target" 2>/dev/null | awk 'NR == 2 { print $4 }')"
+	case "$free_kb" in
+	"" | *[!0-9]*) ;;
+	*)
+		if [ "$free_kb" -lt 5242880 ]; then
+			warn "only $((free_kb / 1024)) MB of disk space is free here. launchroom needs room for its database, images and builds: 10 GB or more is comfortable."
+		fi
+		;;
+	esac
+	synced=""
+	if command -v timedatectl >/dev/null 2>&1; then
+		synced="$(timedatectl show -p NTPSynchronized --value 2>/dev/null || true)"
+	fi
+	if [ "$synced" = no ]; then
+		warn "this server's clock isn't synchronised. Servers sign every request with the time, so a clock that drifts cuts them off. Turn it on with: sudo timedatectl set-ntp true"
+	fi
+}

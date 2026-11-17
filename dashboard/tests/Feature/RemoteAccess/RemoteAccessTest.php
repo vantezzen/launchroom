@@ -201,7 +201,9 @@ test('end now cancels the task; completion closes it, wipes the password and aud
     $opened = $this->actingAs($owner)->postJson(accessUrl($this->instance, 'database'), ['allowFrom' => ['198.51.100.7']])->assertCreated()->json();
     $task = accessLease($this);
 
-    $this->actingAs($owner)->postJson('/access/'.$opened['id'].'/end')->assertOk();
+    // Acknowledged at once: the access is still live but marked as ending.
+    expect($this->actingAs($owner)->postJson('/access/'.$opened['id'].'/end')->assertOk()->json())
+        ->toMatchArray(['status' => 'open', 'ending' => true]);
     expect(accessBeat($this, $task)['cancel'])->toBeTrue();
 
     $this->daemon->send($this, 'POST', '/daemon/v1/tasks/'.$task['id'].'/complete', [
@@ -218,7 +220,7 @@ test('end now cancels the task; completion closes it, wipes the password and aud
 
     $ended = AuditEvent::query()->where('action', AuditAction::DatabaseAccessEnded->value)->sole();
     expect($ended->meta)->toMatchArray(['access' => $opened['id'], 'reason' => 'ended', 'endedBy' => 'user', 'connections' => 1]);
-    expect($this->actingAs($owner)->getJson('/access/'.$opened['id'])->json())->toMatchArray(['status' => 'ended', 'password' => null, 'certificatePem' => null]);
+    expect($this->actingAs($owner)->getJson('/access/'.$opened['id'])->json())->toMatchArray(['status' => 'ended', 'ending' => false, 'password' => null, 'certificatePem' => null]);
 });
 
 test('a restart of launchroomd fails the access instead of re-queuing it', function (): void {

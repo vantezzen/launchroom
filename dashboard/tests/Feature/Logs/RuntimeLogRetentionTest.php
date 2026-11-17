@@ -50,7 +50,8 @@ test('runtime log retention is a project setting per environment', function (): 
         ->assertOk()
         ->assertInertia(fn ($page) => $page->component('projects/settings')
             ->where('logRetention.0.name', 'production')
-            ->where('logRetention.0.enabled', false)
+            // Production keeps a day of runtime logs from the start (OD4).
+            ->where('logRetention.0.enabled', true)
             ->where('logRetention.0.canUpdate', false)
             ->where('logRetentionOptions.days', [1, 3, 7, 14, 30]));
 

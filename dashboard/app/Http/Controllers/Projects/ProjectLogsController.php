@@ -9,7 +9,6 @@ use App\Actions\Logs\StopLogTail;
 use App\Data\Logs\LogExplorerPageData;
 use App\Data\Logs\LogQueryData;
 use App\Data\Logs\LogTailData;
-use App\Data\Logs\LogTailStartedData;
 use App\Http\Controllers\Controller;
 use App\Http\Routing\RouteScope;
 use App\Models\Environment;
@@ -18,7 +17,6 @@ use App\Models\Service;
 use App\Models\User;
 use App\Queries\EnvironmentLogs;
 use App\Queries\LogSearch;
-use App\Queries\LogTails;
 use App\Queries\ProjectShell;
 use App\Support\Logs\LogScope;
 use Illuminate\Container\Attributes\CurrentUser;
@@ -76,10 +74,7 @@ final class ProjectLogsController extends Controller
         RouteScope::environment($project, $environment);
         Gate::authorize('view', $environment);
 
-        return response()->json(new LogTailStartedData(
-            following: $start->handle($environment, $user, RouteScope::serviceInstance($environment, $data->service)),
-            renewAfterSeconds: LogTails::RENEW_SECONDS,
-        ));
+        return response()->json($start->handle($environment, $user, RouteScope::serviceInstance($environment, $data->service)));
     }
 
     public function stopTail(Project $project, Environment $environment, #[CurrentUser] User $user, StopLogTail $stop): JsonResponse

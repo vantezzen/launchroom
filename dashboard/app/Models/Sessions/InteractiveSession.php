@@ -50,6 +50,7 @@ use Illuminate\Support\Carbon;
  * @property string $ticket_hash
  * @property Carbon $ticket_expires_at
  * @property Carbon|null $ticket_used_at
+ * @property Carbon|null $server_joined_at when the server first asked to join the channel
  * @property string|null $session_key base64url, 32 bytes
  * @property int|null $daemon_task_id
  * @property bool $record
@@ -174,6 +175,7 @@ final class InteractiveSession extends Model
             'bytes_out' => 'integer',
             'ticket_expires_at' => 'datetime',
             'ticket_used_at' => 'datetime',
+            'server_joined_at' => 'datetime',
             'started_at' => 'datetime',
             'ended_at' => 'datetime',
         ];

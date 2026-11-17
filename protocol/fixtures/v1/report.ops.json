@@ -1,0 +1,231 @@
+{
+  "apiVersion": "launchroom.vantezzen.io/v1",
+  "kind": "Report",
+  "serverId": "srv_01J9Z8X7W6V5T4S3R2Q1P0N9MK",
+  "observedAt": "2026-11-17T12:00:30Z",
+  "seq": 77,
+  "full": true,
+  "appliedVersion": 1902,
+  "workloads": [
+    {
+      "id": "wl_01J9Z8X7W6V5T4S3R2Q1P0N9N7",
+      "phase": "unhealthy",
+      "observedAt": "2026-11-17T12:00:30Z",
+      "containerId": "d0f631ca1ddba8db3bcfcb9e057cdc98d0379f1bee00e75a545147a27dadd982",
+      "startedAt": "2026-11-17T11:00:00Z",
+      "restartCount": 0,
+      "message": "HTTP 400",
+      "health": {
+        "state": "failing",
+        "consecutiveFailures": 4,
+        "lastCheckedAt": "2026-11-17T12:00:29Z",
+        "lastError": "HTTP 400",
+        "attempts": 720,
+        "body": "<h1>Bad Request (400)</h1> DisallowedHost: Invalid HTTP_HOST header: 'shop.example.com'.",
+        "hint": "host_not_allowed"
+      },
+      "image": {
+        "user": "1000:1000",
+        "exposedPorts": [
+          8000
+        ]
+      },
+      "issue": {
+        "kind": "unresponsive",
+        "since": "2026-11-17T11:55:00Z",
+        "restarts": 3
+      }
+    },
+    {
+      "id": "wl_01J9Z8X7W6V5T4S3R2Q1P0N9N8",
+      "phase": "failed",
+      "observedAt": "2026-11-17T12:00:30Z",
+      "restartCount": 0,
+      "message": "exec /app/start: exec format error",
+      "failure": {
+        "code": "wrong_platform",
+        "message": "exec /app/start: exec format error",
+        "at": "2026-11-17T12:00:20Z"
+      },
+      "image": {
+        "user": "root"
+      }
+    }
+  ],
+  "events": [
+    {
+      "seq": 1763380800000001,
+      "workload": "wl_01J9Z8X7W6V5T4S3R2Q1P0N9N7",
+      "deployment": "dpl_01J9Z8X7W6V5T4S3R2Q1P0N9N5",
+      "at": "2026-11-17T11:30:00Z",
+      "kind": "exited",
+      "exitCode": 137,
+      "signal": 9,
+      "byLaunchroom": true,
+      "output": [
+        {
+          "time": "2026-11-17T11:29:59Z",
+          "stream": "stdout",
+          "text": "[INFO] Worker exiting (pid: 12)"
+        }
+      ]
+    },
+    {
+      "seq": 1763380800000002,
+      "workload": "wl_01J9Z8X7W6V5T4S3R2Q1P0N9N7",
+      "deployment": "dpl_01J9Z8X7W6V5T4S3R2Q1P0N9N5",
+      "at": "2026-11-17T11:30:01Z",
+      "kind": "restarted",
+      "reason": "health",
+      "restarts": 1,
+      "message": "GET / on :8000 failed for 5m"
+    },
+    {
+      "seq": 1763380800000003,
+      "workload": "wl_01J9Z8X7W6V5T4S3R2Q1P0N9N8",
+      "deployment": "dpl_01J9Z8X7W6V5T4S3R2Q1P0N9N6",
+      "at": "2026-11-17T12:00:20Z",
+      "kind": "create_failed",
+      "code": "wrong_platform",
+      "message": "exec /app/start: exec format error"
+    }
+  ],
+  "host": {
+    "cpus": 4,
+    "memoryMb": 8192,
+    "diskTotalMb": 81920,
+    "diskFreeMb": 6144,
+    "dockerVersion": "28.3.2",
+    "daemonVersion": "0.1.6",
+    "health": {
+      "collectedAt": "2026-11-17T12:00:00Z",
+      "dataDisk": {
+        "totalMb": 81920,
+        "freeMb": 6144,
+        "inodesTotal": 5242880,
+        "inodesFree": 4100000
+      },
+      "cleanup": {
+        "at": "2026-11-17T11:50:00Z",
+        "trigger": "manual",
+        "removedImages": 4,
+        "removedContainers": 1,
+        "reclaimedMb": 2300
+      },
+      "disk": {
+        "measuredAt": "2026-11-17T11:45:00Z",
+        "volumes": [
+          {
+            "id": "vol_01J9Z8X7W6V5T4S3R2Q1P0N9N1",
+            "sizeMb": 18432
+          },
+          {
+            "id": "vol_01J9Z8X7W6V5T4S3R2Q1P0N9NA",
+            "sizeMb": 512,
+            "retired": true
+          }
+        ],
+        "walBacklogMb": 128,
+        "registryMb": 9216
+      }
+    },
+    "docker": {
+      "reachable": true,
+      "checkedAt": "2026-11-17T12:00:15Z"
+    },
+    "reconcile": {
+      "lastPassAt": "2026-11-17T12:00:28Z",
+      "lastCompleteAt": "2026-11-17T11:59:58Z",
+      "errors": [
+        {
+          "code": "volume",
+          "target": "vol_01J9Z8X7W6V5T4S3R2Q1P0N9NA",
+          "message": "no space left on device"
+        }
+      ]
+    },
+    "daemon": {
+      "startedAt": "2026-11-17T03:12:40Z",
+      "hostBootedAt": "2026-11-17T03:11:58Z",
+      "previousExit": {
+        "unclean": true,
+        "at": "2026-11-17T03:12:05Z",
+        "panic": "panic: runtime error: index out of range [3] with length 3\n\ngoroutine 81 [running]:\n..."
+      }
+    },
+    "lastRefusal": {
+      "at": "2026-11-17T09:14:00Z",
+      "status": 401,
+      "clockSkewMs": -94000,
+      "message": "request is outside the time window"
+    }
+  },
+  "ingress": {
+    "state": "failed",
+    "routes": 3,
+    "message": "listen tcp :80: bind: address already in use",
+    "reason": "port_in_use",
+    "port": 80,
+    "process": "nginx",
+    "output": [
+      {
+        "time": "2026-11-17T12:00:10Z",
+        "stream": "stderr",
+        "text": "Error: loading initial config: listen tcp :80: bind: address already in use"
+      }
+    ],
+    "certificates": [
+      {
+        "host": "shop.example.com",
+        "state": "failed",
+        "lastError": "urn:ietf:params:acme:error:rateLimited: too many certificates already issued",
+        "lastErrorAt": "2026-11-17T10:00:00Z",
+        "failureKind": "rate_limited",
+        "retryAfter": "2026-11-18T10:00:00Z"
+      }
+    ]
+  },
+  "controlPlane": {
+    "checkedAt": "2026-11-17T12:00:30Z",
+    "ready": true,
+    "services": [
+      {
+        "name": "dashboard",
+        "state": "running",
+        "startedAt": "2026-11-17T11:41:00Z",
+        "restarts": 1
+      },
+      {
+        "name": "horizon",
+        "state": "running",
+        "startedAt": "2026-11-17T03:13:00Z",
+        "restarts": 0
+      },
+      {
+        "name": "postgres",
+        "state": "running",
+        "startedAt": "2026-11-17T03:12:50Z",
+        "restarts": 0
+      }
+    ],
+    "restarts": [
+      {
+        "service": "dashboard",
+        "at": "2026-11-17T11:40:55Z",
+        "reason": "not_ready"
+      }
+    ],
+    "notices": [
+      {
+        "kind": "down",
+        "at": "2026-11-17T11:38:00Z",
+        "sent": true
+      },
+      {
+        "kind": "back",
+        "at": "2026-11-17T11:42:00Z",
+        "sent": true
+      }
+    ]
+  }
+}

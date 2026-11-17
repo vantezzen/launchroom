@@ -1,0 +1,10 @@
+GEM
+  remote: https://rubygems.org/
+  specs:
+    good_job (4.4.2)
+    pg (1.5.8)
+    rails (7.2.1)
+
+DEPENDENCIES
+  good_job (~> 4.0)
+  rails (~> 7.2.1)

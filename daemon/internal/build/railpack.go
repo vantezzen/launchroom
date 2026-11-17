@@ -144,6 +144,13 @@ func planWithRailpack(dir string, env map[string]string, logf func(level, msg st
 }
 
 func applyPatch(p *rpplan.BuildPlan, patch presets.PlanPatch) error {
+	// Runtime files first: a decision's image variables may point at them
+	// (NODE_OPTIONS=--import=…), so they must never apply without the files.
+	if len(patch.DeployFiles) > 0 {
+		if err := addDeployFiles(p, patch.DeployFiles); err != nil {
+			return err
+		}
+	}
 	if patch.StartCommand != "" {
 		p.Deploy.StartCmd = patch.StartCommand
 	}
@@ -213,6 +220,43 @@ func applyPatch(p *rpplan.BuildPlan, patch presets.PlanPatch) error {
 }
 
 const buildFileAsset = "launchroom:"
+
+// deployFilesStep writes launchroom's runtime files (PlanPatch.DeployFiles).
+// It starts from the build step's result and adds only the files; the
+// runtime image takes just those paths from it, as one extra layer on top.
+const deployFilesStep = "launchroom:files"
+
+// deployFilesRoot is the only place runtime files may go: outside the app
+// directory (/app), so they never replace a file of the app.
+const deployFilesRoot = "/opt/launchroom/"
+
+// addDeployFiles adds the files to the runtime image as one layer.
+func addDeployFiles(p *rpplan.BuildPlan, files map[string]string) error {
+	if !slices.ContainsFunc(p.Steps, func(s rpplan.Step) bool { return s.Name == "build" }) {
+		return fmt.Errorf("the plan has no build step to add runtime files to")
+	}
+	if slices.ContainsFunc(p.Steps, func(s rpplan.Step) bool { return s.Name == deployFilesStep }) {
+		return fmt.Errorf("the plan already has a %s step", deployFilesStep)
+	}
+	step := rpplan.Step{
+		Name:    deployFilesStep,
+		Inputs:  []rpplan.Layer{rpplan.NewStepLayer("build")},
+		Assets:  map[string]string{},
+		Secrets: []string{},
+	}
+	paths := slices.Sorted(maps.Keys(files))
+	for _, path := range paths {
+		if !strings.HasPrefix(path, deployFilesRoot) || strings.Contains(path, "..") || strings.ContainsAny(path, " \t\n\\") {
+			return fmt.Errorf("runtime file path %q must be under %s", path, deployFilesRoot)
+		}
+		name := buildFileAsset + path
+		step.Assets[name] = files[path]
+		step.Commands = append(step.Commands, rpplan.NewFileCommand(path, name, rpplan.FileOptions{CustomName: "write " + path}))
+	}
+	p.Steps = append(p.Steps, step)
+	p.Deploy.Inputs = append(p.Deploy.Inputs, rpplan.NewStepLayer(deployFilesStep, rpplan.Filter{Include: paths}))
+	return nil
+}
 
 // restrictDeploy replaces the deploy layers taken from the app's build
 // (install/prune/build steps) by one layer of only the given paths from the

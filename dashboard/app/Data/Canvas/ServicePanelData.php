@@ -4,8 +4,10 @@ declare(strict_types=1);
 
 namespace App\Data\Canvas;
 
+use App\Data\Services\CronRunData;
 use App\Enums\ServicePanelTab;
 use App\Enums\ServiceSettingsSection;
+use Spatie\LaravelData\Attributes\DataCollectionOf;
 use Spatie\LaravelData\Data;
 
 /**
@@ -14,6 +16,9 @@ use Spatie\LaravelData\Data;
  */
 final class ServicePanelData extends Data
 {
+    /**
+     * @param  list<CronRunData>  $cronRuns
+     */
     public function __construct(
         public string $serviceId,
         public ServicePanelTab $tab,
@@ -34,5 +39,10 @@ final class ServicePanelData extends Data
         public ?ServiceControlsData $controls = null,
         /** The header's source link: repository, image, engine or parent app. */
         public ?ServiceOriginData $origin = null,
+        /** Restarts and the last exit of the live version, with the reason (G7). */
+        public ?ServiceRuntimeFactsData $runtime = null,
+        /** A cron service's recent runs, newest first (G19); empty for other kinds. */
+        #[DataCollectionOf(CronRunData::class)]
+        public array $cronRuns = [],
     ) {}
 }

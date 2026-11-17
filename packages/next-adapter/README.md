@@ -1,6 +1,6 @@
 # @vantezzen/launchroom-next-adapter
 
-A [Next.js Deployment Adapter](https://nextjs.org/docs/app/api-reference/config/next-config-js/adapterPath) (Next.js ≥ 16.2) for self-hosting on [launchroom](https://launchroom.vantezzen.io), or anywhere you run `node server.js` in a container.
+A [Next.js Deployment Adapter](https://nextjs.org/docs/app/api-reference/config/next-config-js/adapterPath) (Next.js ≥ 15.4) for self-hosting on [launchroom](https://launchroom.vantezzen.io), or anywhere you run `node server.js` in a container.
 
 It:
 
@@ -14,7 +14,7 @@ Zero runtime dependencies, ESM, MIT.
 
 ## On launchroom
 
-Nothing to do. For Next ≥ 16.2 the `nextjs` build preset injects a vendored, checksum-pinned copy of this package through `NEXT_ADAPTER_PATH`. Your repository and `package.json` are never touched, and nothing is downloaded from npm at build time. The decision shows up as the "launchroom deployment adapter" chip in the build plan; remove the chip to build with plain `next start`.
+Nothing to do. For Next ≥ 15.4 the `nextjs` build preset injects a vendored, checksum-pinned copy of this package through `NEXT_ADAPTER_PATH`. Your repository and `package.json` are never touched, and nothing is downloaded from npm at build time. The decision shows up as the "launchroom deployment adapter" chip in the build plan; remove the chip to build with plain `next start`.
 
 Your own `adapterPath` in `next.config` takes precedence over `NEXT_ADAPTER_PATH`. launchroom then falls back to its older standalone handling and warns (`own-next-adapter`).
 
@@ -81,11 +81,13 @@ All of them are optional and read at build time.
 ```jsonc
 {
   "schemaVersion": 1,
-  "adapter": { "name": "launchroom", "version": "0.1.0" },
+  "adapter": { "name": "launchroom", "version": "0.2.0" },
   "nextVersion": "16.4.2",
   "buildId": "…",
   "deploymentId": "dpl_…",
   "output": "standalone",
+  "basePath": "",
+  "trailingSlash": false,
   "standalone": { "appDir": ".next/standalone", "serverEntry": ".next/standalone/server.js" },
   "middleware": { "present": true, "runtime": "nodejs", "matchers": ["/((?!_next/static).*)"] },
   "imageOptimization": { "enabled": true, "loader": "default", "sharp": true, "remotePatterns": 0 },
@@ -101,7 +103,7 @@ Route lists leave out `.rsc` variants and internal pages (`/_not-found`, …) an
 
 ## Multi-replica checklist
 
-- Set `NEXT_SERVER_ACTIONS_ENCRYPTION_KEY` as a **build** variable; it is embedded in the build output.
+- Set `NEXT_SERVER_ACTIONS_ENCRYPTION_KEY` as a **build** variable; it is embedded in the build output. launchroom generates one per service when you haven't set it.
 - Run every replica from the same image. launchroom builds once and promotes the image, and `deploymentId` stays the same.
 - ISR and `revalidateTag` are per replica unless you configure a shared `cacheHandler`/`cacheHandlers` yourself. The adapter ships no cache handler: a Redis one needs a Redis client, which doesn't fit zero runtime dependencies.
 
@@ -121,6 +123,10 @@ The adapter implements both hooks of Next's `NextAdapter` interface:
 
 - `modifyConfig(config, { phase, nextVersion, projectDir })` runs after Next applied its defaults and validation, for every command that loads the config, `next dev` included (the adapter returns the config unchanged in `phase-development-server`). The config is complete: `outputFileTracingRoot` and `turbopack.root` are resolved (Next requires them to be equal, so the adapter sets both), and `NEXT_DEPLOYMENT_ID` is already copied into `deploymentId`, which is why it wins over `LAUNCHROOM_DEPLOYMENT_ID`.
 - `onBuildComplete({ routing, outputs, projectDir, repoRoot, distDir, config, nextVersion, buildId })` builds the manifest from `outputs` (`pages`, `pagesApi`, `appPages`, `appRoutes`, `prerenders`, `staticFiles`, `middleware`). `appPages` also lists the `.rsc` variant of each page, and `middleware` covers both `middleware.ts` and `proxy.ts`.
+
+### Next 15.4 to 16.1
+
+Next has read `NEXT_ADAPTER_PATH` (then `experimental.adapterPath`) since 15.4. 15.4 and 15.5 call `modifyConfig(config)` without a context and never call `onBuildComplete`. The adapter then takes the phase from `NEXT_PHASE` (a production build when it is unset) and the project directory from the working directory. Standalone output, `deploymentId` and the tracing root are set as on 16.x. There is no manifest, so `launchroom-next-finalize` copies the assets and prints no summary line.
 
 ### Why the copy runs after `next build`
 

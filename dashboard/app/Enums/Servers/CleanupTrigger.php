@@ -11,4 +11,6 @@ enum CleanupTrigger: string
 {
     case Schedule = 'schedule';
     case DiskPressure = 'disk_pressure';
+    /** "Free space now" (task `cleanup`). */
+    case Manual = 'manual';
 }

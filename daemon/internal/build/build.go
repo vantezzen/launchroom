@@ -20,6 +20,7 @@ import (
 	"os"
 	"path/filepath"
 	"slices"
+	"strconv"
 	"strings"
 	"time"
 
@@ -54,11 +55,23 @@ type Options struct {
 	Isolate func(ctx context.Context) error
 	// Resources returns the limits applied to the running build container.
 	Resources func() buildkitd.Resources
+	// FreeDisk runs the server's cleanup at once (old images and build
+	// cache, never volumes; cleanup.Cleaner.FreeSpace) when a build runs out
+	// of disk. nil = no cleanup (tests).
+	FreeDisk func(ctx context.Context) state.CleanupResult
+	// IdleTimeout stops a build that prints nothing for this long (0 =
+	// DefaultIdleTimeout, negative = never).
+	IdleTimeout time.Duration
 	// NoAttestations disables SBOM/provenance (tests only).
 	NoAttestations bool
 	Log            *slog.Logger
 	Now            func() time.Time
 }
+
+// DefaultIdleTimeout stops a build that printed nothing for 20 minutes
+// (a step waiting for input or for a network call that never answers),
+// long before the task deadline.
+const DefaultIdleTimeout = 20 * time.Minute
 
 // Builder runs build and plan jobs.
 type Builder struct{ o Options }
@@ -91,6 +104,11 @@ type Job struct {
 	// Inspect collects a RepoInspection after the clone (plan tasks with
 	// inspect, docs/20 §2); it is reported on success and on failure.
 	Inspect bool
+
+	// workspace is the monorepo workspace of the app folder (set by Run).
+	workspace *workspace
+	// contextDir is the workspace root of a workspace app (set by Run).
+	contextDir string
 }
 
 // Outcome is a successful build or plan.
@@ -162,6 +180,7 @@ func (b *Builder) Run(ctx context.Context, job Job) (out *Outcome, err error) {
 			if errors.Is(ctx.Err(), context.DeadlineExceeded) && be.Class != state.FailureTimeout {
 				be.Class = state.FailureTimeout
 			}
+			b.freeDiskAfter(ctx, be, sink)
 			sink.Line(be.Step, state.StreamStderr, "error: "+be.Error())
 			for _, h := range be.Hints {
 				sink.Line(be.Step, state.StreamStderr, "hint: "+h.Message)
@@ -199,9 +218,19 @@ func (b *Builder) Run(ctx context.Context, job Job) (out *Outcome, err error) {
 	if err != nil {
 		return nil, fail(state.FailureConfig, "clone", err)
 	}
-	// Unsafe links outside the app folder (test fixtures elsewhere in a
-	// monorepo) are removed, then the whole checkout is checked strictly.
-	removed, err := pruneOutsideApp(src, dir)
+	contextDir := dir
+	ws, wsDir, note := detectWorkspace(src, dir)
+	if note != "" {
+		sink.Line("plan", state.StreamStdout, note)
+	}
+	if ws != nil {
+		contextDir = wsDir
+		job.workspace, job.contextDir = ws, wsDir
+	}
+	// Unsafe links outside the app folder (or its workspace: test fixtures
+	// elsewhere in a monorepo) are removed, then the whole checkout is
+	// checked strictly.
+	removed, err := pruneOutsideApp(src, contextDir)
 	if err != nil {
 		return nil, fail(state.FailureConfig, "clone", err)
 	}
@@ -248,7 +277,7 @@ func (b *Builder) Run(ctx context.Context, job Job) (out *Outcome, err error) {
 		next = &nextCapture{sink: sink}
 		buildSink = next
 	}
-	img, err := b.build(ctx, &job, dir, work, res, buildSink)
+	img, err := b.build(ctx, &job, work, res, buildSink)
 	if err != nil {
 		var be *Error
 		if errors.As(err, &be) && be.Summary == nil {
@@ -284,6 +313,9 @@ type resolved struct {
 	dockerfileDir  string
 	dockerfileName string
 	dockerArgs     map[string]bool
+	// contextDir is the BuildKit build context: the app folder, or the
+	// workspace root of a workspace app.
+	contextDir string
 }
 
 func presetApplied(r *presets.Result, decision string) bool {
@@ -334,11 +366,25 @@ func (b *Builder) resolve(dir, work string, job *Job, envNames []string, sink Lo
 		}
 	}
 
-	phpWarning, phpApp := dockerfilePhpWarning(bs.PhpExtensions, facts.Files["composer.json"])
+	r.contextDir = dir
+	disabled := make([]string, 0, len(bs.DisabledDecisions))
+	for _, d := range bs.DisabledDecisions {
+		disabled = append(disabled, string(d))
+	}
+	var depExts []state.PhpDependencyExtension
+	var unknownExts []string
+	var lockFloor phpFloor
+	if facts.Files["composer.json"] {
+		depExts, unknownExts, lockFloor = readComposerLock(root.FS())
+	}
+	phpWarning, phpApp := dockerfilePhpWarning(bs.PhpExtensions, depExts, facts.Files["composer.json"])
 	if bs.Dockerfile != "" {
 		inline, err := b.resolveInline(work, bs.Dockerfile, r, sink)
-		if err == nil && phpApp {
-			s.Warnings = append(s.Warnings, phpWarning)
+		if err == nil {
+			if phpApp {
+				s.Warnings = append(s.Warnings, phpWarning)
+			}
+			dockerfileRuntime(facts, bs, disabled, s, sink)
 		}
 		return inline, err
 	}
@@ -389,7 +435,15 @@ func (b *Builder) resolve(dir, work string, job *Job, envNames []string, sink Lo
 		if phpApp {
 			s.Warnings = append(s.Warnings, phpWarning)
 		}
+		dockerfileRuntime(facts, bs, disabled, s, sink)
 		r.dockerfileDir, r.dockerfileName, r.dockerArgs = filepath.Dir(dfPath), filepath.Base(dfPath), df.Args
+		if ws := job.workspace; ws != nil {
+			if raw, err := root.ReadFile(dfName); err == nil && dockerfileWantsWorkspace(string(raw), ws) {
+				r.contextDir = job.contextDir
+				s.Workspace = ws.summary()
+				sink.Line("plan", state.StreamStdout, "The Dockerfile builds from the workspace root ("+ws.rootName()+"), so that is its build context")
+			}
+		}
 		return r, nil
 	}
 
@@ -399,8 +453,29 @@ func (b *Builder) resolve(dir, work string, job *Job, envNames []string, sink Lo
 	sink.Line("plan", state.StreamStdout, "Planning with Railpack "+RailpackVersion)
 	var planLogs []string
 	rpEnv := railpackEnv(bs, envNames)
+	prePlan := presets.ResolvePrePlan(facts, string(bs.Preset), disabled)
+	for _, env := range []map[string]string{presets.PlanEnv(facts), prePlan.RailpackEnv} {
+		for k, v := range env {
+			if _, set := rpEnv[k]; !set {
+				rpEnv[k] = v
+			}
+		}
+	}
+	// The preset's extensions (Laravel's pcntl) come first: they carry a
+	// decision the user can remove.
+	depExts = mergeDependencyExtensions(prePlan.PhpExtensions, depExts)
 	withPhpExtensions(rpEnv, bs.PhpExtensions)
-	rp, perr := planWithRailpack(dir, rpEnv, func(level, msg string) {
+	withDependencyExtensions(rpEnv, depExts)
+	planDir := dir
+	ws := job.workspace
+	if ws != nil {
+		planDir = job.contextDir
+		ws.railpackEnv(rpEnv, bs)
+		s.Workspace = ws.summary()
+		r.contextDir = planDir
+		sink.Line("plan", state.StreamStdout, ws.describe())
+	}
+	rp, perr := planWithRailpack(planDir, rpEnv, func(level, msg string) {
 		stream := state.StreamStdout
 		if level == "error" || level == "warn" {
 			stream = state.StreamStderr
@@ -432,9 +507,8 @@ func (b *Builder) resolve(dir, work string, job *Job, envNames []string, sink Lo
 		return nil, e
 	}
 
-	disabled := make([]string, 0, len(bs.DisabledDecisions))
-	for _, d := range bs.DisabledDecisions {
-		disabled = append(disabled, string(d))
+	if rp.info.Provider == "php" && lockFloor.Major > 0 {
+		b.raisePhp(rp, lockFloor, s, sink)
 	}
 	preset, ok := presets.Resolve(facts, rp.info, string(bs.Preset), disabled)
 	if !ok {
@@ -443,9 +517,19 @@ func (b *Builder) resolve(dir, work string, job *Job, envNames []string, sink Lo
 	port := presets.DefaultPort(rp.info.Provider)
 	if preset != nil {
 		r.nextAdapter = presetApplied(preset, presets.NextAdapterDecision)
-		if r.nextAdapter && job.Inputs.Deployment != "" {
+		if job.Inputs.Deployment != "" {
 			// deploymentId for skew protection; one image keeps one id however often it is promoted.
-			preset.Plan.BuildVariables["LAUNCHROOM_DEPLOYMENT_ID"] = string(job.Inputs.Deployment)
+			for decision, name := range map[string]string{presets.NextAdapterDecision: "LAUNCHROOM_DEPLOYMENT_ID", presets.NextDeploymentIDDecision: "NEXT_DEPLOYMENT_ID"} {
+				if presetApplied(preset, decision) {
+					if preset.Plan.BuildVariables == nil {
+						preset.Plan.BuildVariables = map[string]string{}
+					}
+					preset.Plan.BuildVariables[name] = string(job.Inputs.Deployment)
+				}
+			}
+		}
+		if ws != nil {
+			ws.patch(&preset.Plan)
 		}
 		if err := applyPatch(rp.result.Plan, preset.Plan); err != nil {
 			s.Warnings = append(s.Warnings, state.BuildWarning{Code: "preset-not-applied", Message: state.Clip("Preset "+string(preset.Applied.Name)+" could not patch the plan: "+err.Error(), 1024)})
@@ -456,6 +540,9 @@ func (b *Builder) resolve(dir, work string, job *Job, envNames []string, sink Lo
 		s.ReleaseCommand = preset.ReleaseCommand
 		s.HealthPath = state.HTTPPath(preset.HealthPath)
 		s.GeneratedSecrets = preset.GeneratedSecrets
+		s.EnvAliases = preset.EnvAliases
+		s.RequiredSecrets = preset.RequiredSecrets
+		s.VolumeSuggestions = preset.VolumeSuggestions
 		s.Warnings = append(s.Warnings, preset.Warnings...)
 		if preset.Port != 0 {
 			port = preset.Port
@@ -476,8 +563,25 @@ func (b *Builder) resolve(dir, work string, job *Job, envNames []string, sink Lo
 		sink.Line("plan", state.StreamStdout, "Adds PHP extensions: "+describePhpExtensions(bs.PhpExtensions))
 	}
 	if rp.info.Provider == "php" {
-		_, err := root.Lstat(phpCaddyfileAsset)
-		adjustPhpPlan(rp.result.Plan, err == nil, s, sink)
+		if len(depExts) > 0 {
+			s.PhpDependencyExtensions = depExts
+			sink.Line("plan", state.StreamStdout, "Adds PHP extensions your dependencies need: "+describeDependencyExtensions(depExts))
+		}
+		if len(unknownExts) > 0 {
+			s.Warnings = append(s.Warnings, state.BuildWarning{Code: "php-extension-unknown", Message: state.Clip("composer.lock asks for PHP extensions launchroom can't add on its own: "+strings.Join(unknownExts, ", ")+". If the build fails at composer install, install them through RAILPACK_PHP_EXTENSIONS or a Dockerfile.", 1024)})
+		}
+		_, ownCaddy := root.Lstat(phpCaddyfileAsset)
+		_, ownStart := root.Lstat(phpStartScriptAsset)
+		adjustPhpPlan(rp.result.Plan, phpPlanInput{
+			OwnCaddyfile: ownCaddy == nil, OwnStartScript: ownStart == nil,
+			VisitorIP:    preset != nil && presetApplied(preset, presets.PhpVisitorIPDecision),
+			LaravelStart: preset != nil && presetApplied(preset, presets.LaravelStartScriptDecision),
+		}, s, sink)
+	}
+	if rp.info.Provider == "node" && rp.info.Metadata["nodeIsSPA"] == "true" && ws == nil {
+		_, ownCaddy := root.Lstat(phpCaddyfileAsset)
+		_, ownTemplate := root.Lstat("Caddyfile.template")
+		adjustStaticPlan(rp.result.Plan, ownCaddy == nil || ownTemplate == nil, multiPageSite(facts), viteBase(root.FS()), bs, s, sink)
 	}
 	if preset != nil && preset.Framework != "" {
 		s.Framework = ident(preset.Framework)
@@ -529,7 +633,7 @@ func (b *Builder) allowedScope(svc state.ServiceID) func(state.RegistryRepositor
 	}
 }
 
-func (b *Builder) build(ctx context.Context, job *Job, dir, work string, r *resolved, sink LogSink) (state.ImageRef, error) {
+func (b *Builder) build(ctx context.Context, job *Job, work string, r *resolved, sink LogSink) (state.ImageRef, error) {
 	pushName, public, err := b.pushTarget(job)
 	if err != nil {
 		return "", fail(state.FailureConfig, "push", err)
@@ -563,6 +667,7 @@ func (b *Builder) build(ctx context.Context, job *Job, dir, work string, r *reso
 		attrs["attest:provenance"] = "mode=min"
 	}
 	req := solveRequest{
+		Idle:      b.idleTimeout(),
 		Secrets:   secrets,
 		Auth:      newRegistryAuth(b.o.RegistryHost, job.Task, b.o.Tokens, b.allowedScope(job.Inputs.Service)),
 		ImageName: pushName,
@@ -571,7 +676,7 @@ func (b *Builder) build(ctx context.Context, job *Job, dir, work string, r *reso
 	}
 	if r.summary.Builder == state.BuilderDockerfile {
 		req.Frontend = "dockerfile.v0"
-		req.Locals = map[string]string{"context": dir, "dockerfile": r.dockerfileDir}
+		req.Locals = map[string]string{"context": r.contextDir, "dockerfile": r.dockerfileDir}
 		attrs["filename"] = r.dockerfileName
 		for _, n := range job.Inputs.BuildArgs {
 			if v, ok := job.Env[string(n)]; ok && r.dockerArgs[string(n)] {
@@ -588,7 +693,7 @@ func (b *Builder) build(ctx context.Context, job *Job, dir, work string, r *reso
 			return "", fail(state.FailureInternal, "setup", err)
 		}
 		req.Frontend = "gateway.v0"
-		req.Locals = map[string]string{"context": dir, "dockerfile": planDir}
+		req.Locals = map[string]string{"context": r.contextDir, "dockerfile": planDir}
 		attrs["source"] = RailpackFrontend
 		attrs["filename"] = "railpack-plan.json"
 		attrs["build-arg:cache-key"] = string(job.Inputs.CacheKey)
@@ -655,4 +760,51 @@ func (b *Builder) resolveInline(work, content string, r *resolved, sink LogSink)
 	}
 	r.dockerfileDir, r.dockerfileName, r.dockerArgs = dfDir, "Dockerfile", df.Args
 	return r, nil
+}
+
+func (b *Builder) idleTimeout() time.Duration {
+	switch {
+	case b.o.IdleTimeout < 0:
+		return 0
+	case b.o.IdleTimeout == 0:
+		return DefaultIdleTimeout
+	}
+	return b.o.IdleTimeout
+}
+
+// multiPageSite says whether a static site has a page per route, so an
+// unknown path must be a 404 (Astro, Next.js export, Gatsby).
+func multiPageSite(f presets.Facts) bool {
+	for _, dep := range []string{"astro", "next", "gatsby"} {
+		if _, ok := f.PackageJSON.Dep(dep); ok {
+			return true
+		}
+	}
+	return false
+}
+
+// raisePhp moves the plan to the PHP version composer.lock needs when
+// Railpack picked an older one from composer.json.
+func (b *Builder) raisePhp(rp *railpackPlan, floor phpFloor, s *state.BuildSummary, sink LogSink) {
+	resolved := rp.info.Packages["php"]
+	parts := strings.SplitN(resolved, ".", 3)
+	if len(parts) < 2 {
+		return
+	}
+	major, err1 := strconv.Atoi(parts[0])
+	minor, err2 := strconv.Atoi(parts[1])
+	if err1 != nil || err2 != nil || !floor.above(major, minor) {
+		return
+	}
+	if err := raisePhpVersion(rp.result.Plan, floor); err != nil {
+		s.Warnings = append(s.Warnings, state.BuildWarning{Code: "php-version-not-raised", Message: state.Clip("composer.lock needs PHP "+floor.String()+" ("+floor.For+"), but launchroom could not move the build off PHP "+resolved+": "+err.Error()+". Raise require.php in composer.json.", 1024)})
+		return
+	}
+	v := floor.String()
+	rp.info.Packages["php"] = v
+	if pkg := rp.result.ResolvedPackages["php"]; pkg != nil {
+		pkg.ResolvedVersion = &v
+		pkg.Source = "composer.lock"
+	}
+	sink.Line("plan", state.StreamStdout, "Uses PHP "+v+": composer.lock needs it ("+floor.For+"), while composer.json allows PHP "+resolved)
 }

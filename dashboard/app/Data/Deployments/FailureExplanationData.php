@@ -15,7 +15,10 @@ use Spatie\LaravelData\Data;
  * Action params by action:
  * - set_port: `port` (detected port, when known), `currentPort` (configured)
  * - raise_health_timeout: `currentSeconds`, `suggestedSeconds` (start period)
- * - add_variable: `name`, optional `value` (a suggestion), `buildTime` ("1" when the build needs it)
+ * - add_variable: `name`, optional `value` (a suggestion), `buildTime` ("1" when the build needs it), `type` ("secret")
+ * - fix_volume_owner: `uid` (the image's user)
+ * - free_disk: `server` (public id), `serverName`
+ * - use_tcp_healthcheck, accept_4xx, add_capabilities: none
  */
 final class FailureExplanationData extends Data
 {
@@ -29,5 +32,7 @@ final class FailureExplanationData extends Data
         public string $fix,
         public ?FailureFixAction $action = null,
         public array $params = [],
+        /** The start of the app's answer to the health check, masked (ProbeStatus.body). */
+        public ?string $answer = null,
     ) {}
 }

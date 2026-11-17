@@ -72,7 +72,8 @@ final readonly class DeploymentFactory
         $deployment = $this->insert($instance, $revision->id, $trigger, $actor, $commit, [
             'image' => $this->knownImage($service),
             'build_key' => $service->kind->isBuilt() ? $this->buildKey($project, $spec, $service, $env, $commit?->sha) : null,
-            'hold_traffic' => $holdTraffic && ! $service->kind->isStateful(),
+            // Two copies never share data: a service that stops before it starts isn't staged.
+            'hold_traffic' => $holdTraffic && ! $instance->stopsBeforeStart($service),
         ]);
 
         $this->snapshots->store($project, $deployment, $env->all());

@@ -27,5 +27,7 @@ final class AdvancedServiceData extends Data
         public array $workloads,
         /** Capabilities Advanced may grant (launchroomd's allow-list). */
         public array $capabilityOptions = [],
+        /** The live image starts as root: launchroom adds the whole allow-list so it can switch users (OD10, NodeStateContent). */
+        public bool $rootImage = false,
     ) {}
 }

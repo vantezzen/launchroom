@@ -58,6 +58,17 @@ func (s *Server) handle(w http.ResponseWriter, r *http.Request, q *request) erro
 			return deny("volume helper containers are never started")
 		}
 		return s.forward(w, r, q, q.apiPath("/containers/"+c.ID+"/start"), nil, nil, "")
+	case opContainerRestart:
+		c, err := s.managedContainer(ctx, q)
+		if err != nil {
+			return err
+		}
+		if !c.restartable() {
+			return deny("launchroomd may not restart %s", c.Name)
+		}
+		s.o.Log.Info("restarting a control-plane container", "container", state.Shorten(strings.TrimPrefix(c.Name, "/"), 128),
+			"service", c.Labels[labelComposeService], "id", short(c.ID))
+		return s.forward(w, r, q, q.apiPath("/containers/"+c.ID+"/restart"), q.query, nil, "")
 	case opContainerStop, opContainerPause, opContainerUnpause, opContainerWait, opContainerLogs, opContainerStats:
 		c, err := s.managedContainer(ctx, q)
 		if err != nil {

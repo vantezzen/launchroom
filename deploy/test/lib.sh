@@ -8,6 +8,20 @@
 step() { printf '\n==> %s\n' "$*"; }
 fail() { printf '\nFAIL: %s\n' "$*" >&2; exit 1; }
 ok() { printf '    ok: %s\n' "$*"; }
+# wait_healthy SERVICE CMD...: waits until the compose service's healthcheck
+# passes; CMD... runs `docker compose` inside the install folder (launchroomd's
+# healthcheck needs up to its 120 s start period plus one 30 s interval).
+wait_healthy() {
+	svc=$1
+	shift
+	since=$(date +%s)
+	while :; do
+		h="$("$@" docker compose ps --format '{{.Health}}' "$svc" 2>/dev/null || true)"
+		[ "$h" = healthy ] && return 0
+		[ $(($(date +%s) - since)) -lt 240 ] || fail "$svc health is '$h' after 240 s"
+		sleep 5
+	done
+}
 
 # retry SECONDS COMMAND...: run until it succeeds or the time is up.
 retry() {

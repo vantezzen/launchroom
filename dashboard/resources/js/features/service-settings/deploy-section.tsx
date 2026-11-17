@@ -5,6 +5,7 @@ import InputError from '@/components/input-error';
 import { TimeRangeSelect } from '@/components/charts/time-range-select';
 import { Stepper } from '@/components/patterns/stepper';
 import { Input } from '@/components/ui/input';
+import { Switch } from '@/components/ui/switch';
 import { formatArgv, parseArgv } from '@/lib/argv';
 import services from '@/routes/projects/services';
 import { autoHealthTimeout } from './health-timeout';
@@ -33,6 +34,11 @@ type DeployForm = {
     rolloutTimeout: number;
     /** null: derived from the health check (autoHealthTimeout). */
     healthTimeout: number | null;
+    /** Restart a replica whose check keeps failing (off: never). */
+    restart: boolean;
+    restartMinutes: number;
+    stopTimeout: number;
+    overlapOnVolumes: boolean;
 };
 
 /** What the unsaved bar calls each field, and the row it lives in. */
@@ -50,12 +56,28 @@ const DEPLOY_FIELDS: FieldLabels = {
     drain: ['Drain time', 'drain'],
     rolloutTimeout: ['Start timeout', 'rollout-timeout'],
     healthTimeout: ['Health check timeout', 'health-timeout'],
+    restart: ['Restart when stuck', 'health-restart'],
+    restartMinutes: ['Restart after', 'health-restart'],
+    stopTimeout: ['Stop timeout', 'stop-timeout'],
+    overlapOnVolumes: ['Two copies during a deploy', 'volume-overlap'],
 };
+
+/** The stop timeout without a setting: 10 s for web services, 30 s for workers and crons. */
+function defaultStopTimeout(
+    limits: App.Data.Services.DeployLimitsData,
+    web: boolean,
+): number {
+    return web ? limits.stopTimeoutWeb : limits.stopTimeoutProcess;
+}
 
 function fromSettings(
     deploy: App.Data.Services.DeploySettings,
-    rolloutTimeoutDefault: number,
+    limits: App.Data.Services.DeployLimitsData,
+    web: boolean,
 ): DeployForm {
+    const restartAfter =
+        deploy.healthcheck.restartAfterSeconds ?? limits.restartAfterDefault;
+
     return {
         port: deploy.port === null ? null : String(deploy.port),
         start:
@@ -71,8 +93,20 @@ function fromSettings(
         timeout: deploy.healthcheck.timeoutSeconds,
         failures: deploy.healthcheck.failureThreshold,
         drain: deploy.drainSeconds,
-        rolloutTimeout: deploy.rolloutTimeoutSeconds ?? rolloutTimeoutDefault,
+        rolloutTimeout:
+            deploy.rolloutTimeoutSeconds ?? limits.rolloutTimeoutDefault,
         healthTimeout: deploy.healthTimeoutSeconds,
+        restart: restartAfter > 0,
+        restartMinutes: Math.max(
+            1,
+            Math.round(
+                (restartAfter > 0 ? restartAfter : limits.restartAfterDefault) /
+                    60,
+            ),
+        ),
+        stopTimeout:
+            deploy.stopTimeoutSeconds ?? defaultStopTimeout(limits, web),
+        overlapOnVolumes: deploy.overlapOnVolumes,
     };
 }
 
@@ -134,12 +168,15 @@ export function DeploySection({ context }: { context: SettingsContext }) {
     const { settings, node, canUpdate } = context;
     const detected = settings.detected;
     const limits = settings.deployLimits;
-    const form = useForm<DeployForm>(
-        fromSettings(settings.deploy, limits.rolloutTimeoutDefault),
-    );
-    const [commandError, setCommandError] = useState<string | null>(null);
     const built = node.capabilities.built;
     const web = node.capabilities.web;
+    const form = useForm<DeployForm>(
+        fromSettings(settings.deploy, limits, web),
+    );
+    const [commandError, setCommandError] = useState<string | null>(null);
+    const stopDefault = defaultStopTimeout(limits, web);
+    // Databases always stop first; other services only when they keep data in a volume.
+    const keepsData = node.kind !== 'database' && settings.volumes.length > 0;
     const error = (key: string) =>
         (form.errors as Record<string, string | undefined>)[`deploy.${key}`];
     const data = form.data;
@@ -177,6 +214,13 @@ export function DeploySection({ context }: { context: SettingsContext }) {
                     intervalSeconds: values.interval,
                     timeoutSeconds: values.timeout,
                     failureThreshold: values.failures,
+                    // null follows launchroom's default; 0 never restarts.
+                    restartAfterSeconds: !values.restart
+                        ? 0
+                        : values.restartMinutes * 60 ===
+                            limits.restartAfterDefault
+                          ? null
+                          : values.restartMinutes * 60,
                 },
                 drainSeconds: values.drain,
                 rolloutTimeoutSeconds:
@@ -184,6 +228,12 @@ export function DeploySection({ context }: { context: SettingsContext }) {
                         ? null
                         : values.rolloutTimeout,
                 healthTimeoutSeconds: values.healthTimeout,
+                stopTimeoutSeconds:
+                    values.stopTimeout === stopDefault &&
+                    settings.deploy.stopTimeoutSeconds === null
+                        ? null
+                        : values.stopTimeout,
+                overlapOnVolumes: values.overlapOnVolumes,
             },
         }));
         form.patch(services.settings(context.route).url, {
@@ -412,9 +462,75 @@ export function DeploySection({ context }: { context: SettingsContext }) {
                             </div>
                         </SettingsBody>
                     )}
+                    {data.healthType !== 'none' && node.kind !== 'database' && (
+                        <SettingsRow
+                            setting="health-restart"
+                            label="Restart when stuck"
+                            description={
+                                data.restart
+                                    ? `A running replica whose check keeps failing for ${data.restartMinutes} ${data.restartMinutes === 1 ? 'minute' : 'minutes'} is restarted, at most 3 times an hour.`
+                                    : 'A running replica whose check keeps failing only stops getting traffic.'
+                            }
+                            htmlFor="deploy-health-restart"
+                            align="start"
+                        >
+                            <div className="flex items-center gap-4">
+                                {data.restart && (
+                                    <Stepper
+                                        label="Restart after"
+                                        className="[&>label]:sr-only"
+                                        unit="min"
+                                        min={1}
+                                        max={60}
+                                        value={data.restartMinutes}
+                                        disabled={!canUpdate}
+                                        onChange={(value) =>
+                                            form.setData(
+                                                'restartMinutes',
+                                                value,
+                                            )
+                                        }
+                                        helper={error(
+                                            'healthcheck.restartAfterSeconds',
+                                        )}
+                                    />
+                                )}
+                                <Switch
+                                    id="deploy-health-restart"
+                                    checked={data.restart}
+                                    disabled={!canUpdate}
+                                    onCheckedChange={(on) =>
+                                        form.setData('restart', on)
+                                    }
+                                />
+                            </div>
+                        </SettingsRow>
+                    )}
                 </SettingsCard>
 
                 <SettingsCard title="Rollout">
+                    {keepsData && (
+                        <SettingsRow
+                            setting="volume-overlap"
+                            label="Two copies during a deploy"
+                            description={
+                                data.overlapOnVolumes
+                                    ? 'The new version starts next to the old one on the same volume. Only for apps that handle two copies on their data.'
+                                    : 'This service keeps data in a volume, so the old version stops before the new one starts. Deploys have a short downtime.'
+                            }
+                            htmlFor="deploy-volume-overlap"
+                            align="start"
+                        >
+                            <Switch
+                                id="deploy-volume-overlap"
+                                checked={data.overlapOnVolumes}
+                                disabled={!canUpdate}
+                                onCheckedChange={(on) =>
+                                    form.setData('overlapOnVolumes', on)
+                                }
+                            />
+                        </SettingsRow>
+                    )}
                     <SettingsRow
                         setting="drain"
                         label="Drain time"
@@ -433,6 +549,33 @@ export function DeploySection({ context }: { context: SettingsContext }) {
                             helper={error('drainSeconds')}
                         />
                     </SettingsRow>
+                    {node.kind !== 'database' && (
+                        <SettingsRow
+                            setting="stop-timeout"
+                            label="Stop timeout"
+                            description={
+                                settings.deploy.stopTimeoutSeconds === null &&
+                                data.stopTimeout === stopDefault
+                                    ? 'How long a stopping replica may take to finish its work before it is killed. Follows launchroom’s default until you change it.'
+                                    : 'How long a stopping replica may take to finish its work before it is killed.'
+                            }
+                        >
+                            <Stepper
+                                label="Stop timeout"
+                                className="[&>label]:sr-only"
+                                unit="s"
+                                min={limits.stopTimeout.min}
+                                max={limits.stopTimeout.max}
+                                step={5}
+                                value={data.stopTimeout}
+                                disabled={!canUpdate}
+                                onChange={(value) =>
+                                    form.setData('stopTimeout', value)
+                                }
+                                helper={error('stopTimeoutSeconds')}
+                            />
+                        </SettingsRow>
+                    )}
                     <SettingsRow
                         setting="rollout-timeout"
                         label="Start timeout"

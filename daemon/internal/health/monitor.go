@@ -2,6 +2,7 @@ package health
 
 import (
 	"context"
+	"errors"
 	"sync"
 	"time"
 
@@ -16,8 +17,14 @@ type Status struct {
 	LastError           string
 	// Attempts counts the checks since the container started (start period included).
 	Attempts int
-	// everPassed ends the start period early (as in Docker).
-	everPassed bool
+	// EverPassed: the check passed at least once since the container
+	// started (it also ends the start period early, as in Docker).
+	EverPassed bool
+	// FailingSince is when the state last became failing (zero otherwise).
+	FailingSince time.Time
+	// Body and Hint describe the last failing HTTP answer (HTTPError).
+	Body string
+	Hint state.ProbeHint
 }
 
 // Next folds one probe result into st. Failures during the start period do
@@ -30,15 +37,24 @@ func Next(st Status, probeErr error, now, startedAt time.Time, spec state.Health
 		st.State = state.ProbeStarting
 	}
 	if probeErr == nil {
-		st.State, st.ConsecutiveFailures, st.LastError, st.everPassed = state.ProbePassing, 0, "", true
+		st.State, st.ConsecutiveFailures, st.LastError, st.EverPassed = state.ProbePassing, 0, "", true
+		st.FailingSince, st.Body, st.Hint = time.Time{}, "", ""
 		return st
 	}
 	st.LastError = probeErr.Error()
-	if !st.everPassed && now.Before(startedAt.Add(spec.StartPeriod.Std())) {
+	st.Body, st.Hint = "", ""
+	var he *HTTPError
+	if errors.As(probeErr, &he) {
+		st.Body, st.Hint = he.Body, he.Hint
+	}
+	if !st.EverPassed && now.Before(startedAt.Add(spec.StartPeriod.Std())) {
 		return st // still starting; failures don't count yet
 	}
 	st.ConsecutiveFailures++
 	if st.ConsecutiveFailures >= max(spec.FailureThreshold, 1) {
+		if st.State != state.ProbeFailing {
+			st.FailingSince = now
+		}
 		st.State = state.ProbeFailing
 	}
 	return st
@@ -165,7 +181,7 @@ func (m *Monitor) loop(ctx context.Context, t Target) {
 		if next.State != prev.State {
 			m.onChange()
 		}
-		if !next.everPassed {
+		if !next.EverPassed {
 			m.onProbe()
 		}
 		timer.Reset(interval)

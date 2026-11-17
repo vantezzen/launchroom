@@ -4,19 +4,15 @@ declare(strict_types=1);
 
 namespace App\Http\Controllers\Daemon;
 
+use App\Actions\Sessions\AuthorizeServerSessionChannel;
 use App\Broadcasting\Channel;
 use App\Data\Protocol\V1\BroadcastAuth;
 use App\Data\Protocol\V1\BroadcastAuthRequest;
-use App\Enums\DaemonTaskStatus;
-use App\Enums\TaskBackedAccessStatus;
 use App\Http\Controllers\Controller;
 use App\Http\Daemon\ProtocolPayload;
 use App\Http\Daemon\ProtocolResponse;
 use App\Http\Middleware\AuthenticateDaemon;
-use App\Models\Server;
-use App\Models\Sessions\InteractiveSession;
 use App\Services\Daemon\DaemonNudger;
-use Illuminate\Contracts\Database\Query\Builder;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Symfony\Component\HttpFoundation\Response;
@@ -30,7 +26,7 @@ use Symfony\Component\HttpFoundation\Response;
  */
 final class BroadcastAuthController extends Controller
 {
-    public function __invoke(Request $request, DaemonNudger $nudger): Response
+    public function __invoke(Request $request, DaemonNudger $nudger, AuthorizeServerSessionChannel $sessionChannel): Response
     {
         $server = AuthenticateDaemon::server($request);
 
@@ -40,7 +36,7 @@ final class BroadcastAuthController extends Controller
 
         $payload = ProtocolPayload::decode($request, BroadcastAuthRequest::class);
 
-        if (! hash_equals(Channel::Daemon->wire($server->public_id), $payload->channel) && ! $this->holdsSession($server, $payload->channel)) {
+        if (! hash_equals(Channel::Daemon->wire($server->public_id), $payload->channel) && ! $sessionChannel->handle($server, $payload->channel)) {
             return new JsonResponse(['error' => 'a daemon may only join its own channel'], 403);
         }
 
@@ -51,27 +47,5 @@ final class BroadcastAuthController extends Controller
         }
 
         return ProtocolResponse::make(new BroadcastAuth($auth))->setPrivate()->header('Cache-Control', 'no-store');
-    }
-
-    /**
-     * `private-session.<ses>` of an open interactive session whose task this
-     * server holds right now (docs/03 §11.2).
-     */
-    private function holdsSession(Server $server, string $channel): bool
-    {
-        $session = Channel::sessionFromWire($channel);
-
-        if ($session === null) {
-            return false;
-        }
-
-        return InteractiveSession::query()
-            ->where('public_id', $session)
-            ->where('server_id', $server->id)
-            ->where('status', TaskBackedAccessStatus::Open->value)
-            ->whereHas('daemonTask', static fn (Builder $query) => $query
-                ->where('server_id', $server->id)
-                ->where('status', DaemonTaskStatus::Leased->value))
-            ->exists();
     }
 }

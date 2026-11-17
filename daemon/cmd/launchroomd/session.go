@@ -32,10 +32,7 @@ func (rt *daemonRuntime) sessionRunner(taskInterval time.Duration) *tasks.Runner
 	if !ok {
 		return nil
 	}
-	rt.addFeatures(func() []state.DaemonFeature {
-		return session.Features(func(k state.SessionKind) bool { return rt.cfg.SessionAllowed(string(k)) })
-	})
-	h := session.Handler(session.Options{
+	opts := session.Options{
 		ServerID: rt.serverID, SealingKey: rt.sealingKey, Auth: rt.client,
 		Nudge:           rt.sessionNudge,
 		ControlPlaneURL: rt.cfg.ControlPlaneURL,
@@ -45,18 +42,34 @@ func (rt *daemonRuntime) sessionRunner(taskInterval time.Duration) *tasks.Runner
 		Docker:           dc,
 		WorkloadEnv:      rt.workloadEnv,
 		InDesiredState:   func(id state.WorkloadID) bool { return rt.workloadSpec(id) != nil },
-		Allowed:          func(k state.SessionKind) bool { return rt.cfg.SessionAllowed(string(k)) },
+		Allowed:          rt.sessionAllowed,
 		Logs:             rt.client,
 		DaemonVersion:    version,
 		HTTPClient:       &http.Client{Transport: controlplane.DefaultTransport()},
 		Log:              rt.log.With("component", "session"),
-	})
+		// Recovery shells start from the verified NodeState under the same
+		// policy floor as the reconciler (docs/03 §11).
+		Recovery: &session.Recovery{NodeState: rt.verifiedState, Policy: rt.policy},
+	}
+	rt.addFeatures(func() []state.DaemonFeature { return session.FeaturesFor(opts) })
+	h := session.Handler(opts)
 	return tasks.New(tasks.Options{
 		Client: rt.client, Interval: taskInterval, Log: rt.log.With("component", "sessions"),
 		Handlers:       map[state.TaskType]tasks.Handler{state.TaskSession: h},
 		MaxConcurrent:  sessionSlots,
 		HeartbeatEvery: sessionHeartbeat, MaxHeartbeatFailures: sessionHBFails,
 	})
+}
+
+// sessionAllowed applies LR_INTERACTIVE_SESSIONS to a session kind. A
+// recovery shell is a console in a copy of the service's container, so it
+// follows the console setting: "on" and "console" allow it, "data" and
+// "off" don't.
+func (rt *daemonRuntime) sessionAllowed(k state.SessionKind) bool {
+	if k == state.SessionRecovery {
+		k = state.SessionConsole
+	}
+	return rt.cfg.SessionAllowed(string(k))
 }
 
 // sessionNudge returns the dashboard's current Pusher settings, falling back

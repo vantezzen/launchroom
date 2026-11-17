@@ -5,7 +5,9 @@ declare(strict_types=1);
 namespace App\Http\Middleware;
 
 use App\Actions\Servers\MarkServerSeen;
+use App\Actions\Servers\RecordRequestRejection;
 use App\Enums\ClientCertificateMode;
+use App\Enums\Servers\RequestRejection;
 use App\Enums\ServerStatus;
 use App\Http\Daemon\ClientCertificateIdentity;
 use App\Models\InstanceSettings;
@@ -16,6 +18,7 @@ use App\Services\Daemon\HttpMessageSignature;
 use App\Services\Daemon\SignedRequest;
 use App\Support\Crypto\PublicKeyFormat;
 use App\Support\PublicId;
+use Carbon\CarbonImmutable;
 use Closure;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Http\JsonResponse;
@@ -44,6 +47,12 @@ use Symfony\Component\HttpFoundation\Response;
  * `require`, a request without one is refused unless it asks for a
  * certificate (the action decides), comes from the control-plane server
  * over its loopback, or is a replaced server fetching its decommission state.
+ *
+ * A request that is correctly signed by a known server but still refused
+ * (its clock is off, its key was revoked, its client certificate doesn't
+ * fit) is recorded on that server (RecordRequestRejection, at most once a
+ * minute) so its page can say why it is offline. The answer stays a generic
+ * 401, and nothing is recorded for a signature that doesn't verify.
  */
 final readonly class AuthenticateDaemon
 {
@@ -56,6 +65,7 @@ final readonly class AuthenticateDaemon
     public function __construct(
         private MarkServerSeen $markServerSeen,
         private ClientCertificateIdentity $identity,
+        private RecordRequestRejection $rejection,
     ) {}
 
     /**
@@ -87,9 +97,11 @@ final readonly class AuthenticateDaemon
      */
     public function handle(Request $request, Closure $next, string $mode = 'server'): Response
     {
+        $signed = $this->signedRequest($request);
+
         try {
             $parsed = HttpMessageSignature::parse(
-                $this->signedRequest($request),
+                $signed,
                 now()->getTimestamp(),
                 config()->integer('launchroom.daemon.max_clock_skew_seconds'),
             );
@@ -124,11 +136,16 @@ final readonly class AuthenticateDaemon
         } catch (InvalidRequestSignature $e) {
             Log::info('daemon request rejected', ['reason' => $e->getMessage(), 'path' => $request->path(), 'ip' => $request->ip()]);
 
+            if ($mode !== self::MODE_ENROLL) {
+                $this->recordSignedRefusal($signed);
+            }
+
             return new JsonResponse(['error' => 'unauthorized'], 401);
         }
 
         if ($server instanceof Server && $server->status === ServerStatus::Revoked && ! $request->routeIs('daemon.state')) {
             Log::info('daemon request rejected', ['reason' => 'replaced server outside the decommission state', 'path' => $request->path(), 'ip' => $request->ip()]);
+            $this->rejection->handle($server, RequestRejection::Revoked);
 
             return new JsonResponse(['error' => 'unauthorized'], 401);
         }
@@ -140,12 +157,14 @@ final readonly class AuthenticateDaemon
                 $presence = $this->identity->resolve($request, $server, $mode);
             } catch (InvalidRequestSignature $e) {
                 Log::info('daemon request rejected', ['reason' => $e->getMessage(), 'server' => $server->public_id, 'path' => $request->path(), 'ip' => $request->ip()]);
+                $this->rejection->handle($server, RequestRejection::Certificate);
 
                 return new JsonResponse(['error' => 'unauthorized'], 401);
             }
 
             if ($mode === ClientCertificateMode::Require && ! $presence->verified() && ! $this->mayGoWithoutCertificate($request, $server, $presence)) {
                 Log::info('daemon request rejected', ['reason' => 'client certificate required', 'server' => $server->public_id, 'path' => $request->path(), 'ip' => $request->ip()]);
+                $this->rejection->handle($server, RequestRejection::CertificateRequired);
                 // It proved its key; readiness notes the missing certificate.
                 $this->markServerSeen->handle($server, $presence);
 
@@ -179,6 +198,47 @@ final readonly class AuthenticateDaemon
         }
 
         return $server->status === ServerStatus::Revoked && $server->replaced_at !== null && $request->routeIs('daemon.state');
+    }
+
+    /**
+     * After a refusal before the key check: when the only thing wrong was
+     * the clock (or the key belongs to a revoked server), and the request
+     * is signed by that server's key, record why on the server. Parses again
+     * without the skew limit; everything else is checked as strictly.
+     */
+    private function recordSignedRefusal(SignedRequest $signed): void
+    {
+        try {
+            $parsed = HttpMessageSignature::parse($signed, now()->getTimestamp(), PHP_INT_MAX);
+        } catch (InvalidRequestSignature) {
+            return;
+        }
+
+        if (! PublicId::isValid($parsed->keyId, Server::publicIdPrefix())) {
+            return;
+        }
+
+        $server = Server::query()->where('public_id', $parsed->keyId)->first();
+        $publicKey = $server instanceof Server ? PublicKeyFormat::parseEd25519($server->signing_public_key) : null;
+
+        if (! $server instanceof Server || $publicKey === null) {
+            return;
+        }
+
+        try {
+            HttpMessageSignature::verify($parsed, $publicKey);
+        } catch (InvalidRequestSignature) {
+            return;
+        }
+
+        $date = CarbonImmutable::createFromFormat('D, d M Y H:i:s \\G\\M\\T', $signed->headers['date'][0] ?? '', 'UTC');
+        $skew = $date instanceof CarbonImmutable ? $date->getTimestamp() - now()->getTimestamp() : null;
+
+        if ($skew !== null && abs($skew) > config()->integer('launchroom.daemon.max_clock_skew_seconds')) {
+            $this->rejection->handle($server, RequestRejection::ClockSkew, $skew);
+        } elseif ($server->status === ServerStatus::Revoked) {
+            $this->rejection->handle($server, RequestRejection::Revoked);
+        }
     }
 
     private function signedRequest(Request $request): SignedRequest

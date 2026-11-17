@@ -1,6 +1,6 @@
 {
   "name": "@vantezzen/launchroom-next-adapter",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "Next.js deployment adapter for launchroom: standalone output, deploymentId, static assets and a build manifest.",
   "license": "MIT",
   "author": "vantezzen",
@@ -44,7 +44,7 @@
     "node": ">=20.9.0"
   },
   "peerDependencies": {
-    "next": ">=16.2.0"
+    "next": ">=15.4.0"
   },
   "peerDependenciesMeta": {
     "next": {

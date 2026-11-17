@@ -68,8 +68,12 @@ type Options struct {
 	// ambassador) from an environment network about to be removed; Docker
 	// refuses to remove a network with endpoints. nil = none.
 	BeforeNetworkRemove func(ctx context.Context, network string) error
-	Log                 *slog.Logger
-	Now                 func() time.Time
+	// MarksFile persists what launchroomd last saw of each workload's
+	// container (marks.go), so exits while it was down are reported after
+	// a restart. "" = not persisted.
+	MarksFile string
+	Log       *slog.Logger
+	Now       func() time.Time
 }
 
 // Reconciler converges Docker to a NodeState. Reconcile must not be called
@@ -97,6 +101,19 @@ type Reconciler struct {
 	// in the background, so one stuck download never holds back the rest
 	// of the desired state (D68); AbandonPulls cancels the unneeded ones.
 	pulls map[state.ImageRef]*bgPull
+	// watchers wait for each workload container's next exit (exitwatch.go);
+	// stopping are the containers launchroomd stopped itself, by id.
+	watchers map[string]*exitWatcher
+	stopping map[string]time.Time
+	// marksSaved is the last persisted marks file; marksWrite serialises writes.
+	marksSaved []byte
+	marksWrite sync.Mutex
+	// images are the configs of the images in use (digest-pinned, so they
+	// never change); host is this server's platform (observe.go).
+	images map[state.ImageRef]docker.ImageConfig
+	host   *hostPlatform
+	// passHealth: how the last passes went and whether Docker answered.
+	passHealth passHealth
 }
 
 type observed struct {
@@ -106,6 +123,8 @@ type observed struct {
 	portsErr bool
 	// issue is set while the container is clearly misconfigured (D68).
 	issue *state.WorkloadIssue
+	// at is when the container was inspected.
+	at time.Time
 }
 
 // note is the daemon's own knowledge about a workload that Docker can't tell:
@@ -115,6 +134,8 @@ type note struct {
 	message string
 	pull    *state.PullProgress // while pulling, once launchroomd knows more than "started"
 	at      time.Time
+	// failure classifies a failed note (WorkloadStatus.failure).
+	failure state.WorkloadFailureCode
 }
 
 // New returns a Reconciler.
@@ -143,16 +164,27 @@ func New(o Options) *Reconciler {
 	if o.PullWait <= 0 {
 		o.PullWait = DefaultPullWait
 	}
-	return &Reconciler{
+	r := &Reconciler{
 		o: o, observed: map[state.WorkloadID]observed{}, book: map[state.WorkloadID]note{}, deletions: map[state.VolumeID]state.VolumeDeletionResult{},
 		marks: map[state.WorkloadID]mark{}, boot: o.Now(), pulls: map[state.ImageRef]*bgPull{},
+		watchers: map[string]*exitWatcher{}, stopping: map[string]time.Time{}, images: map[state.ImageRef]docker.ImageConfig{},
 	}
+	r.loadMarks()
+	return r
 }
 
 func (r *Reconciler) setNote(id state.WorkloadID, phase state.WorkloadPhase, msg string) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	r.book[id] = note{phase: phase, message: state.Clip(msg, state.MaxStatusLen), at: r.o.Now()}
+}
+
+// setFailure records why a workload's container can't be pulled, created
+// or started (a failed note with its typed code).
+func (r *Reconciler) setFailure(id state.WorkloadID, msg string, code state.WorkloadFailureCode) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.book[id] = note{phase: state.PhaseFailed, message: state.Clip(msg, state.MaxStatusLen), at: r.o.Now(), failure: code}
 }
 
 // observedContainer reports whether the workload has a container (last observation).
@@ -186,10 +218,11 @@ func (r *Reconciler) Reconcile(ctx context.Context, ns *state.NodeState) error {
 	r.ns, r.pass = ns, now
 	r.mu.Unlock()
 
+	r.beginPass()
 	desired, creates := r.desired(ns)
 	actual, err := r.observe(ctx, desired)
 	if err != nil {
-		return fmt.Errorf("reconcile: observe: %w", err)
+		return r.endPass(fmt.Errorf("reconcile: observe: %w", err), true)
 	}
 	plan := Diff(desired, actual, now, r.o.StopGrace)
 	for id, reason := range plan.Blocked {
@@ -202,16 +235,18 @@ func (r *Reconciler) Reconcile(ctx context.Context, ns *state.NodeState) error {
 	}
 
 	if err := r.refresh(ctx, ns); err != nil {
-		return errors.Join(applyErr, fmt.Errorf("reconcile: refresh: %w", err))
+		return r.endPass(errors.Join(applyErr, fmt.Errorf("reconcile: refresh: %w", err)), true)
 	}
 	r.syncHealth(ns) //nolint:contextcheck // probes run on the monitor's own long-lived context
+	r.liveness(ctx, ns)
 	if r.o.Ingress != nil {
 		st := r.o.Ingress.Sync(ctx, ns.System.Caddy, r.routes(ns), r.resolve)
 		r.mu.Lock()
 		r.ingress = st
 		r.mu.Unlock()
 	}
-	return applyErr
+	r.saveMarks()
+	return r.endPass(applyErr, false)
 }
 
 // unrouteLeaving takes workloads this pass stops or removes out of the routes
@@ -400,6 +435,7 @@ func (r *Reconciler) apply(ctx context.Context, ns *state.NodeState, p Plan, cre
 	failedVolume := map[string]error{}
 	fail := func(a Action, err error) {
 		errs = append(errs, fmt.Errorf("%s: %w", a, err))
+		r.passError(a, err)
 		r.o.Log.Warn("reconcile action failed", "action", a.String(), "err", err)
 	}
 	deployments := make(map[state.WorkloadID]state.DeploymentID, len(ns.Workloads))
@@ -408,6 +444,16 @@ func (r *Reconciler) apply(ctx context.Context, ns *state.NodeState, p Plan, cre
 	}
 	event := func(a Action, kind state.WorkloadEventKind, msg string) {
 		r.emit(state.WorkloadEvent{Workload: a.Workload, Deployment: deployments[a.Workload], Kind: kind, Reason: a.Why, Message: msg})
+	}
+	// failed records a typed create/start failure: the workload's note and
+	// a create_failed event.
+	failed := func(a Action, msg string, code state.WorkloadFailureCode) {
+		r.setFailure(a.Workload, msg, code)
+		r.emit(state.WorkloadEvent{Workload: a.Workload, Deployment: deployments[a.Workload], Kind: state.EventCreateFailed, Message: msg, Code: code})
+	}
+	specs := make(map[state.WorkloadID]*state.WorkloadSpec, len(ns.Workloads))
+	for i := range ns.Workloads {
+		specs[ns.Workloads[i].ID] = &ns.Workloads[i]
 	}
 	// Fail closed but wait: Docker refuses to create or start a container
 	// while the firewall can't be applied (docker.ErrNotIsolated). That is a
@@ -418,6 +464,7 @@ func (r *Reconciler) apply(ctx context.Context, ns *state.NodeState, p Plan, cre
 			return false
 		}
 		errs = append(errs, err)
+		r.passErrorCode(state.ReconcileNotIsolated, a, err)
 		r.setNote(a.Workload, state.PhasePending, "waiting: "+err.Error())
 		return true
 	}
@@ -454,12 +501,13 @@ func (r *Reconciler) apply(ctx context.Context, ns *state.NodeState, p Plan, cre
 				fail(a, err)
 			}
 		case RemoveContainer:
-			if err := r.removeContainer(ctx, a); err != nil {
+			out, err := r.removeContainer(ctx, a)
+			if err != nil {
 				fail(a, err)
 				continue
 			}
 			if a.Workload != "" {
-				event(a, state.EventRemoved, "")
+				r.emit(state.WorkloadEvent{Workload: a.Workload, Deployment: deployments[a.Workload], Kind: state.EventRemoved, Reason: a.Why, Output: out})
 			}
 			if a.Undesired {
 				r.setNote(a.Workload, state.PhaseRemoved, "")
@@ -469,19 +517,22 @@ func (r *Reconciler) apply(ctx context.Context, ns *state.NodeState, p Plan, cre
 				continue // still pulling in the background; reported as pulling
 			}
 			if err, ok := failedPull[a.Image]; ok {
-				r.setNote(a.Workload, state.PhaseFailed, "pull failed: "+err.Error())
+				r.setFailure(a.Workload, "pull failed: "+err.Error(), docker.PullFailure(err))
 				continue
 			}
 			if err := mountsFailedVolume(creates[a.Workload], failedVolume); err != nil {
-				r.setNote(a.Workload, state.PhaseFailed, err.Error())
+				r.setFailure(a.Workload, err.Error(), state.FailureMountFailed)
 				continue
 			}
-			if err := r.createAndStart(ctx, ns, creates[a.Workload], !a.CreateOnly); err != nil {
+			if msg := r.wrongPlatform(ctx, a.Image); msg != "" {
+				failed(a, msg, state.FailureWrongPlatform)
+				continue
+			}
+			if err := r.createAndStart(ctx, ns, creates[a.Workload], specs[a.Workload], !a.CreateOnly); err != nil {
 				if notIsolated(a, err) {
 					continue
 				}
-				r.setNote(a.Workload, state.PhaseFailed, err.Error())
-				event(a, state.EventCreateFailed, err.Error())
+				failed(a, err.Error(), docker.StartFailure(err))
 				fail(a, err)
 				continue
 			}
@@ -492,18 +543,21 @@ func (r *Reconciler) apply(ctx context.Context, ns *state.NodeState, p Plan, cre
 				if notIsolated(a, err) {
 					continue
 				}
-				r.setNote(a.Workload, state.PhaseFailed, "start: "+err.Error())
-				event(a, state.EventCreateFailed, "start: "+err.Error())
+				failed(a, "start: "+err.Error(), docker.StartFailure(err))
 				fail(a, err)
 				continue
 			}
 			r.clearNote(a.Workload)
 		case StopContainer:
+			r.markStopping(a.ContainerID)
 			if err := r.o.Docker.StopContainer(ctx, a.ContainerID, a.Grace); err != nil {
 				fail(a, err)
 				continue
 			}
-			event(a, state.EventStopped, "")
+			r.emit(state.WorkloadEvent{
+				Workload: a.Workload, Deployment: deployments[a.Workload], Kind: state.EventStopped, Reason: a.Why,
+				Output: r.lastRun(ctx, a.ContainerID),
+			})
 		case RemoveNetwork:
 			removed, err := r.o.Networks.RemoveUnlessHeld(a.NetworkName, func() error {
 				if r.o.BeforeNetworkRemove != nil {
@@ -577,22 +631,43 @@ func (r *Reconciler) pullProgress(image state.ImageRef, pp docker.PullProgress) 
 	r.o.OnProgress()
 }
 
-func (r *Reconciler) removeContainer(ctx context.Context, a Action) error {
+// removeContainer stops and removes a container; a workload container's
+// last lines are read in between (the removed event carries them, D68:
+// logs survive a replacement even without runtime log retention).
+func (r *Reconciler) removeContainer(ctx context.Context, a Action) ([]state.LogLine, error) {
+	r.markStopping(a.ContainerID)
 	if a.Grace > 0 {
 		if err := r.o.Docker.StopContainer(ctx, a.ContainerID, a.Grace); err != nil && !errors.Is(err, docker.ErrNotFound) {
-			return err
+			return nil, err
 		}
 	}
-	if err := r.o.Docker.RemoveContainer(ctx, a.ContainerID); err != nil && !errors.Is(err, docker.ErrNotFound) {
-		return err
+	var out []state.LogLine
+	if a.Workload != "" {
+		out = r.lastRun(ctx, a.ContainerID)
 	}
-	return nil
+	if err := r.o.Docker.RemoveContainer(ctx, a.ContainerID); err != nil && !errors.Is(err, docker.ErrNotFound) {
+		return nil, err
+	}
+	return out, nil
+}
+
+// lastRun returns the last lines of a container's last run (best effort).
+func (r *Reconciler) lastRun(ctx context.Context, id string) []state.LogLine {
+	c, err := r.o.Docker.InspectContainer(ctx, id)
+	if err != nil {
+		return nil
+	}
+	b := runBounds{since: c.StartedAt}
+	if !c.Running() && !c.FinishedAt.Before(c.StartedAt) {
+		b.until = c.FinishedAt
+	}
+	return r.tailRun(ctx, id, b)
 }
 
 // createAndStart creates and (unless start is false) starts a workload
 // container through the network owner, which re-ensures its networks when
 // Docker does not find one.
-func (r *Reconciler) createAndStart(ctx context.Context, ns *state.NodeState, cc *docker.ContainerCreate, start bool) error {
+func (r *Reconciler) createAndStart(ctx context.Context, ns *state.NodeState, cc *docker.ContainerCreate, spec *state.WorkloadSpec, start bool) error {
 	if cc == nil {
 		return errors.New("no container spec")
 	}
@@ -607,6 +682,12 @@ func (r *Reconciler) createAndStart(ctx context.Context, ns *state.NodeState, cc
 	id, err := r.o.Networks.CreateContainer(ctx, cc, nets)
 	if err != nil {
 		return fmt.Errorf("create: %w", err)
+	}
+	// After the create (Docker copied the image's folder into an empty
+	// volume then), before the first start.
+	if err := r.initOwners(ctx, cc, spec); err != nil {
+		r.passErrorCode(state.ReconcileVolume, Action{Kind: CreateWorkload, Workload: spec.ID}, err)
+		r.o.Log.Warn("could not give a new volume to the image's user", "container", cc.Name, "err", err)
 	}
 	if !start {
 		return nil
@@ -632,8 +713,9 @@ func (r *Reconciler) refresh(ctx context.Context, ns *state.NodeState) error {
 		specs[ns.Workloads[i].ID] = &ns.Workloads[i]
 	}
 	obs := map[state.WorkloadID]observed{}
+	at := r.o.Now()
 	for id, c := range docker.WorkloadContainers(cs) {
-		o := observed{c: c}
+		o := observed{c: c, at: at}
 		if spec := specs[id]; spec != nil && len(spec.Networks) > 0 {
 			o.ip = c.Networks[nets[spec.Networks[0].Network]]
 		}
@@ -670,8 +752,12 @@ func (r *Reconciler) refresh(ctx context.Context, ns *state.NodeState) error {
 		}
 	}
 	r.observed = obs
+	r.passHealth.lastObserved = at
+	r.syncWatchersLocked(ctx, obs)
+	r.pruneStoppingLocked(now)
 	r.mu.Unlock()
 	r.finishExits(ctx, exits)
+	r.learnImages(ctx, ns)
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	for id, n := range r.book {
@@ -718,7 +804,12 @@ func (r *Reconciler) resolve(id state.WorkloadID) (ingress.Endpoint, bool) {
 	if spec == nil {
 		return ingress.Endpoint{}, false
 	}
-	return ingress.Endpoint{Addr: o.ip, Serving: spec.Role == state.RoleServing, Ready: r.readyLocked(spec, o)}, true
+	return ingress.Endpoint{
+		Addr: o.ip, Serving: spec.Role == state.RoleServing, Ready: r.readyLocked(spec, o),
+		// Fail open (HEAL-10): with no ready replica the edge routes to
+		// running ones, never to stopped, restarting or paused ones.
+		Running: o.c.State == docker.StateRunning,
+	}, true
 }
 
 func (r *Reconciler) readyLocked(spec *state.WorkloadSpec, o observed) bool {
@@ -765,11 +856,19 @@ func (r *Reconciler) Snapshot() (version int64, workloads []state.WorkloadStatus
 		if hasNote {
 			np = &n
 		}
-		out = append(out, statusOf(s, op, np, probe, now))
+		ws := statusOf(s, op, np, probe, now)
+		// Only what was actually seen is new: while Docker can't be
+		// observed, the status keeps the time of the last observation.
+		ws.ObservedAt = r.observedAtLocked(op)
+		ws.Image = r.imageFactsLocked(s.Image)
+		if ws.Failure == nil {
+			ws.Failure = r.startFailureLocked(s.ID, op, now)
+		}
+		out = append(out, ws)
 	}
 	for id, n := range r.book {
 		if !seen[id] && n.phase == state.PhaseRemoved {
-			out = append(out, state.WorkloadStatus{ID: id, Phase: state.PhaseRemoved, ObservedAt: now})
+			out = append(out, state.WorkloadStatus{ID: id, Phase: state.PhaseRemoved, ObservedAt: n.at.UTC()})
 		}
 	}
 	slices.SortFunc(out, func(a, b state.WorkloadStatus) int {
@@ -784,11 +883,28 @@ func (r *Reconciler) Snapshot() (version int64, workloads []state.WorkloadStatus
 	return r.ns.Version, out, r.ingress
 }
 
+// observedAtLocked is when a workload's state was last seen: its container's
+// inspection, else the last successful pass (r.mu held).
+func (r *Reconciler) observedAtLocked(o *observed) time.Time {
+	switch {
+	case o != nil && !o.at.IsZero():
+		return o.at.UTC()
+	case !r.passHealth.lastObserved.IsZero():
+		return r.passHealth.lastObserved.UTC()
+	case r.passHealth.status == nil:
+		return r.o.Now().UTC() // no pass ended yet: nothing is stale
+	}
+	return r.boot.UTC()
+}
+
 // statusOf derives the reported phase of one desired workload. It is pure.
 func statusOf(s *state.WorkloadSpec, o *observed, n *note, probe *health.Status, now time.Time) state.WorkloadStatus {
 	ws := state.WorkloadStatus{ID: s.ID, ObservedAt: now}
 	if probe != nil {
-		ps := &state.ProbeStatus{State: probe.State, ConsecutiveFailures: probe.ConsecutiveFailures, LastError: state.Clip(probe.LastError, state.MaxStatusLen), Attempts: probe.Attempts}
+		ps := &state.ProbeStatus{
+			State: probe.State, ConsecutiveFailures: probe.ConsecutiveFailures, LastError: state.Clip(probe.LastError, state.MaxStatusLen), Attempts: probe.Attempts,
+			Body: state.Clip(probe.Body, state.MaxProbeBody), Hint: probe.Hint,
+		}
 		if !probe.LastCheckedAt.IsZero() {
 			t := probe.LastCheckedAt.UTC()
 			ps.LastCheckedAt = &t
@@ -799,6 +915,7 @@ func statusOf(s *state.WorkloadSpec, o *observed, n *note, probe *health.Status,
 		switch {
 		case n != nil && (n.phase == state.PhasePulling || n.phase == state.PhaseFailed || n.phase == state.PhasePending):
 			ws.Phase, ws.Message = n.phase, n.message
+			ws.Failure = n.failureStatus()
 			if n.phase == state.PhasePulling && n.pull != nil {
 				pp := *n.pull
 				ws.Pull = &pp
@@ -849,6 +966,7 @@ func statusOf(s *state.WorkloadSpec, o *observed, n *note, probe *health.Status,
 	switch {
 	case n != nil && n.phase == state.PhaseFailed && !c.Running():
 		ws.Phase, ws.Message = state.PhaseFailed, n.message
+		ws.Failure = n.failureStatus()
 	case s.Role == state.RoleDraining:
 		if c.Running() {
 			ws.Phase = state.PhaseDraining
@@ -890,6 +1008,14 @@ func statusOf(s *state.WorkloadSpec, o *observed, n *note, probe *health.Status,
 	}
 	ws.Message = state.Clip(ws.Message, state.MaxStatusLen)
 	return ws
+}
+
+// failureStatus is the typed failure of a failed note (nil: none).
+func (n *note) failureStatus() *state.WorkloadFailure {
+	if n == nil || n.phase != state.PhaseFailed || n.failure == "" {
+		return nil
+	}
+	return &state.WorkloadFailure{Code: n.failure, Message: state.Clip(n.message, 1024), At: n.at.UTC()}
 }
 
 func joinMsg(a, b string) string {

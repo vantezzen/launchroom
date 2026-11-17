@@ -44,6 +44,12 @@ type RunOnceOptions struct {
 	// Ports finds the TCP ports a container listens on (nil = none; the
 	// reconciler's scanner in production).
 	Ports health.PortScanner
+	// NodeState returns the verified NodeState (nil = none yet). spec.mounts
+	// are refused without it.
+	NodeState func() *state.NodeState
+	// VolumeWait bounds the wait for spec.mounts' volumes (default
+	// DefaultVolumeWait).
+	VolumeWait time.Duration
 }
 
 // DefaultStartProbe dials addr from the host network namespace (images need
@@ -148,16 +154,21 @@ func RunOnceHandler(o RunOnceOptions) Handler {
 		if err := r.ensureImage(ctx, spec.Image); err != nil {
 			return state.TaskResults{}, err
 		}
+		mounts, vols, err := r.releaseMounts(ctx, spec)
+		if err != nil {
+			return state.TaskResults{}, err
+		}
 		cc, err := docker.BuildContainer(docker.WorkloadInput{
 			ServerID: o.ServerID, Task: t.ID,
 			Spec: state.WorkloadSpec{
 				Service: spec.Service, Environment: spec.Environment, Deployment: spec.Deployment,
 				Image: spec.Image, Command: spec.Command, Args: spec.Args, Env: spec.Env,
 				Resources: spec.Resources, Networks: []state.NetworkAttachment{{Network: spec.Network.ID, Aliases: []state.Slug{}}},
-				Restart: state.RestartNo, Role: state.RoleServing,
+				Restart: state.RestartNo, Role: state.RoleServing, Mounts: mounts,
 			},
 			Env:      env,
 			Networks: map[state.NetworkID]state.HostName{spec.Network.ID: spec.Network.Name},
+			Volumes:  vols,
 		}, o.Policy)
 		if err != nil {
 			return state.TaskResults{}, fmt.Errorf("run_once container: %w", err)
@@ -170,6 +181,7 @@ func RunOnceHandler(o RunOnceOptions) Handler {
 			return state.TaskResults{}, fmt.Errorf("run_once create: %w", err)
 		}
 		defer r.remove(ctx, id)
+		r.initOwners(ctx, mounts, vols)
 		if err := o.Docker.StartContainer(ctx, id); err != nil {
 			return state.TaskResults{}, fmt.Errorf("run_once start: %w", err)
 		}

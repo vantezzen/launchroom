@@ -202,9 +202,9 @@ test('due schedules start backups once per minute', function (): void {
     Backups::destination($team, $owner);
 
     $schedule = BackupSchedule::query()->where('service_instance_id', $instance->id)->sole();
-    $schedule->forceFill(['cron' => '30 2 * * *'])->save();
-
     $at = CarbonImmutable::parse('2026-10-19 02:30:10', 'UTC');
+    $schedule->forceFill(['cron' => '30 2 * * *', 'created_at' => $at->subDay()])->save();
+
     CarbonImmutable::setTestNow($at);
     resolve(RunBackupTick::class)->handle($at);
     resolve(RunBackupTick::class)->handle($at->addSeconds(20));

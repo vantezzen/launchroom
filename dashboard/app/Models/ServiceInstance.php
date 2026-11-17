@@ -9,6 +9,7 @@ use App\Data\Services\BuildSettings;
 use App\Data\Services\DeploySettings;
 use App\Data\Services\ScalingSettings;
 use App\Data\Services\ServicePlanData;
+use App\Data\Specs\ServiceSpec;
 use App\Enums\PreviewStrategy;
 use App\Enums\Security\WafMode;
 use App\Models\Concerns\BelongsToTeam;
@@ -51,6 +52,7 @@ use Illuminate\Support\Carbon;
  * @property Carbon|null $waf_mode_changed_at
  * @property Carbon|null $stopped_at stopped in launchroom (D68): keeps its config, domains, volumes and deployments, runs nothing
  * @property int|null $stopped_by_id
+ * @property Carbon|null $last_auto_rollback_at launchroom rolled it back by itself (at most once an hour, CheckProbation)
  * @property-read Deployment|null $activeDeployment
  */
 #[Fillable(['team_id', 'environment_id', 'service_id', 'enabled', 'branch_override', 'build', 'deploy', 'scaling', 'preview_strategy', 'waf_mode', 'waf_paranoia', 'waf_inspect_body_kib'])]
@@ -216,6 +218,22 @@ final class ServiceInstance extends Model
     }
 
     /**
+     * Its old version stops before the new one starts (docs/04 §8): two
+     * copies never run on the same data. Databases always; any other
+     * service that mounts a volume (own or shared, as $spec, the
+     * deployment's revision, recorded it or as it mounts now) unless its
+     * deploy settings say the app handles two copies on its data.
+     */
+    public function stopsBeforeStart(ServiceSpec $spec): bool
+    {
+        if ($spec->kind->isStateful()) {
+            return true;
+        }
+
+        return ! $spec->deploy->overlapOnVolumes && ($spec->volumes !== [] || $this->mountedVolumes()->isNotEmpty());
+    }
+
+    /**
      * @return HasMany<Placement, $this>
      */
     public function placements(): HasMany
@@ -243,6 +261,7 @@ final class ServiceInstance extends Model
             'waf_inspect_body_kib' => 'integer',
             'waf_mode_changed_at' => 'datetime',
             'stopped_at' => 'datetime',
+            'last_auto_rollback_at' => 'datetime',
         ];
     }
 }

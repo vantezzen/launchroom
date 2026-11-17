@@ -92,6 +92,30 @@
               "type": "null"
             }
           ]
+        },
+        "failureKind": {
+          "type": "string",
+          "enum": [
+            "rate_limited",
+            "dns_mismatch",
+            "caa",
+            "timeout",
+            "dns_provider",
+            "other"
+          ],
+          "description": "FailureKind classifies LastError."
+        },
+        "retryAfter": {
+          "oneOf": [
+            {
+              "type": "string",
+              "format": "date-time",
+              "description": "RetryAfter is when the CA accepts the next attempt (rate_limited)."
+            },
+            {
+              "type": "null"
+            }
+          ]
         }
       },
       "additionalProperties": false,
@@ -112,7 +136,8 @@
           "type": "string",
           "enum": [
             "schedule",
-            "disk_pressure"
+            "disk_pressure",
+            "manual"
           ]
         },
         "removedImages": {
@@ -145,6 +170,129 @@
         "reclaimedMb"
       ],
       "description": "CleanupResult summarises one cleanup run (docs/04 §8): unused launchroom images beyond retention, BuildKit cache by age, leftover one-off containers."
+    },
+    "ControlPlaneHealth": {
+      "properties": {
+        "checkedAt": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "ready": {
+          "oneOf": [
+            {
+              "type": "boolean",
+              "description": "Ready is the dashboard's last readiness check (database and cache); omitted on a peer."
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "services": {
+          "oneOf": [
+            {
+              "items": {
+                "$ref": "#/$defs/ControlPlaneServiceStatus"
+              },
+              "type": "array",
+              "maxItems": 16,
+              "description": "Services are the control-plane containers (control-plane host only)."
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "restarts": {
+          "oneOf": [
+            {
+              "items": {
+                "$ref": "#/$defs/WatchdogRestart"
+              },
+              "type": "array",
+              "maxItems": 64,
+              "description": "Restarts are the watchdog's restarts not delivered yet."
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "notices": {
+          "oneOf": [
+            {
+              "items": {
+                "$ref": "#/$defs/FallbackNotice"
+              },
+              "type": "array",
+              "maxItems": 32,
+              "description": "Notices are fallback messages sent (or failed) and not delivered yet."
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "additionalProperties": false,
+      "type": "object",
+      "required": [
+        "checkedAt"
+      ],
+      "description": "ControlPlaneHealth is Report.controlPlane: what the watchdog saw and did (control-plane host; notices also on the peer)."
+    },
+    "ControlPlaneServiceStatus": {
+      "properties": {
+        "name": {
+          "type": "string",
+          "enum": [
+            "dashboard",
+            "horizon",
+            "reverb",
+            "scheduler",
+            "zot",
+            "postgres",
+            "valkey"
+          ]
+        },
+        "state": {
+          "type": "string",
+          "enum": [
+            "running",
+            "unhealthy",
+            "restarting",
+            "stopped",
+            "missing"
+          ]
+        },
+        "startedAt": {
+          "oneOf": [
+            {
+              "type": "string",
+              "format": "date-time"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "restarts": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "Restarts is Docker's restart count of the container."
+        },
+        "oomKilled": {
+          "type": "boolean"
+        }
+      },
+      "additionalProperties": false,
+      "type": "object",
+      "required": [
+        "name",
+        "state",
+        "restarts"
+      ],
+      "description": "ControlPlaneServiceStatus is one control-plane container."
     },
     "ControlPlaneStatus": {
       "properties": {
@@ -232,6 +380,150 @@
       "type": "object",
       "description": "DMIFacts are SMBIOS fields from /sys/class/dmi/id."
     },
+    "DaemonExit": {
+      "properties": {
+        "unclean": {
+          "type": "boolean",
+          "description": "Unclean is true when the previous run didn't shut down cleanly."
+        },
+        "at": {
+          "oneOf": [
+            {
+              "type": "string",
+              "format": "date-time",
+              "description": "At is when the previous run was last seen alive (its last heartbeat)."
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "panic": {
+          "type": "string",
+          "maxLength": 8192,
+          "description": "Panic is the previous run's crash output (Go panic trace, clipped).\nSecrets are never in it (redacting types), it is still masked."
+        }
+      },
+      "additionalProperties": false,
+      "type": "object",
+      "required": [
+        "unclean"
+      ],
+      "description": "DaemonExit is how launchroomd's previous run ended."
+    },
+    "DaemonRun": {
+      "properties": {
+        "startedAt": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "hostBootedAt": {
+          "oneOf": [
+            {
+              "type": "string",
+              "format": "date-time",
+              "description": "HostBootedAt is the host's boot time (/proc/stat btime), if readable."
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "previousExit": {
+          "oneOf": [
+            {
+              "$ref": "#/$defs/DaemonExit",
+              "description": "PreviousExit is set when the previous run ended uncleanly (a crash,\na kill or a host reboot), until a report carrying it was accepted."
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "additionalProperties": false,
+      "type": "object",
+      "required": [
+        "startedAt"
+      ],
+      "description": "DaemonRun describes the running launchroomd: when it and the host started, and how its previous run ended (docs/03 §9)."
+    },
+    "DiskBreakdown": {
+      "properties": {
+        "measuredAt": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "volumes": {
+          "oneOf": [
+            {
+              "items": {
+                "$ref": "#/$defs/VolumeUsage"
+              },
+              "type": "array",
+              "maxItems": 1024,
+              "description": "Volumes are the launchroom-managed volumes and their sizes."
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "walBacklogMb": {
+          "oneOf": [
+            {
+              "type": "integer",
+              "minimum": 0,
+              "description": "WalBacklogMB is the WAL waiting to be shipped (point-in-time recovery)."
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "registryMb": {
+          "oneOf": [
+            {
+              "type": "integer",
+              "minimum": 0,
+              "description": "RegistryMB is the image registry's storage (control-plane host)."
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "additionalProperties": false,
+      "type": "object",
+      "required": [
+        "measuredAt"
+      ],
+      "description": "DiskBreakdown is what takes the server's disk (HostHealth.disk), measured less often than the rest of the health snapshot (every 30 min)."
+    },
+    "DockerReach": {
+      "properties": {
+        "reachable": {
+          "type": "boolean"
+        },
+        "checkedAt": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "error": {
+          "type": "string",
+          "maxLength": 512,
+          "description": "Error is why it isn't reachable (secret-free)."
+        }
+      },
+      "additionalProperties": false,
+      "type": "object",
+      "required": [
+        "reachable",
+        "checkedAt"
+      ],
+      "description": "DockerReach is whether launchroomd reaches Docker (through dockerd-guard where it runs): from every reconcile pass and a /_ping every 30 s."
+    },
     "DockerUsage": {
       "properties": {
         "imagesMb": {
@@ -257,6 +549,38 @@
       ],
       "description": "DockerUsage is Docker's disk accounting."
     },
+    "FallbackNotice": {
+      "properties": {
+        "kind": {
+          "type": "string",
+          "enum": [
+            "down",
+            "still_down",
+            "back"
+          ]
+        },
+        "at": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "sent": {
+          "type": "boolean"
+        },
+        "error": {
+          "type": "string",
+          "maxLength": 512,
+          "description": "Error is why sending failed (secret-free: never the URL)."
+        }
+      },
+      "additionalProperties": false,
+      "type": "object",
+      "required": [
+        "kind",
+        "at",
+        "sent"
+      ],
+      "description": "FallbackNotice is one fallback message."
+    },
     "FilesystemUsage": {
       "properties": {
         "totalMb": {
@@ -264,6 +588,15 @@
           "minimum": 0
         },
         "freeMb": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "inodesTotal": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "InodesTotal and InodesFree are the filesystem's inodes (omitted when\nthe filesystem doesn't have a fixed number, e.g. btrfs)."
+        },
+        "inodesFree": {
           "type": "integer",
           "minimum": 0
         }
@@ -575,6 +908,17 @@
             {
               "$ref": "#/$defs/FirewallStatus",
               "description": "Firewall is the state of the daemon's network isolation (docs/05 §1)."
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "disk": {
+          "oneOf": [
+            {
+              "$ref": "#/$defs/DiskBreakdown",
+              "description": "Disk is what takes the disk (volumes, WAL backlog, registry),\nmeasured every 30 minutes and repeated until the next measurement."
             },
             {
               "type": "null"
@@ -919,6 +1263,50 @@
               "type": "null"
             }
           ]
+        },
+        "docker": {
+          "oneOf": [
+            {
+              "$ref": "#/$defs/DockerReach",
+              "description": "Docker is whether launchroomd reaches Docker (through dockerd-guard)."
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "reconcile": {
+          "oneOf": [
+            {
+              "$ref": "#/$defs/ReconcileStatus",
+              "description": "Reconcile is how the last reconcile passes went."
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "daemon": {
+          "oneOf": [
+            {
+              "$ref": "#/$defs/DaemonRun",
+              "description": "Daemon is when launchroomd and the host started and how launchroomd's\nprevious run ended."
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "lastRefusal": {
+          "oneOf": [
+            {
+              "$ref": "#/$defs/Refusal",
+              "description": "LastRefusal is the dashboard's last refusal of a signed request,\nuntil a report carrying it was accepted."
+            },
+            {
+              "type": "null"
+            }
+          ]
         }
       },
       "additionalProperties": false,
@@ -931,6 +1319,35 @@
         "daemonVersion"
       ],
       "description": "HostStatus describes the server at report time."
+    },
+    "ImageFacts": {
+      "properties": {
+        "user": {
+          "type": "string",
+          "maxLength": 64,
+          "description": "User is Config.User as written in the image (\"\", \"root\", \"0\", \"1000:1000\", \"app\")."
+        },
+        "exposedPorts": {
+          "oneOf": [
+            {
+              "items": {
+                "type": "integer",
+                "maximum": 65535,
+                "minimum": 1
+              },
+              "type": "array",
+              "maxItems": 32,
+              "description": "ExposedPorts are the image's EXPOSEd TCP ports (sorted, unique)."
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "additionalProperties": false,
+      "type": "object",
+      "description": "ImageFacts is what an image's config says about how it runs: launchroomd reads it when it pulls (WorkloadStatus.image) or builds (BuildSummary.image) an image, so the dashboard can grant the capabilities a root image needs (docs/09) and adopt the port it exposes."
     },
     "IngressStatus": {
       "properties": {
@@ -995,6 +1412,50 @@
             {
               "$ref": "#/$defs/WafStatus",
               "description": "Waf is the web firewall's state at this edge (docs/03 §13.4); sent by\nedges announcing the daemon feature \"waf\"."
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "reason": {
+          "type": "string",
+          "enum": [
+            "port_in_use",
+            "config_refused",
+            "image",
+            "not_running",
+            "other"
+          ],
+          "description": "Reason classifies why Caddy isn't serving (state not applied)."
+        },
+        "port": {
+          "oneOf": [
+            {
+              "type": "integer",
+              "maximum": 65535,
+              "minimum": 1,
+              "description": "Port is the port another process holds (port_in_use)."
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "process": {
+          "type": "string",
+          "maxLength": 64,
+          "description": "Process is the name of that process (/proc/\u003cpid\u003e/comm), if found."
+        },
+        "output": {
+          "oneOf": [
+            {
+              "items": {
+                "$ref": "#/$defs/LogLine"
+              },
+              "type": "array",
+              "maxItems": 30,
+              "description": "Output are Caddy's last log lines (at most 30, 2 KiB each, masked)."
             },
             {
               "type": "null"
@@ -1379,6 +1840,18 @@
           "type": "integer",
           "minimum": 0,
           "description": "Attempts counts the checks since the container started, including\nthose in the start period (D68: \"attempt 3\" on the Health step)."
+        },
+        "body": {
+          "type": "string",
+          "maxLength": 300,
+          "description": "Body is the start of the last failing answer (at most 300 bytes,\nmasked like log lines), for HTTP probes that got one."
+        },
+        "hint": {
+          "type": "string",
+          "enum": [
+            "host_not_allowed"
+          ],
+          "description": "Hint names what the last failing answer means."
         }
       },
       "additionalProperties": false,
@@ -1451,6 +1924,78 @@
       ],
       "description": "PullProgress is an in-flight image pull: compressed layer bytes downloaded of the total (0 while the total is not known, e.g."
     },
+    "ReconcileError": {
+      "properties": {
+        "code": {
+          "type": "string",
+          "enum": [
+            "docker_unreachable",
+            "guard_refused",
+            "disk_full",
+            "not_isolated",
+            "network",
+            "volume",
+            "other"
+          ]
+        },
+        "target": {
+          "type": "string",
+          "pattern": "^[a-z]{2,4}_[0-7][0-9A-HJKMNP-TV-Z]{25}$",
+          "description": "Target is the public id of the object it concerns (wl_, vol_, net_ …), if any."
+        },
+        "message": {
+          "type": "string",
+          "maxLength": 512
+        }
+      },
+      "additionalProperties": false,
+      "type": "object",
+      "required": [
+        "code"
+      ],
+      "description": "ReconcileError is one problem of a reconcile pass."
+    },
+    "ReconcileStatus": {
+      "properties": {
+        "lastPassAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "LastPassAt is when the last pass ended, LastCompleteAt when the last\npass ended without an error (omitted: none yet since launchroomd started)."
+        },
+        "lastCompleteAt": {
+          "oneOf": [
+            {
+              "type": "string",
+              "format": "date-time"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "errors": {
+          "oneOf": [
+            {
+              "items": {
+                "$ref": "#/$defs/ReconcileError"
+              },
+              "type": "array",
+              "maxItems": 16,
+              "description": "Errors are the last pass's problems (first 16)."
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "additionalProperties": false,
+      "type": "object",
+      "required": [
+        "lastPassAt"
+      ],
+      "description": "ReconcileStatus is how launchroomd's last reconcile passes went."
+    },
     "ReferrerCount": {
       "properties": {
         "host": {
@@ -1470,6 +2015,42 @@
         "requests"
       ],
       "description": "ReferrerCount is one referrer host's requests in a window."
+    },
+    "Refusal": {
+      "properties": {
+        "at": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "status": {
+          "type": "integer",
+          "maximum": 599,
+          "minimum": 400
+        },
+        "clockSkewMs": {
+          "oneOf": [
+            {
+              "type": "integer",
+              "description": "ClockSkewMs is the dashboard's Date header minus launchroomd's clock\nat the refusal (±1 s resolution), when the answer had one."
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "message": {
+          "type": "string",
+          "maxLength": 512,
+          "description": "Message is the dashboard's error text (secret-free)."
+        }
+      },
+      "additionalProperties": false,
+      "type": "object",
+      "required": [
+        "at",
+        "status"
+      ],
+      "description": "Refusal is the last time the dashboard refused one of launchroomd's signed requests (401, 403, 426): sent with the next accepted report, so an intermittent refusal (clock skew, an expired client certificate) is visible afterwards."
     },
     "RegistryReach": {
       "properties": {
@@ -1740,6 +2321,29 @@
         "at"
       ],
       "description": "VolumeDeletionResult is the outcome of one NodeState.deleteVolumes entry."
+    },
+    "VolumeUsage": {
+      "properties": {
+        "id": {
+          "type": "string",
+          "pattern": "^vol_[0-7][0-9A-HJKMNP-TV-Z]{25}$"
+        },
+        "sizeMb": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "retired": {
+          "type": "boolean",
+          "description": "Retired is true for a volume the NodeState no longer declares (kept\nuntil its deletion is requested, docs/05 §1.1)."
+        }
+      },
+      "additionalProperties": false,
+      "type": "object",
+      "required": [
+        "id",
+        "sizeMb"
+      ],
+      "description": "VolumeUsage is the size of one managed volume."
     },
     "WafCategoryCount": {
       "properties": {
@@ -2137,6 +2741,42 @@
       ],
       "description": "WalArchiveStatus is the WAL shipping state of one workload (Report.walArchives)."
     },
+    "WatchdogRestart": {
+      "properties": {
+        "service": {
+          "type": "string",
+          "enum": [
+            "dashboard",
+            "horizon",
+            "reverb",
+            "scheduler",
+            "zot",
+            "postgres",
+            "valkey"
+          ]
+        },
+        "at": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "reason": {
+          "type": "string",
+          "enum": [
+            "unhealthy",
+            "not_ready",
+            "exited"
+          ]
+        }
+      },
+      "additionalProperties": false,
+      "type": "object",
+      "required": [
+        "service",
+        "at",
+        "reason"
+      ],
+      "description": "WatchdogRestart is one restart the watchdog did."
+    },
     "WorkloadEvent": {
       "properties": {
         "seq": {
@@ -2177,9 +2817,10 @@
             "not_desired",
             "spec_changed",
             "duplicate",
-            "port_not_bound"
+            "port_not_bound",
+            "health"
           ],
-          "description": "Reason is set on stopped and removed events."
+          "description": "Reason is set on stopped and removed events, and on restarted events\nlaunchroomd caused itself (health)."
         },
         "exitCode": {
           "oneOf": [
@@ -2194,6 +2835,33 @@
         },
         "oomKilled": {
           "type": "boolean"
+        },
+        "signal": {
+          "type": "integer",
+          "maximum": 64,
+          "minimum": 1,
+          "description": "Signal is the signal that ended the process (exit codes above 128:\ncode − 128), when the exit code says so."
+        },
+        "byLaunchroom": {
+          "type": "boolean",
+          "description": "ByLaunchroom is true when launchroomd itself stopped or killed the\nprocess (a stop after the grace period ends in 137 without OOM)."
+        },
+        "code": {
+          "type": "string",
+          "enum": [
+            "command_not_found",
+            "not_executable",
+            "wrong_platform",
+            "mount_failed",
+            "invalid_user",
+            "image_not_found",
+            "unauthorized",
+            "rate_limited",
+            "network",
+            "no_space",
+            "other"
+          ],
+          "description": "Code classifies a create_failed event (WorkloadStatus.failure codes)."
         },
         "restarts": {
           "type": "integer",
@@ -2217,8 +2885,8 @@
                 "$ref": "#/$defs/LogLine"
               },
               "type": "array",
-              "maxItems": 30,
-              "description": "Output is the container's last lines before an exit (at most 30;\nthe dashboard masks them like any other deployment log line)."
+              "maxItems": 100,
+              "description": "Output is the container's last lines before an exit, a stop or a\nremoval (at most 100 lines and 16 KiB together; the dashboard masks\nthem like any other deployment log line)."
             },
             {
               "type": "null"
@@ -2236,6 +2904,42 @@
       ],
       "description": "WorkloadEvent is one container lifecycle event."
     },
+    "WorkloadFailure": {
+      "properties": {
+        "code": {
+          "type": "string",
+          "enum": [
+            "command_not_found",
+            "not_executable",
+            "wrong_platform",
+            "mount_failed",
+            "invalid_user",
+            "image_not_found",
+            "unauthorized",
+            "rate_limited",
+            "network",
+            "no_space",
+            "other"
+          ]
+        },
+        "message": {
+          "type": "string",
+          "maxLength": 1024,
+          "description": "Message is Docker's error, secret-free and clipped."
+        },
+        "at": {
+          "type": "string",
+          "format": "date-time"
+        }
+      },
+      "additionalProperties": false,
+      "type": "object",
+      "required": [
+        "code",
+        "at"
+      ],
+      "description": "WorkloadFailure is why a workload's container can't be pulled, created or started right now (WorkloadStatus.failure); cleared once it starts."
+    },
     "WorkloadIssue": {
       "properties": {
         "kind": {
@@ -2243,7 +2947,8 @@
           "enum": [
             "crash_loop",
             "loopback_only",
-            "wrong_port"
+            "wrong_port",
+            "unresponsive"
           ]
         },
         "since": {
@@ -2470,6 +3175,28 @@
             "wrong_port"
           ],
           "description": "PortHint names the port misconfiguration the message explains, while\nthe health check fails (the ports are in detectedPorts)."
+        },
+        "failure": {
+          "oneOf": [
+            {
+              "$ref": "#/$defs/WorkloadFailure",
+              "description": "Failure is why the container can't be pulled, created or started right\nnow (typed at the source); omitted once it runs."
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "image": {
+          "oneOf": [
+            {
+              "$ref": "#/$defs/ImageFacts",
+              "description": "Image is what the workload's image config says (user, exposed ports),\nonce pulled."
+            },
+            {
+              "type": "null"
+            }
+          ]
         }
       },
       "additionalProperties": false,
@@ -2602,6 +3329,17 @@
           "type": "array",
           "maxItems": 256,
           "description": "Events are container lifecycle events not delivered yet (D68), oldest\nfirst; omitted when there are none."
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "controlPlane": {
+      "oneOf": [
+        {
+          "$ref": "#/$defs/ControlPlaneHealth",
+          "description": "ControlPlane is what the watchdog saw and did (system.watchdog);\nomitted on servers without one."
         },
         {
           "type": "null"

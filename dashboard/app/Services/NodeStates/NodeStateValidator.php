@@ -246,6 +246,14 @@ final class NodeStateValidator
             }
         }
 
+        // The watchdog's fallback channel: an email channel names its mail server, the others none.
+        $fallback = is_array($doc['system'] ?? null) && is_array($doc['system']['watchdog'] ?? null) && is_array($doc['system']['watchdog']['fallback'] ?? null)
+            ? $doc['system']['watchdog']['fallback'] : null;
+
+        if ($fallback !== null && (($fallback['kind'] ?? null) === 'email') !== isset($fallback['smtp'])) {
+            $this->add('system.watchdog.fallback.smtp', ($fallback['kind'] ?? null) === 'email' ? 'is required for email' : 'is only valid for email');
+        }
+
         $linkProbe = is_array($doc['system'] ?? null) && is_array($doc['system']['linkProbe'] ?? null) ? $doc['system']['linkProbe'] : null;
 
         if ($linkProbe !== null) {
@@ -360,6 +368,10 @@ final class NodeStateValidator
             $volumeOwners[$volume] ??= $owner;
             $this->unique("{$p}.mounts.target", $j, $target, $targets);
 
+            if (isset($mount['initOwner']) && ($mount['readOnly'] ?? false) === true) {
+                $this->add("{$p}.mounts[{$j}].initOwner", 'is not allowed on a read-only mount');
+            }
+
             if (in_array('.', explode('/', $target), true) || in_array('..', explode('/', $target), true)) {
                 $this->add("{$p}.mounts[{$j}].target", "container path {$target} must be clean (no . or .. segments)");
             }
@@ -432,8 +444,16 @@ final class NodeStateValidator
             $this->add("{$p}.path", 'is required for http probes');
         }
 
-        if ($type === 'tcp' && (isset($health['path']) || isset($health['expectStatus']))) {
-            $this->add($p, 'path and expectStatus are only valid for http probes');
+        if ($type === 'tcp' && (isset($health['path']) || isset($health['expectStatus']) || isset($health['host']))) {
+            $this->add($p, 'path, expectStatus and host are only valid for http probes');
+        }
+
+        if (isset($health['restartAfter'])) {
+            $restartAfter = $this->durationSeconds($this->str($health['restartAfter']));
+
+            if ($restartAfter !== null && ($restartAfter < Limits::RESTART_AFTER_MIN_SECONDS || $restartAfter > Limits::RESTART_AFTER_MAX_SECONDS)) {
+                $this->add("{$p}.restartAfter", 'must be between 1m and 1h');
+            }
         }
 
         $seconds = [];

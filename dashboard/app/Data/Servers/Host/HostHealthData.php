@@ -13,6 +13,9 @@ use Spatie\LaravelData\Data;
  */
 final class HostHealthData extends Data
 {
+    /** Volumes kept of a disk breakdown (the largest). */
+    public const int MAX_VOLUMES = 64;
+
     public function __construct(
         public ?string $collectedAt = null,
         public ?DiskUsageData $dataDisk = null,
@@ -25,6 +28,7 @@ final class HostHealthData extends Data
         public ?int $buildCacheMb = null,
         public ?int $clockSkewMs = null,
         public ?DiskCleanupData $cleanup = null,
+        public ?DiskBreakdownData $disk = null,
     ) {}
 
     /**
@@ -38,8 +42,8 @@ final class HostHealthData extends Data
 
         return new self(
             collectedAt: is_string($health['collectedAt'] ?? null) ? $health['collectedAt'] : null,
-            dataDisk: DiskUsageData::optional($ints($health['dataDisk'] ?? null, ['totalMb', 'freeMb'])),
-            dockerDisk: DiskUsageData::optional($ints($health['dockerDisk'] ?? null, ['totalMb', 'freeMb'])),
+            dataDisk: self::disk($health['dataDisk'] ?? null),
+            dockerDisk: self::disk($health['dockerDisk'] ?? null),
             memory: MemoryUsageData::optional($ints($health['memory'] ?? null, ['totalMb', 'availableMb'])),
             load: LoadAverageData::optional($load),
             inotify: InotifyLimitsData::optional($ints($health['inotify'] ?? null, ['maxUserWatches', 'maxUserInstances', 'maxQueuedEvents'])),
@@ -55,6 +59,47 @@ final class HostHealthData extends Data
                 reclaimedMb: is_int($cleanup['reclaimedMb'] ?? null) ? $cleanup['reclaimedMb'] : 0,
                 error: is_string($cleanup['error'] ?? null) ? mb_substr($cleanup['error'], 0, 1024) : null,
             ) : null,
+            disk: self::breakdown($health['disk'] ?? null),
+        );
+    }
+
+    private static function disk(mixed $group): ?DiskUsageData
+    {
+        $sizes = self::ints($group, ['totalMb', 'freeMb']);
+
+        if ($sizes === null || ! is_array($group)) {
+            return null;
+        }
+
+        $inodes = self::ints($group, ['inodesTotal', 'inodesFree']);
+
+        return new DiskUsageData((int) $sizes['totalMb'], (int) $sizes['freeMb'], isset($inodes['inodesTotal']) ? (int) $inodes['inodesTotal'] : null, isset($inodes['inodesFree']) ? (int) $inodes['inodesFree'] : null);
+    }
+
+    /**
+     * Volumes are kept largest first, at most MAX_VOLUMES of them.
+     */
+    private static function breakdown(mixed $disk): ?DiskBreakdownData
+    {
+        if (! is_array($disk) || ! is_string($disk['measuredAt'] ?? null)) {
+            return null;
+        }
+
+        $volumes = [];
+
+        foreach (is_array($disk['volumes'] ?? null) ? $disk['volumes'] : [] as $volume) {
+            if (is_array($volume) && is_string($volume['id'] ?? null) && is_int($volume['sizeMb'] ?? null)) {
+                $volumes[] = new VolumeUsageData($volume['id'], max(0, $volume['sizeMb']), ($volume['retired'] ?? false) === true);
+            }
+        }
+
+        usort($volumes, static fn (VolumeUsageData $a, VolumeUsageData $b): int => $b->sizeMb <=> $a->sizeMb);
+
+        return new DiskBreakdownData(
+            measuredAt: $disk['measuredAt'],
+            volumes: array_slice($volumes, 0, self::MAX_VOLUMES),
+            walBacklogMb: is_int($disk['walBacklogMb'] ?? null) ? $disk['walBacklogMb'] : null,
+            registryMb: is_int($disk['registryMb'] ?? null) ? $disk['registryMb'] : null,
         );
     }
 

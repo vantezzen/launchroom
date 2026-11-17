@@ -9,6 +9,8 @@ use App\Enums\Backups\BackupSubject;
 use App\Models\Concerns\HasPublicId;
 use App\Models\ServiceInstance;
 use App\Models\Team;
+use App\Support\Cron\CatchUp;
+use Carbon\CarbonImmutable;
 use Cron\CronExpression;
 use DateTimeInterface;
 use Illuminate\Database\Eloquent\Attributes\Fillable;
@@ -58,9 +60,17 @@ final class BackupSchedule extends Model
         return self::query()->where('service_instance_id', $instance->id)->first();
     }
 
-    public function isDue(DateTimeInterface $at): bool
+    /**
+     * The cron slot this schedule owes a run for at $now (CatchUp): the
+     * latest slot after its last run, or after it was created when it never
+     * ran. `last_run_at` is when the schedule last fired (or when its cron
+     * was changed or it was turned on again), not when a backup succeeded.
+     */
+    public function owedRun(DateTimeInterface $now): ?CarbonImmutable
     {
-        return $this->enabled && CronExpression::isValidExpression($this->cron) && new CronExpression($this->cron)->isDue($at, 'UTC');
+        $since = $this->last_run_at ?? $this->created_at;
+
+        return $this->enabled && $since !== null ? CatchUp::owed($this->cron, $since, $now) : null;
     }
 
     public function nextRunAt(DateTimeInterface $after): ?DateTimeInterface

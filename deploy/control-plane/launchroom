@@ -2,20 +2,27 @@
 # launchroom helper for the control-plane folder (docs/11 §1-§5).
 #
 #   ./launchroom status                  containers, health, local launchroomd
+#   ./launchroom doctor [options]        check everything and say what to fix:
+#                                          --fix ID[:target]  apply a fix (asks first)
+#                                          --bundle           write a redacted support bundle
+#                                          --json             the report as JSON
 #   ./launchroom logs [service]          follow logs (default: all)
-#   ./launchroom update                  pull the pinned images, restart, migrate
+#   ./launchroom update                  pull the pinned images again and restart, with a
+#                                        backup first and a rollback if it fails
 #   ./launchroom backup [args]           control-plane backup now (docs/14)
 #   ./launchroom restore [args]          restore the control plane (docs/14)
 #   ./launchroom registry show|apply     registry config (secrets redacted) / write it and restart zot
 #   ./launchroom setup-token             new one-time first-run setup link
 #   ./launchroom reset-owner-2fa EMAIL   remove an instance owner's 2FA (audited)
+#   ./launchroom reset-password EMAIL    print a one-time sign-in link to set a new password
 #   ./launchroom dashboard-domain-reset  go back to APP_URL when the dashboard's domain locks you out
 #   ./launchroom move-takeover           finish a move here if the installer stopped after the restore
 #   ./launchroom uninstall               remove launchroom from this server
 #
 # Upgrading to a new release (new compose.yml and image pins) means running
 # the installer again with --dir pointing here; this script's `update` only
-# re-pulls the images pinned in .env.
+# re-pulls the images pinned in .env. Both back up the managed files and the
+# database first and go back to them if the update fails (docs/11 §4.4).
 set -eu
 
 DIR="$(cd "$(dirname "$0")" && pwd)"
@@ -42,17 +49,87 @@ cmd_status() {
 	echo "Dashboard: $url"
 	dc ps --format 'table {{.Service}}\t{{.Status}}'
 	echo
-	daemon_status="$(psql_value "SELECT public_id || ' ' || status FROM servers WHERE is_control_plane AND status <> 'revoked' ORDER BY id DESC LIMIT 1" 2>/dev/null || true)"
-	echo "launchroomd: ${daemon_status:-not enrolled}"
+	if daemon_status="$(psql_value "SELECT public_id || ' ' || status FROM servers WHERE is_control_plane AND status <> 'revoked' ORDER BY id DESC LIMIT 1" 2>/dev/null)"; then
+		echo "launchroomd: ${daemon_status:-not enrolled}"
+	else
+		echo "launchroomd: unknown (the database isn't answering; run ./launchroom doctor)"
+	fi
+}
+
+# daemon_image: launchroomd's image from .env, pulled if it isn't here.
+daemon_image() {
+	image="$(env_get LR_DAEMON_IMAGE)"
+	[ -n "$image" ] || die "LR_DAEMON_IMAGE is missing from $DIR/.env. Run the installer again."
+	docker image inspect "$image" >/dev/null 2>&1 || docker pull -q "$image" >/dev/null ||
+		die "launchroomd's image ($image) isn't on this server and couldn't be downloaded."
+	printf '%s' "$image"
+}
+
+# host_tool ARGS…: runs launchroomd's host-side tools (doctor, update-local)
+# in a one-off container with the Docker socket and this folder at its own
+# path, like launchroomd's update supervisor (docs/11 §4, docs/09 §6).
+host_tool() {
+	image="$(daemon_image)"
+	socket="$(env_get LR_DOCKER_SOCKET)"
+	tty=-i
+	if [ -t 0 ] && [ -t 1 ]; then tty=-it; fi
+	docker run --rm "$tty" --label launchroom.managed=true --label launchroom.role=doctor \
+		--network host --pid host \
+		-v "${socket:-/var/run/docker.sock}:/var/run/docker.sock" -v "$DIR:$DIR" -v /:/host:ro \
+		--entrypoint /usr/local/bin/launchroomd "$image" "$@"
+}
+
+# supervised: launchroomd of this install can run updates through its
+# update supervisor (releases from before it can't).
+supervised() {
+	docker run --rm --network none --label launchroom.managed=true --label launchroom.role=doctor \
+		--entrypoint /usr/local/bin/launchroomd "$(daemon_image)" update-local --probe >/dev/null 2>&1
 }
 
 cmd_update() {
-	say "pulling the images pinned in .env"
+	if supervised; then
+		say "pulling the images pinned in .env; files and database are backed up first, and a failed update goes back to them"
+		host_tool update-local --dir "$DIR" </dev/null
+		say "updated. To move to a new release, run the installer again with --dir $DIR."
+		return
+	fi
+	say "pulling the images pinned in .env (this version takes no backup first)"
 	dc pull --quiet --ignore-pull-failures
 	# The dashboard entrypoint migrates on start (migrate --force --isolated).
 	dc up -d --wait --wait-timeout 600 --remove-orphans
 	artisan migrate --force --no-interaction
 	say "updated. To move to a new release, run the installer again with --dir $DIR."
+}
+
+# doctor preflight: what has to work before launchroomd's doctor can run.
+# Then the checks themselves (`launchroomd doctor`, docs/11 §2.3).
+cmd_doctor() {
+	command -v docker >/dev/null 2>&1 || die "the docker command isn't installed here. launchroom runs on Docker; install it (docs.docker.com/engine/install) and run this again."
+	if ! docker info >/dev/null 2>&1; then
+		die "Docker isn't running, or this user may not use it. Start it with: sudo systemctl start docker. Then run ./launchroom doctor again (as root or a member of the docker group)."
+	fi
+	[ -r "$DIR/.env" ] || die "can't read $DIR/.env. Run this as the user that installed launchroom, or with sudo."
+	free_kb="$(df -Pk "$DIR" 2>/dev/null | awk 'NR == 2 { print $4 }')"
+	used_pct="$(df -Pk "$DIR" 2>/dev/null | awk 'NR == 2 { sub("%", "", $5); print $5 }')"
+	case "$free_kb$used_pct" in
+	"" | *[!0-9]*) ;;
+	*)
+		if [ "$free_kb" -lt 1048576 ] || [ "$used_pct" -ge 98 ]; then
+			say "the disk is almost full: $((free_kb / 1024)) MB free. The largest folders here:"
+			du -sk "$DIR"/data/* 2>/dev/null | sort -rn | head -n 5 | awk '{ printf "    %6d MB  %s\n", $1 / 1024, $2 }'
+			say "./launchroom doctor --fix free-disk removes launchroom's own leftovers."
+		fi
+		;;
+	esac
+	host_tool doctor --dir "$DIR" "$@"
+}
+
+# reset-password: a one-time link to set a new password (docs/11 §2.3);
+# the link is the only secret printed, and no password goes through argv.
+cmd_reset_password() {
+	[ $# -eq 1 ] || die "usage: ./launchroom reset-password EMAIL"
+	has_command launchroom:users:sign-in-link </dev/null || die "this version can't create sign-in links yet. Update launchroom, then run this again."
+	artisan launchroom:users:sign-in-link "$1" </dev/null
 }
 
 # Delegates to the dashboard's backup/restore commands (docs/14) when this
@@ -200,7 +277,7 @@ swap_note() {
 }
 
 main() {
-	[ $# -gt 0 ] || { sed -n '3,15p' "$0" | sed 's/^# \{0,1\}//'; exit 0; }
+	[ $# -gt 0 ] || { sed -n '3,22p' "$0" | sed 's/^# \{0,1\}//'; exit 0; }
 	command="$1"
 	shift
 	case "$command" in
@@ -212,10 +289,12 @@ main() {
 	registry) cmd_registry "$@" ;;
 	setup-token) artisan launchroom:setup-token ;;
 	reset-owner-2fa) cmd_reset_owner_2fa "$@" ;;
+	reset-password) cmd_reset_password "$@" ;;
+	doctor) cmd_doctor "$@" ;;
 	dashboard-domain-reset) cmd_dashboard_domain_reset "$@" ;;
 	move-takeover) cmd_move_takeover ;;
 	uninstall) cmd_uninstall ;;
-	-h | --help | help) sed -n '3,15p' "$0" | sed 's/^# \{0,1\}//' ;;
+	-h | --help | help) sed -n '3,22p' "$0" | sed 's/^# \{0,1\}//' ;;
 	*) die "unknown command $command (see ./launchroom help)" ;;
 	esac
 }

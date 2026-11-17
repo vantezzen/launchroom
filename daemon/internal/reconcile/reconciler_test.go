@@ -291,7 +291,9 @@ func TestReconcileUnroutesBeforeStopping(t *testing.T) {
 	}
 }
 
-func TestReconcileUnhealthyNotRouted(t *testing.T) {
+// An unhealthy replica is not ready; when it is the only one, the edge
+// fails open to it because it runs (HEAL-10) instead of answering 503.
+func TestReconcileUnhealthyFailsOpen(t *testing.T) {
 	h := newHarness(t)
 	*h.probeOK = false
 	h.now = t0.Add(time.Hour) // start period long over
@@ -305,8 +307,11 @@ func TestReconcileUnhealthyNotRouted(t *testing.T) {
 	if err := h.r.Reconcile(t.Context(), ns); err != nil {
 		t.Fatal(err)
 	}
-	if routes := h.ingress.last(); len(routes[0].Dial) != 0 {
-		t.Fatalf("unhealthy workload routed: %v", routes[0].Dial)
+	if ep, ok := h.r.resolve(wlA); !ok || ep.Ready || !ep.Running {
+		t.Fatalf("endpoint %+v", ep)
+	}
+	if routes := h.ingress.last(); len(routes[0].Dial) != 1 {
+		t.Fatalf("the only (unhealthy, running) replica not routed: %v", routes[0].Dial)
 	}
 	if msg := phaseOf(h.r, wlA).Message; !strings.Contains(msg, "connection refused") {
 		t.Fatalf("message %q", msg)

@@ -16,4 +16,6 @@ enum DaemonNudge: string
     case TaskAvailable = 'task.available';
     /** A logs task was created for this server (lease now). */
     case LogsRequested = 'logs.requested';
+    /** A task this server runs was cancelled: heartbeat now to learn it. */
+    case TaskCancelled = 'task.cancelled';
 }

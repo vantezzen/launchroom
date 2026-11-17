@@ -71,3 +71,28 @@ describe('applyLaunchroomConfig', () => {
     assert.deepEqual(applyLaunchroomConfig({}, build, { LAUNCHROOM_NEXT_CACHE: 'local' }).warnings, []);
   });
 });
+
+describe('modifyConfig without a context (Next 15.4 and 15.5)', () => {
+  it('treats the call as a production build in the working directory', async () => {
+    const { createAdapter, contextFromProcess } = await import('../dist/index.js');
+    const lines: string[] = [];
+    const adapter = createAdapter({ env: { LAUNCHROOM_DEPLOYMENT_ID: 'dpl_15' }, log: (m) => lines.push(m) });
+    const modify = adapter.modifyConfig!;
+    const config = await modify({});
+    assert.equal(config.output, 'standalone');
+    assert.equal(config.deploymentId, 'dpl_15');
+    await modify({});
+    assert.equal(lines.filter((l) => l.includes("output: 'standalone'")).length, 1, 'logged once per build');
+
+    assert.deepEqual(contextFromProcess({}, '/app'), { phase: 'phase-production-build', nextVersion: '', projectDir: '/app' });
+    assert.equal(contextFromProcess({ NEXT_PHASE: 'phase-development-server' }, '/app').phase, 'phase-development-server');
+  });
+
+  it('leaves next dev alone when NEXT_PHASE says so', async () => {
+    const { createAdapter } = await import('../dist/index.js');
+    const adapter = createAdapter({ env: { NEXT_PHASE: 'phase-development-server', LAUNCHROOM_DEPLOYMENT_ID: 'dpl_15' }, log: () => {} });
+    const config = await adapter.modifyConfig!({});
+    assert.equal(config.output, undefined);
+    assert.equal(config.deploymentId, undefined);
+  });
+});

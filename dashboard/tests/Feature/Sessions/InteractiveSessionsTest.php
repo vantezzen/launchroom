@@ -372,6 +372,52 @@ test('a session the server couldn’t start says why in the tab and in the log',
         && str_contains((string) $context['error'], 'no shell'));
 });
 
+test('a session that never started logs which side of the handshake was missing, with timings', function (): void {
+    Log::spy();
+    $this->freezeSecond();
+    $owner = memberOf($this->team, TeamRole::Owner);
+    $opened = Sessions::open($this, $owner, $this->instance, 'data');
+    $this->travel(2)->seconds();
+    $task = Sessions::lease($this, $this->daemon);
+    $this->travel(3)->seconds();
+    $body = ['apiVersion' => 'launchroom.vantezzen.io/v1', 'kind' => 'BroadcastAuthRequest', 'socketId' => '9.9', 'channel' => 'private-session.'.$opened['id']];
+    $this->daemon->send($this, 'POST', '/daemon/v1/broadcasting/auth', $body)->assertOk();
+    // A reconnect keeps the first join.
+    $this->travel(1)->seconds();
+    $this->daemon->send($this, 'POST', '/daemon/v1/broadcasting/auth', $body)->assertOk();
+
+    $session = InteractiveSession::query()->where('public_id', $opened['id'])->sole();
+    expect($session->server_joined_at?->diffInSeconds($session->created_at, absolute: true))->toBe(5.0);
+
+    $this->travel(25)->seconds();
+    sessionComplete($this, $task, ['endReason' => 'never_connected', 'bytesIn' => 0, 'bytesOut' => 0]);
+
+    Log::shouldHaveReceived('warning')->withArgs(static fn (string $message, array $context): bool => str_contains($message, 'before it was used')
+        && $context['session'] === $opened['id']
+        && $context['missing'] === 'browser join'
+        && $context['leasedAfterMs'] === 2000
+        && $context['serverJoinedAfterMs'] === 5000
+        && $context['browserJoinedAfterMs'] === null
+        && $context['endedAfterMs'] === 31000);
+});
+
+test('a session ended before the server took it logs the lease and the server join as missing', function (): void {
+    Log::spy();
+    $this->freezeSecond();
+    $owner = memberOf($this->team, TeamRole::Owner);
+    $opened = Sessions::open($this, $owner, $this->instance, 'data');
+    $this->travel(1)->seconds();
+    $this->actingAs($owner)->postJson('/sessions/'.$opened['id'].'/authorize', ['socket_id' => '1.2', 'ticket' => $opened['ticket']])->assertOk();
+    $this->travel(24)->seconds();
+    $this->actingAs($owner)->postJson('/sessions/'.$opened['id'].'/end')->assertSuccessful();
+
+    Log::shouldHaveReceived('warning')->withArgs(static fn (string $message, array $context): bool => str_contains($message, 'before it was used')
+        && $context['session'] === $opened['id']
+        && $context['missing'] === 'lease, server join'
+        && $context['browserJoinedAfterMs'] === 1000
+        && $context['leasedAfterMs'] === null);
+});
+
 test('the instance kill switch refuses new sessions', function (): void {
     config(['launchroom.sessions.enabled' => false]);
     $owner = memberOf($this->team, TeamRole::Owner);

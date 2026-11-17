@@ -43,6 +43,8 @@ final class ServerData extends Data
          * @var list<OpenAlertData>
          */
         public array $openAlerts = [],
+        /** Why the dashboard refuses it, when it does (fleet card "What to check"). */
+        public ?ServerNoticeData $refused = null,
     ) {}
 
     /**
@@ -64,6 +66,7 @@ final class ServerData extends Data
             ServerLocations::for($server),
             ServerSpecsData::fromServer($server),
             $openAlerts,
+            array_values(array_filter(ServerNoticeData::forServer($server), static fn (ServerNoticeData $notice): bool => $notice->key === 'rejected'))[0] ?? null,
         );
     }
 }

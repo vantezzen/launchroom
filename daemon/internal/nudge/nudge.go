@@ -269,7 +269,7 @@ func (s *sess) handle(ctx context.Context, m pusher.Message) (time.Duration, err
 	case pusher.EvPong:
 	case pusher.EvError, pusher.EvSubscriptionError:
 		return 0, fmt.Errorf("nudge: server error %s", m.ErrorText())
-	case state.NudgeStateChanged, state.NudgeTaskAvailable, state.NudgeLogsRequested:
+	case state.NudgeStateChanged, state.NudgeTaskAvailable, state.NudgeLogsRequested, state.NudgeTaskCancelled:
 		if m.Channel == string(s.channel) && s.subscribed {
 			s.o.Log.Debug("nudge received", "event", m.Event)
 			s.o.OnEvent(m.Event)

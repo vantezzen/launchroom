@@ -5,8 +5,9 @@ declare(strict_types=1);
 namespace App\Enums\Alerts;
 
 /**
- * The built-in alert rules (docs/15 §3.4). Every rule is on by default;
- * teams switch rules off and tune thresholds in Settings → Notifications
+ * The built-in alert rules (docs/15 §3.4). Rules are on by default except
+ * the opt-in ones ({@see self::enabledByDefault()}); teams switch rules on
+ * or off and tune thresholds in Settings → Notifications
  * (`alert_rule_settings`). Values are stored: never rename a case value.
  */
 enum AlertRule: string
@@ -24,6 +25,18 @@ enum AlertRule: string
     case Vulnerability = 'vulnerability';
     /** An edge serves its routes without the web firewall it was asked to run (docs/22 §6.6). */
     case WafUnavailable = 'waf_unavailable';
+    /** An edge's web server isn't serving (port taken, config refused). */
+    case IngressDown = 'ingress_down';
+    /** A domain still has no certificate, or its CA's rate limit was hit. */
+    case CertificateFailed = 'certificate_failed';
+    /** A live replica exited with an error (opt-in). */
+    case ServiceCrashed = 'service_crashed';
+    /** A cron run failed or was missed (opt-in). */
+    case CronFailed = 'cron_failed';
+    /** launchroom's own services restarted, ran out of memory or stayed unhealthy. */
+    case ControlPlaneDegraded = 'control_plane_degraded';
+    /** Background jobs wait longer than they should. */
+    case QueueBacklog = 'queue_backlog';
 
     /** Minutes a resolved alert can reopen without a new notification (flap guard). */
     public const int COOLDOWN_MINUTES = 10;
@@ -42,6 +55,12 @@ enum AlertRule: string
             self::BackupFailed => 'A backup fails',
             self::Vulnerability => 'A service needs a security update',
             self::WafUnavailable => 'The web firewall stops working on a server',
+            self::IngressDown => 'A server stops serving your domains',
+            self::CertificateFailed => 'A certificate can’t be issued',
+            self::ServiceCrashed => 'A running service crashes',
+            self::CronFailed => 'A cron job fails or doesn’t run',
+            self::ControlPlaneDegraded => 'launchroom itself has trouble',
+            self::QueueBacklog => 'Background work falls behind',
         };
     }
 
@@ -63,6 +82,12 @@ enum AlertRule: string
             self::BackupFailed => 'Database, volume and launchroom backups.',
             self::Vulnerability => 'Only for findings marked Action needed on the Security page.',
             self::WafUnavailable => 'The server keeps serving requests without the firewall for 5 minutes.',
+            self::IngressDown => 'Its web server is down for 2 minutes, for example because another program holds port 80.',
+            self::CertificateFailed => '30 minutes after the domain’s DNS is correct, or right away when the certificate authority’s limit is reached.',
+            self::ServiceCrashed => 'A replica exits with an error while it serves. At most one message an hour per service.',
+            self::CronFailed => 'A run exits with an error, or a scheduled run didn’t start.',
+            self::ControlPlaneDegraded => 'The dashboard stopped answering, or one of launchroom’s services was restarted or stayed down for 5 minutes. Goes to the main server’s team.',
+            self::QueueBacklog => 'The oldest waiting background job is older than 5 minutes. Goes to the main server’s team.',
         };
     }
 
@@ -70,17 +95,27 @@ enum AlertRule: string
     public function group(): string
     {
         return match ($this) {
-            self::DeployFailed, self::ServiceUnhealthy, self::ErrorRateHigh => 'services',
-            self::ServerOffline, self::CpuHigh, self::MemoryHigh, self::DiskFull => 'servers',
-            self::CertificateExpiring, self::BackupFailed => 'data',
+            self::DeployFailed, self::ServiceUnhealthy, self::ErrorRateHigh, self::ServiceCrashed, self::CronFailed => 'services',
+            self::ServerOffline, self::CpuHigh, self::MemoryHigh, self::DiskFull, self::IngressDown,
+            self::ControlPlaneDegraded, self::QueueBacklog => 'servers',
+            self::CertificateExpiring, self::BackupFailed, self::CertificateFailed => 'data',
             self::Vulnerability, self::WafUnavailable => 'security',
         };
+    }
+
+    /**
+     * Opt-in rules: a crash or a failed cron run can be routine for some
+     * apps, so teams turn these on themselves.
+     */
+    public function enabledByDefault(): bool
+    {
+        return ! in_array($this, [self::ServiceCrashed, self::CronFailed], true);
     }
 
     public function defaultSeverity(): AlertSeverity
     {
         return match ($this) {
-            self::DeployFailed, self::ServiceUnhealthy, self::ServerOffline, self::BackupFailed => AlertSeverity::Critical,
+            self::DeployFailed, self::ServiceUnhealthy, self::ServerOffline, self::BackupFailed, self::IngressDown => AlertSeverity::Critical,
             default => AlertSeverity::Warning,
         };
     }

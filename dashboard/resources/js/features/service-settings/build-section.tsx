@@ -19,6 +19,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { isGenerationRunning } from '@/features/dockerfile-generation/api';
 import { DockerfileGenerationSheet } from '@/features/dockerfile-generation/generation-sheet';
+import { PlanAsks } from '@/features/variables/plan-asks';
 import { cn } from '@/lib/utils';
 import services from '@/routes/projects/services';
 import { nextHeadline, PlanJsonDialog } from './detected-plan';
@@ -471,6 +472,16 @@ export function BuildSection({ context }: { context: SettingsContext }) {
                 }
             />
             {detected && <Warnings plan={detected} />}
+            {detected && (
+                <PlanAsks
+                    plan={detected}
+                    route={context.route}
+                    volumePaths={settings.volumes.map(
+                        (volume) => volume.mountPath,
+                    )}
+                    canUpdate={canUpdate}
+                />
+            )}
 
             <form onSubmit={submit} className="flex flex-col gap-8">
                 <section

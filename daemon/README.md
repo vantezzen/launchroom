@@ -88,6 +88,7 @@ launchroomd dials out to the dashboard, verifies and persists the signed NodeSta
 | `LR_DATA_TRANSFERS` | | `on` | `off`: no data imports or exports here (D55) |
 | `LR_REMOTE_ACCESS` | | `on` | `on`, `off` or a list of `ssh`, `database`, `volume` (temporary remote access, docs/09 R39) |
 | `LR_REMOTE_ACCESS_PORTS` | | `40100-40199` | `lo-hi` port range of temporary remote access (1024 or above, at most 1000 ports) |
+| `LR_WATCHDOG` | | `on` | `on`, `notify` (never restarts) or `off`: the control-plane watchdog and fallback notice (D90) |
 | `LR_PUBLIC_IP_DETECT` | | `on` | `off`: never ask IP echo services for this server's public address |
 | `LR_PUBLIC_IPS` | | | the public addresses instead of detecting them: at most one IPv4 and one IPv6, comma-separated |
 | `LR_HOST_TIMEZONE` | | | host time zone recorded by the installer; informational |

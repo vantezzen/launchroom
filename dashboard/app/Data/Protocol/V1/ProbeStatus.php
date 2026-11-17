@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace App\Data\Protocol\V1;
 
+use App\Data\Attributes\UnknownCodeAsNull;
+use App\Enums\ProbeHint;
 use App\Enums\ProbeState;
 use Spatie\LaravelData\Attributes\Validation\Max;
 use Spatie\LaravelData\Attributes\Validation\Min;
@@ -27,5 +29,11 @@ final class ProbeStatus extends Data
         /** Checks since the container started (D68). */
         #[Min(0)]
         public int|Optional $attempts = new Optional,
+        /** The start of the last failing answer (≤ 300 bytes, masked by launchroomd). */
+        #[Max(300)]
+        public string|Optional $body = new Optional,
+        /** What the last failing answer means; unknown hints read as null. */
+        #[UnknownCodeAsNull]
+        public ProbeHint|null|Optional $hint = new Optional,
     ) {}
 }

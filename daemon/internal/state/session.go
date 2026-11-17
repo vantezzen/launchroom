@@ -37,7 +37,7 @@ var (
 	reOpID        = idRegexp("op")
 	reCursor      = regexp.MustCompile(`^[0-9]{1,20}$`)
 	reTableName   = regexp.MustCompile("^[^\\x00-\\x1f\\x7f\"`]{1,63}$")
-	sessionKinds  = []string{string(SessionConsole), string(SessionData)}
+	sessionKinds  = []string{string(SessionConsole), string(SessionData), string(SessionRecovery)}
 	shellPaths    = []string{string(ShellSh), string(ShellBash), string(ShellAsh), string(ShellZsh)}
 	endReasons    = []string{"closed", "exited", "idle", "deadline", "disconnected", "ended", "never_connected", "refused", "error"}
 	commandTypes  = []string{string(CommandEnd), string(CommandSchema), string(CommandRows), string(CommandKeys), string(CommandKey), string(CommandQuery)}
@@ -74,6 +74,13 @@ type SessionKind string
 const (
 	SessionConsole SessionKind = "console"
 	SessionData    SessionKind = "data"
+	// SessionRecovery is a console in a recovery container: launchroomd
+	// creates "lr-rec-<session>" from the workload's current spec (image,
+	// sealed env, user, working dir, networks, volumes) with an idle
+	// entrypoint instead of the app, no probe, route or restart, and removes
+	// it when the session ends (daemon feature "recoverySessions"). Volumes
+	// are read-only unless allowChanges.
+	SessionRecovery SessionKind = "recovery"
 )
 
 // ProtocolSchema implements SchemaDescriber.
@@ -257,6 +264,9 @@ type SessionSpec struct {
 	Record bool `json:"record,omitzero"`
 	// Engine is the database engine (data sessions only).
 	Engine DatabaseEngine `json:"engine,omitzero"`
+	// AllowChanges mounts the workload's volumes writable in a recovery
+	// container (recovery sessions only; audited by the dashboard).
+	AllowChanges bool `json:"allowChanges,omitzero"`
 }
 
 // TaskType implements TaskSpec.
@@ -283,8 +293,11 @@ func (s *SessionSpec) Validate() error {
 	if s.Rows != 0 && (s.Rows < 2 || s.Rows > 200) {
 		e.addf("rows", "must be between 2 and 200")
 	}
+	if s.AllowChanges && s.Kind != SessionRecovery {
+		e.addf("allowChanges", "is only valid for recovery sessions")
+	}
 	switch s.Kind {
-	case SessionConsole:
+	case SessionConsole, SessionRecovery:
 		if s.Shell != "" {
 			e.check("shell", s.Shell)
 		}

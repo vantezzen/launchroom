@@ -15,6 +15,7 @@ import {
     deploymentWord,
     firstLine,
     isInProgress,
+    probationLine,
     triggerLabel,
 } from '@/features/deployments/format';
 import { cn } from '@/lib/utils';
@@ -66,6 +67,7 @@ export function OverviewCard({
     const branch = branchName(deployment.gitRef);
     const message = firstLine(deployment.commitMessage);
     const configOnly = detail.configErrors !== null;
+    const probation = probationLine(deployment);
     const staged =
         !configOnly &&
         (pending ||
@@ -108,7 +110,22 @@ export function OverviewCard({
                                 />
                             )}
                         </span>
+                        {probation && (
+                            <span className="mt-1 block type-small text-muted-foreground">
+                                {probation}
+                            </span>
+                        )}
                     </Fact>
+                    {deployment.rollbackReason && (
+                        <Fact
+                            label="Rolled back automatically"
+                            className="col-span-2 sm:col-span-4"
+                        >
+                            <span className="block max-w-[72ch]">
+                                {deployment.rollbackReason}
+                            </span>
+                        </Fact>
+                    )}
                     {!configOnly && (
                         <>
                             <Fact label="Duration">

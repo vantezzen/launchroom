@@ -10,6 +10,7 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"slices"
 	"strconv"
 	"strings"
 	"syscall"
@@ -73,12 +74,17 @@ func (s *Supervisor) RunSupervisor(ctx context.Context, planPath string) error {
 }
 
 func (p *Plan) validate() error {
-	for name, v := range map[string]string{"projectDir": p.ProjectDir, "dataDir": p.DataDir, "bundleDir": p.BundleDir, "socketPath": p.SocketPath} {
+	paths := map[string]string{"projectDir": p.ProjectDir, "dataDir": p.DataDir, "socketPath": p.SocketPath}
+	// A manual update without a bundle only pulls the pins in .env again.
+	if !p.Manual || p.BundleDir != "" {
+		paths["bundleDir"] = p.BundleDir
+	}
+	for name, v := range paths {
 		if !filepath.IsAbs(v) || filepath.Clean(v) != v {
 			return fmt.Errorf("plan: %s %q is not a clean absolute path", name, v)
 		}
 	}
-	if !strings.HasPrefix(p.DataDir, p.ProjectDir+"/") || !strings.HasPrefix(p.BundleDir, p.DataDir+"/") {
+	if !strings.HasPrefix(p.DataDir, p.ProjectDir+"/") || (p.BundleDir != "" && !strings.HasPrefix(p.BundleDir, p.DataDir+"/")) {
 		return errors.New("plan: data and bundle directories must be inside the install folder")
 	}
 	if err := p.TaskID.Validate(); err != nil {
@@ -91,6 +97,9 @@ func (p *Plan) validate() error {
 		return err
 	}
 	if p.Scope == state.UpdateDaemon {
+		if p.Manual {
+			return errors.New("plan: manual updates are for the control plane")
+		}
 		if err := p.DaemonImage.Validate(); err != nil {
 			return err
 		}
@@ -101,7 +110,9 @@ func (p *Plan) validate() error {
 func (s *Supervisor) run(ctx context.Context, p *Plan) Status {
 	start := s.Now().Add(-time.Second)
 	backup := filepath.Join(taskDir(p.DataDir, p.TaskID), dirBackup)
-	if Guarded(p.ProjectDir) {
+	// A manual update is started by the admin on the host (./launchroom
+	// update, the installer): nothing launchroomd wrote is trusted for it.
+	if Guarded(p.ProjectDir) && !p.Manual {
 		b, err := s.prepareGuarded(ctx, p)
 		if err != nil {
 			return Status{Outcome: OutcomeFailed, Error: err.Error() + " (nothing was changed)"}
@@ -113,12 +124,28 @@ func (s *Supervisor) run(ctx context.Context, p *Plan) Status {
 		files = cpManagedFiles
 	}
 	saved, err := backupFiles(p.ProjectDir, backup, files)
+	if err == nil {
+		// The list (with owners and modes) lets `launchroomd update-rollback`
+		// finish a rollback that failed half-way.
+		err = writeJSON(filepath.Join(backup, fileSaved), saved)
+	}
 	if err != nil {
 		return Status{Outcome: OutcomeFailed, Error: "backing up the install folder: " + err.Error()}
 	}
+	dumped := false
 	if p.Scope == state.UpdateControlPlane {
+		if err := s.checkDumpSpace(ctx, p); err != nil {
+			return Status{Outcome: OutcomeFailed, Error: err.Error() + " (nothing was changed)"}
+		}
 		s.Log.Info("dumping the control-plane database")
-		if err := s.compose(ctx, p, 15*time.Minute, "exec", "-T", "postgres", "pg_dump", "-U", "launchroom", "-d", "launchroom", "-Fc", "-f", pgDump); err != nil {
+		switch err := s.compose(ctx, p, 15*time.Minute, "exec", "-T", "postgres", "pg_dump", "-U", "launchroom", "-d", "launchroom", "-Fc", "-f", pgDump); {
+		case err == nil:
+			dumped = true
+		case p.Manual:
+			// The installer is also the repair path: a broken database must
+			// not stop it. Files still roll back.
+			s.Log.Warn("could not copy the database first; a rollback restores only the files", "err", err)
+		default:
 			return Status{Outcome: OutcomeFailed, Error: "database dump before the update failed (nothing was changed): " + err.Error()}
 		}
 	}
@@ -126,52 +153,90 @@ func (s *Supervisor) run(ctx context.Context, p *Plan) Status {
 	s.Log.Info("running the new release's installer", "to", p.To)
 	failure := s.install(ctx, p)
 	if failure == nil {
-		s.Log.Info("waiting for the new launchroomd", "version", p.To)
-		failure = s.waitRunning(ctx, p, p.To, start)
+		s.Log.Info("waiting for launchroomd", "version", p.To)
+		if p.Manual {
+			failure = s.waitManual(ctx, p, start)
+		} else {
+			failure = s.waitRunning(ctx, p, p.To, start)
+		}
 	}
 	if failure == nil {
-		if p.Scope == state.UpdateControlPlane {
+		if dumped {
 			_ = s.compose(context.WithoutCancel(ctx), p, time.Minute, "exec", "-T", "postgres", "rm", "-f", pgDump)
 		}
 		return Status{Outcome: OutcomeSucceeded}
 	}
 
-	// Roll back: previous files, previous database, compose up, old version healthy.
 	s.Log.Error("update failed; rolling back", "err", failure)
 	rctx := context.WithoutCancel(ctx)
+	diag := s.saveDiagnostics(rctx, p)
+	st := s.rollback(rctx, p, backup, saved, dumped, start, failure)
+	st.MigrationFailed = diag.MigrationFailed
+	return st
+}
+
+// rollback brings the previous version back: files, database (when it was
+// dumped), compose up, the previous launchroomd healthy. A failing step
+// leaves everything it needs in place for `launchroomd update-rollback`.
+func (s *Supervisor) rollback(ctx context.Context, p *Plan, backup string, saved []savedFile, dumped bool, updateStart time.Time, failure error) Status {
 	rollbackStart := s.Now().Add(-time.Second)
-	if err := restoreFiles(p.ProjectDir, backup, saved); err != nil {
-		return Status{Outcome: OutcomeFailed, Error: fmt.Sprintf("%v; ROLLBACK FAILED restoring files: %v", failure, err)}
+	broken := func(step string, err error) Status {
+		return Status{Outcome: OutcomeFailed, RollbackFailed: true,
+			Error: fmt.Sprintf("%v; ROLLBACK FAILED %s: %v. %s", failure, step, err, finishHint(p.Scope))}
 	}
-	if p.Scope == state.UpdateControlPlane {
-		if err := s.restoreDatabase(rctx, p); err != nil {
-			return Status{Outcome: OutcomeFailed, Error: fmt.Sprintf("%v; ROLLBACK FAILED restoring the database (the dump is kept in data/postgres): %v", failure, err)}
+	if err := restoreFiles(p.ProjectDir, backup, saved); err != nil {
+		return broken("restoring files", err)
+	}
+	if dumped {
+		if err := s.restoreDatabase(ctx, p); err != nil {
+			return broken("restoring the database (the dump is kept in data/postgres)", err)
 		}
 	}
 	up := []string{"up", "-d", "--remove-orphans"}
 	if p.Scope == state.UpdateControlPlane {
 		up = append(up, "--wait", "--wait-timeout", "600")
 	}
-	if err := s.compose(rctx, p, 20*time.Minute, up...); err != nil {
-		return Status{Outcome: OutcomeFailed, Error: fmt.Sprintf("%v; ROLLBACK FAILED starting the previous version: %v", failure, err)}
+	if err := s.compose(ctx, p, 20*time.Minute, up...); err != nil {
+		return broken("starting the previous version", err)
 	}
-	if err := s.waitRolledBack(rctx, p, start, rollbackStart); err != nil {
+	var err error
+	if p.Manual {
+		err = s.waitManual(ctx, p, rollbackStart)
+	} else {
+		err = s.waitRolledBack(ctx, p, updateStart, rollbackStart)
+	}
+	if err != nil {
 		return Status{Outcome: OutcomeFailed, Error: fmt.Sprintf("%v; rolled back, but launchroomd %s did not report back: %v", failure, p.From, err)}
 	}
-	if p.Scope == state.UpdateControlPlane {
-		_ = s.compose(rctx, p, time.Minute, "exec", "-T", "postgres", "rm", "-f", pgDump)
+	if dumped {
+		_ = s.compose(ctx, p, time.Minute, "exec", "-T", "postgres", "rm", "-f", pgDump)
 	}
 	// Error keeps the English sentence for dashboards that predate
 	// SelfUpdateResult.reason; newer ones word the rollback from the result.
 	return Status{Outcome: OutcomeRolledBack, Error: fmt.Sprintf("rolled back to %s: %v", p.From, failure), Reason: failure.Error()}
 }
 
+// finishHint is the command that finishes a failed rollback by hand.
+func finishHint(scope state.UpdateScope) string {
+	if scope == state.UpdateControlPlane {
+		return "On the server, run ./launchroom doctor to finish it."
+	}
+	return "On the server, run docker compose run --rm launchroomd doctor in launchroomd's folder to finish it."
+}
+
 // install runs the bundle's installer (the documented upgrade path) in the
 // compose helper container.
 func (s *Supervisor) install(ctx context.Context, p *Plan) error {
 	var cmd, env []string
-	switch p.Scope {
-	case state.UpdateControlPlane:
+	switch {
+	case p.Manual && p.BundleDir == "":
+		return s.repull(ctx, p)
+	case p.Manual:
+		cmd = append([]string{"sh", filepath.Join(p.BundleDir, "install", "install.sh"), "--bundle", p.BundleDir, "--dir", p.ProjectDir, "--skip-port-check"}, p.InstallArgs...)
+		// The installer on the host already prepared it and checked the
+		// bundle; LR_INSTALL_SUPERVISED keeps it from handing over again.
+		env = append(slices.Clone(p.InstallEnv), "LR_INSTALL_SUPERVISED=1")
+	case p.Scope == state.UpdateControlPlane:
 		cmd = []string{"sh", filepath.Join(p.BundleDir, "install", "install.sh"), "--bundle", p.BundleDir, "--dir", p.ProjectDir, "--skip-port-check", "--no-public-ip-detect"}
 	default:
 		dotenv, err := readDotEnv(filepath.Join(p.ProjectDir, ".env"))
@@ -189,6 +254,20 @@ func (s *Supervisor) install(ctx context.Context, p *Plan) error {
 	}
 	env = append(env, "LR_BUNDLE_VERIFIED=1")
 	return s.helperRun(ctx, p, "install", cmd, env, time.Duration(p.InstallTimeout))
+}
+
+// repull is `./launchroom update`: the images pinned in .env again, the
+// stack brought up to date (the dashboard migrates on start), then the
+// migrations once more for a dashboard container compose kept.
+func (s *Supervisor) repull(ctx context.Context, p *Plan) error {
+	timeout := time.Duration(p.InstallTimeout)
+	if err := s.compose(ctx, p, timeout, "pull", "--quiet", "--ignore-pull-failures"); err != nil {
+		return err
+	}
+	if err := s.compose(ctx, p, timeout, "up", "-d", "--wait", "--wait-timeout", "600", "--remove-orphans"); err != nil {
+		return err
+	}
+	return s.compose(ctx, p, 15*time.Minute, "exec", "-T", "dashboard", "php", "artisan", "migrate", "--force", "--no-interaction")
 }
 
 func (s *Supervisor) restoreDatabase(ctx context.Context, p *Plan) error {
@@ -227,16 +306,7 @@ func (s *Supervisor) helperRun(ctx context.Context, p *Plan, step string, cmd, e
 	if timeout <= 0 {
 		timeout = 30 * time.Minute
 	}
-	user, groups := ownerOf(p.ProjectDir), socketGroup(dockerSocket)
-	h := helper{
-		Name: names.UpdaterStep(p.TaskID, step), Image: string(p.ComposeImage),
-		Entrypoint: []string{}, Cmd: cmd, WorkingDir: p.ProjectDir, User: user, GroupAdd: groups, TaskID: string(p.TaskID),
-		// Plain compose output: the helper has a TTY (raw log stream), which
-		// would otherwise get progress bars and colour codes into logs and
-		// error messages.
-		Env:       append([]string{"HOME=/tmp", "DOCKER_CONFIG=/tmp/.docker", "COMPOSE_PROGRESS=plain", "COMPOSE_ANSI=never", "NO_COLOR=1"}, env...),
-		SameBinds: []string{p.ProjectDir}, SocketPath: p.SocketPath,
-	}
+	h := s.helperFor(p, step, cmd, env)
 	code, logs, err := h.run(ctx, s.API, timeout)
 	if logs != "" {
 		s.Log.Info("helper output", "step", step, "output", logs)
@@ -252,6 +322,19 @@ func (s *Supervisor) helperRun(ctx context.Context, p *Plan, step string, cmd, e
 		return fmt.Errorf("%s exited with %d: %s", what, code, lastLines(logs, 4))
 	}
 	return nil
+}
+
+func (s *Supervisor) helperFor(p *Plan, step string, cmd, env []string) helper {
+	user, groups := ownerOf(p.ProjectDir), socketGroup(dockerSocket)
+	return helper{
+		Name: names.UpdaterStep(p.TaskID, step), Image: string(p.ComposeImage),
+		Entrypoint: []string{}, Cmd: cmd, WorkingDir: p.ProjectDir, User: user, GroupAdd: groups, TaskID: string(p.TaskID),
+		// Plain compose output: the helper has a TTY (raw log stream), which
+		// would otherwise get progress bars and colour codes into logs and
+		// error messages.
+		Env:       append([]string{"HOME=/tmp", "DOCKER_CONFIG=/tmp/.docker", "COMPOSE_PROGRESS=plain", "COMPOSE_ANSI=never", "NO_COLOR=1"}, env...),
+		SameBinds: []string{p.ProjectDir}, SocketPath: p.SocketPath,
+	}
 }
 
 // waitRunning waits until a launchroomd of version reports itself running

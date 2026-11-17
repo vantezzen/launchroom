@@ -63,6 +63,12 @@ final class ServiceDraft
     /** @var list<string> */
     public array $capabilities = [];
 
+    /** Compose `stop_grace_period` in seconds (1 to 300). */
+    public ?int $stopTimeoutSeconds = null;
+
+    /** Compose `stop_signal` when it isn't SIGTERM (SIGINT). */
+    public ?string $stopSignal = null;
+
     /** @var list<string> */
     public array $volumes = [];
 
@@ -165,6 +171,8 @@ final class ServiceDraft
                 $this->provides,
             ) : [],
             backupConsistency: $this->kind->ownsVolumes() && $this->volumes !== [] ? $this->backupConsistency : null,
+            stopTimeoutSeconds: $this->kind === ServiceKind::Database ? null : $this->stopTimeoutSeconds,
+            stopSignal: $this->kind === ServiceKind::Database ? null : $this->stopSignal,
         );
     }
 

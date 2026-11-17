@@ -1,5 +1,6 @@
 import Pusher from 'pusher-js';
 import type { Channel } from 'pusher-js';
+import { RequestFailed } from '@/lib/http';
 import { authorizeChannel } from './api';
 import {
     base64UrlDecode,
@@ -9,6 +10,13 @@ import {
     utf8,
 } from './frames';
 import type { IncomingPayload, OutgoingPayload } from './frames';
+import {
+    AUTHORIZE_TIMEOUT_MS,
+    initialProgress,
+    JOIN_TIMEOUT_MS,
+    joinFailure,
+} from './join-progress';
+import type { JoinProgress } from './join-progress';
 
 type Realtime = App.Data.Instance.RealtimeConfigData | null | undefined;
 
@@ -25,6 +33,12 @@ type SessionEvents = {
      * couldn't start), or the connection is gone.
      */
     onEnd?: (reason: string, message?: string) => void;
+    /**
+     * The browser couldn't join the live connection (unreachable, not
+     * authorized, or not confirmed in time). The session never started;
+     * the message names the step that didn't finish.
+     */
+    onJoinFailed?: (message: string) => void;
 };
 
 /** The dashboard's signed `session.end` server event (docs/03 §11.3). */
@@ -96,6 +110,8 @@ export class SessionClient {
     private sending: Promise<unknown> = Promise.resolve();
     private receiving: Promise<unknown> = Promise.resolve();
     private ping: number | null = null;
+    private joinTimer: number | null = null;
+    private joined: JoinProgress = initialProgress();
     private greeted = false;
     private closed = false;
     private parts = new Map<
@@ -109,6 +125,11 @@ export class SessionClient {
         private readonly hello: () => OutgoingPayload,
     ) {}
 
+    /** How far the live connection got (for a failure message). */
+    progress(): JoinProgress {
+        return { ...this.joined };
+    }
+
     async connect(realtime: Realtime): Promise<void> {
         this.codec = await FrameCodec.create(this.opened.key, this.opened.id);
         let authorized = false;
@@ -121,13 +142,7 @@ export class SessionClient {
 
             authorized = true;
 
-            return (
-                await authorizeChannel(
-                    this.opened.id,
-                    socketId,
-                    this.opened.ticket,
-                )
-            ).auth;
+            return this.authorize(socketId);
         });
 
         if (!this.pusher) {
@@ -139,27 +154,65 @@ export class SessionClient {
         this.pusher.connection.bind(
             'state_change',
             (states: { current: string }) => {
+                if (states.current === 'connected') {
+                    this.joined.socket = 'connected';
+                }
+
                 // Unreachable before joining is a failure too, not a wait:
                 // the tab would otherwise say "Connecting…" forever.
                 if (['unavailable', 'failed'].includes(states.current)) {
-                    this.finish(
-                        authorized
-                            ? 'The live connection was lost.'
-                            : 'The browser couldn’t reach the live connection (Reverb).',
-                    );
+                    if (this.joined.subscribed) {
+                        this.finish('The live connection was lost.');
+                    } else {
+                        if (this.joined.socket !== 'connected') {
+                            this.joined.socket = 'unreachable';
+                        }
+
+                        this.joinFailed();
+                    }
                 } else if (authorized && states.current === 'disconnected') {
-                    this.finish('The live connection was lost.');
+                    if (this.joined.subscribed) {
+                        this.finish('The live connection was lost.');
+                    } else {
+                        this.joinFailed();
+                    }
                 }
             },
         );
 
+        // The browser's own join gets a deadline: an authorization or a
+        // subscription that never completes would otherwise look like a
+        // server that never answered.
+        this.joinTimer = window.setTimeout(() => {
+            this.joinTimer = null;
+
+            if (!this.joined.subscribed) {
+                this.joinFailed();
+            }
+        }, JOIN_TIMEOUT_MS);
+
         this.channel = this.pusher.subscribe(`private-${this.opened.channel}`);
+        this.channel.bind('pusher:subscription_succeeded', () => {
+            this.joined.subscribed = true;
+            this.clearJoinTimer();
+        });
         this.channel.bind(
             'pusher:subscription_error',
-            (error: { error?: unknown; status?: unknown } | undefined) =>
-                this.finish(
-                    `Couldn’t join the session${typeof error?.status === 'number' ? ` (HTTP ${error.status})` : ''}. Open a new one.`,
-                ),
+            (error: { status?: unknown } | undefined) => {
+                // A refused authorization; after a granted one, the live
+                // connection itself refused, which the message reports as
+                // "didn't confirm".
+                if (
+                    this.joined.auth === 'pending' ||
+                    this.joined.auth === 'waiting'
+                ) {
+                    this.joined.auth = 'failed';
+                    this.joined.authStatus =
+                        typeof error?.status === 'number' ? error.status : null;
+                }
+
+                this.joinFailed();
+            },
         );
         // The dashboard ended it (replaced, never picked up, ended by an admin).
         this.channel.bind(SERVER_END_EVENT, (data: unknown) =>
@@ -205,6 +258,40 @@ export class SessionClient {
         this.closed = true;
     }
 
+    /**
+     * The channel authorization for this socket, given up after
+     * AUTHORIZE_TIMEOUT_MS (the request has no deadline of its own).
+     */
+    private async authorize(socketId: string): Promise<string> {
+        const controller = new AbortController();
+        let timedOut = false;
+        const timer = window.setTimeout(() => {
+            timedOut = true;
+            controller.abort();
+        }, AUTHORIZE_TIMEOUT_MS);
+        this.joined.auth = 'pending';
+
+        try {
+            const { auth } = await authorizeChannel(
+                this.opened.id,
+                socketId,
+                this.opened.ticket,
+                controller.signal,
+            );
+            this.joined.auth = 'ok';
+
+            return auth;
+        } catch (error) {
+            this.joined.auth = timedOut ? 'timeout' : 'failed';
+            this.joined.authStatus =
+                error instanceof RequestFailed ? error.status : null;
+
+            throw error;
+        } finally {
+            window.clearTimeout(timer);
+        }
+    }
+
     private async receive(data: unknown): Promise<void> {
         const payload = await this.codec?.open(data);
 
@@ -218,6 +305,8 @@ export class SessionClient {
     private handle(payload: IncomingPayload): void {
         switch (payload.t) {
             case 'ready':
+                this.joined.serverJoined = true;
+
                 if (!this.greeted) {
                     this.greeted = true;
                     this.send(this.hello());
@@ -316,7 +405,37 @@ export class SessionClient {
         this.events.onEnd?.(reason, message || undefined);
     }
 
+    /** The browser couldn't join: ends here, before the session started. */
+    private joinFailed(): void {
+        if (this.closed) {
+            return;
+        }
+
+        const message = joinFailure(
+            this.joined,
+            this.opened.replica.serverName,
+            Math.round(JOIN_TIMEOUT_MS / 1000),
+        );
+        this.closed = true;
+        this.teardown();
+
+        if (this.events.onJoinFailed) {
+            this.events.onJoinFailed(message);
+        } else {
+            this.events.onEnd?.('failed', message);
+        }
+    }
+
+    private clearJoinTimer(): void {
+        if (this.joinTimer !== null) {
+            window.clearTimeout(this.joinTimer);
+            this.joinTimer = null;
+        }
+    }
+
     private teardown(): void {
+        this.clearJoinTimer();
+
         if (this.ping !== null) {
             window.clearInterval(this.ping);
             this.ping = null;

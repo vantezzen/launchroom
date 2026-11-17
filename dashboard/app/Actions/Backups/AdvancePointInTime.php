@@ -26,7 +26,8 @@ use Throwable;
 /**
  * Point-in-time recovery on the backup tick (docs/14 §10):
  *
- * - base backups: on the archive's cron, and right away when the window has
+ * - base backups: on the archive's cron (a slot missed while the scheduler
+ *   was down runs once on the next tick, CatchUp), and right away when the window has
  *   no start yet (just turned on, or after an in-place restore started a
  *   new timeline) once launchroomd reports the archive active;
  * - retention, once a day: base backups and WAL older than the window plus
@@ -88,7 +89,7 @@ final readonly class AdvancePointInTime
             return false;
         }
 
-        if ($archive->baseBackupDue($minute)) {
+        if ($archive->owedBaseBackup($now) instanceof CarbonImmutable) {
             return true;
         }
 

@@ -51,6 +51,16 @@ const (
 // from the engine limit, so ctl:requestBodyLimit can only lower it: the
 // engine allows the largest setting (1 MiB), rule 10002 lowers every
 // request to 32 KiB and a route's own rule raises it again.
+// Allowed request content types are CRS's default list (rule 901162 of CRS
+// 4.25, which only sets it when unset) plus text/plain and the browser
+// report types: browsers send text/plain from navigator.sendBeacon and
+// Next.js server actions called from client code, and CSP and Reporting API
+// reports as application/csp-report and application/reports+json, which
+// CRS refuses in Block by default (rule 920420). Reports are JSON and are
+// parsed as such (rule 10001); a server action's body is the JSON-encoded
+// argument list, so a request carrying a Next-Action id is parsed as JSON
+// too and its values are inspected like any JSON API's (rule 10003). Other
+// text/plain bodies get Coraza's default (form-encoded) parsing.
 // CRS's cost grows with the inspected fields and bytes, so the limit bounds
 // the CPU one request can cost the shared edge. Multipart file contents go
 // to a temporary file no rule reads: only field names, file names, sizes
@@ -72,8 +82,10 @@ SecAuditLogFormat json
 SecAuditLogType https
 SecAuditLog %s
 SecRule REQUEST_HEADERS:Content-Type "^(?:application(?:/soap\+|/)|text/)xml" "id:10000,phase:1,t:none,t:lowercase,pass,nolog,ctl:requestBodyProcessor=XML"
-SecRule REQUEST_HEADERS:Content-Type "^application/json" "id:10001,phase:1,t:none,t:lowercase,pass,nolog,ctl:requestBodyProcessor=JSON"
+SecRule REQUEST_HEADERS:Content-Type "^application/(?:json|csp-report|reports\+json)" "id:10001,phase:1,t:none,t:lowercase,pass,nolog,ctl:requestBodyProcessor=JSON"
 SecAction "id:10002,phase:1,pass,nolog,ctl:requestBodyLimit=32768"
+SecRule REQUEST_HEADERS:Next-Action "@rx ^[0-9a-f]{40,64}$" "id:10003,phase:1,t:none,t:lowercase,pass,nolog,ctl:requestBodyProcessor=JSON"
+SecAction "id:10004,phase:1,pass,nolog,setvar:'tx.allowed_request_content_type=|application/x-www-form-urlencoded| |multipart/form-data| |text/xml| |application/xml| |application/soap+xml| |application/json| |text/plain| |application/csp-report| |application/reports+json|'"
 Include @crs-setup.conf.example
 `
 
@@ -81,8 +93,9 @@ Include @crs-setup.conf.example
 const wafTail = "Include @owasp_crs/*.conf\n"
 
 // wafFirstRouteRule is the first id of the per-route rules (10000 and
-// 10001 are the body processors, 10002 the default body limit).
-const wafFirstRouteRule = 10003
+// 10001 are the body processors, 10002 the default body limit, 10003 the
+// server action body processor, 10004 the allowed content types).
+const wafFirstRouteRule = 10005
 
 // WafRoutes returns the routes that get the firewall: those asking for it,
 // except routes with clientAuth, the dashboard's system route (all upstreams

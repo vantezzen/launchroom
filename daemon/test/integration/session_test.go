@@ -452,6 +452,49 @@ func TestInteractiveSessions(t *testing.T) {
 		}
 	})
 
+	// Closing the console while the shell still runs hangs it up: Docker
+	// keeps an exec running after its stream closes, so without the hang-up
+	// every console would leave a shell behind in the container.
+	t.Run("closing a console ends its shell", func(t *testing.T) {
+		wl := s.start(ctx, t, busyboxImage, nil, []string{"sleep", "3600"})
+		sid := state.SessionID(randomID("ses"))
+		spec := &state.SessionSpec{Session: sid, Kind: state.SessionConsole, Workload: wl, Shell: state.ShellSh, Cols: 80, Rows: 24}
+		key, done, errc := s.runSession(ctx, t, spec, nil, nil)
+		b := dialBrowser(ctx, t, s.relay, key, sid)
+		b.await(session.TReady, nil)
+		b.send(ctx, session.Payload{T: session.THello, Cols: 80, Rows: 24})
+		b.await(session.TStarted, nil)
+		shells := func() int {
+			top, err := api.ContainerTop(ctx, names.WorkloadContainer(wl), client.ContainerTopOptions{})
+			if err != nil {
+				t.Fatal(err)
+			}
+			n := 0
+			for _, p := range top.Processes {
+				if strings.HasSuffix(p[len(p)-1], "sh") {
+					n++
+				}
+			}
+			return n
+		}
+		deadline := time.Now().Add(10 * time.Second)
+		for shells() != 1 {
+			if time.Now().After(deadline) {
+				top, _ := api.ContainerTop(ctx, names.WorkloadContainer(wl), client.ContainerTopOptions{})
+				t.Fatalf("the console's shell is not running: %v", top.Processes)
+			}
+			time.Sleep(100 * time.Millisecond)
+		}
+		b.send(ctx, session.Payload{T: session.TBye})
+		<-done
+		if err := <-errc; err != nil {
+			t.Fatal(err)
+		}
+		if n := shells(); n != 0 {
+			t.Fatalf("%d shell(s) still run after the console closed", n)
+		}
+	})
+
 	// An image without bash, running as a non-root user (Umami: node:alpine
 	// as "nextjs"): Automatic falls back to ash/sh, as that user.
 	t.Run("console without bash as a non-root user", func(t *testing.T) {
@@ -558,6 +601,10 @@ func TestInteractiveSessions(t *testing.T) {
 		r = command(state.SessionCommand{Command: state.CommandSchema})
 		if !strings.Contains(fmt.Sprint(r["schema"]), "notes") {
 			t.Fatalf("schema: %v", r)
+		}
+		// A fresh table is never analyzed (reltuples -1): the count is exact.
+		if notes := fmt.Sprint(r["schema"].(map[string]any)["groups"].([]any)[0].(map[string]any)["items"]); !strings.Contains(notes, "name:notes rows:2]") {
+			t.Fatalf("notes count: %v", notes)
 		}
 		r = command(state.SessionCommand{Command: state.CommandQuery, Statement: "SELECT generate_series(1, 2000) AS n"})
 		if r["truncated"] != true || len(r["rows"].([]any)) != session.MaxRows {

@@ -25,6 +25,7 @@ const (
 	opContainerInspect
 	opContainerStart
 	opContainerStop
+	opContainerRestart
 	opContainerPause
 	opContainerUnpause
 	opContainerWait
@@ -162,6 +163,8 @@ var routes = []route{
 	{http.MethodPost, "/containers/:id/start", opContainerStart, nil},
 	// D42: stop timeouts are bounded like WorkloadSpec.stop (≤ 5 min).
 	{http.MethodPost, "/containers/:id/stop", opContainerStop, map[string]qrule{"t": qInt(-1, 300)}},
+	// Restart: control-plane containers only (the watchdog, D49 addendum).
+	{http.MethodPost, "/containers/:id/restart", opContainerRestart, map[string]qrule{"t": qInt(0, 300)}},
 	{http.MethodPost, "/containers/:id/pause", opContainerPause, nil},
 	{http.MethodPost, "/containers/:id/unpause", opContainerUnpause, nil},
 	{http.MethodPost, "/containers/:id/wait", opContainerWait, map[string]qrule{"condition": qEnum("not-running", "next-exit", "removed")}},

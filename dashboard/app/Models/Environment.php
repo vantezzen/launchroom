@@ -39,7 +39,7 @@ use Illuminate\Support\Str;
  * @property bool $auto_deploy_paused
  * @property int|null $last_applied_revision_id
  * @property string $network_subnet
- * @property int|null $runtime_log_retention_days runtime log retention (opt-in): null = off
+ * @property int|null $runtime_log_retention_days runtime log retention: null = off (production starts with 1 day, OD4)
  * @property int|null $runtime_log_max_mb size cap of the retained runtime logs
  * @property Carbon|null $created_at
  * @property Carbon|null $updated_at
@@ -58,9 +58,26 @@ final class Environment extends Model
         'secrets_withheld' => false,
     ];
 
+    /** Runtime log retention a new production environment starts with (D41 amendment, OD4). */
+    public const int PRODUCTION_LOG_DAYS = 1;
+
+    public const int PRODUCTION_LOG_MAX_MB = 256;
+
     public static function publicIdPrefix(): string
     {
         return 'env';
+    }
+
+    protected static function booted(): void
+    {
+        // Production keeps its runtime logs by default, so the output of a
+        // crashed and replaced container is still there (OD4).
+        self::creating(static function (Environment $environment): void {
+            if ($environment->kind === EnvironmentKind::Production && ! $environment->isDirty('runtime_log_retention_days')) {
+                $environment->runtime_log_retention_days = self::PRODUCTION_LOG_DAYS;
+                $environment->runtime_log_max_mb = self::PRODUCTION_LOG_MAX_MB;
+            }
+        });
     }
 
     /**

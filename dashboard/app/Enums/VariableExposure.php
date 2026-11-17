@@ -28,9 +28,13 @@ enum VariableExposure: string
     public const array BUILD_TOOLING_KEYS = [
         'SENTRY_AUTH_TOKEN', 'SENTRY_ORG', 'SENTRY_PROJECT',
         'NODE_OPTIONS', 'NPM_TOKEN', 'COMPOSER_AUTH', 'PIP_INDEX_URL', 'UV_INDEX_URL',
-        // launchroom-generated build keys (docs/04 §3, Next.js preset).
+        // Next.js encrypts server action closures with it at build time;
+        // launchroom generates it once per service (GenerateDeclaredSecrets, OD5).
+        // AUTH_SECRET/NEXTAUTH_SECRET are runtime-only (OD5): launchroom
+        // generates them per environment, and in the build key they would
+        // make every environment build its own image. An app that reads one
+        // while building gets the "available at build time" fix.
         'NEXT_SERVER_ACTIONS_ENCRYPTION_KEY',
-        'AUTH_SECRET', 'NEXTAUTH_SECRET',
     ];
 
     public const array BUILD_TOOLING_PREFIXES = ['NPM_CONFIG_', 'BUNDLE_'];

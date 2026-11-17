@@ -8,7 +8,9 @@ use App\Actions\Audit\RecordAuditEvent;
 use App\Data\Audit\AuditActor;
 use App\Data\Audit\AuditEntryData;
 use App\Enums\AuditAction;
+use App\Events\NodeStateInvalidated;
 use App\Models\Alerts\AlertChannel;
+use App\Services\Alerts\FallbackWatchdog;
 use Illuminate\Support\Facades\DB;
 
 /**
@@ -18,6 +20,7 @@ final readonly class DeleteAlertChannel
 {
     public function __construct(
         private RecordAuditEvent $audit,
+        private FallbackWatchdog $watchdog,
     ) {}
 
     public function handle(AlertChannel $channel, AuditActor $actor): void
@@ -34,5 +37,10 @@ final readonly class DeleteAlertChannel
 
             $channel->delete();
         });
+
+        // The fallback channel leaves the watchdog servers' desired state.
+        if ($channel->fallback) {
+            NodeStateInvalidated::servers($this->watchdog->servers());
+        }
     }
 }

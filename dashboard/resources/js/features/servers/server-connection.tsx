@@ -5,6 +5,7 @@ import type { StatusState } from '@/components/status';
 import { TimeAgo } from '@/components/time-ago';
 import { ErrorDetails } from '@/features/servers/error-details';
 import { storageDegraded } from '@/features/servers/problems';
+import { CommandText } from '@/features/servers/server-notices';
 import { runtimeTitle } from '@/features/servers/server-runtime';
 
 function Fact({ label, children }: { label: string; children: ReactNode }) {
@@ -50,7 +51,7 @@ export function EdgeTraffic({
                         <Status
                             state={routes.state}
                             label={
-                                edge.routes !== null
+                                edge.state === 'applied' && edge.routes !== null
                                     ? `${edge.routes} applied`
                                     : routes.label
                             }
@@ -72,6 +73,29 @@ export function EdgeTraffic({
                     <TimeAgo value={edge.reportedAt} />
                 </Fact>
             </dl>
+            {edge.state !== 'applied' && edge.problemTitle && (
+                <div className="flex flex-col gap-2 rounded-xl border bg-card px-4 py-3.5">
+                    <Status
+                        state={edge.state === 'pending' ? 'progress' : 'failed'}
+                        label={edge.problemTitle}
+                    />
+                    {edge.problemDetail && (
+                        <p className="type-small text-muted-foreground">
+                            <CommandText text={edge.problemDetail} />
+                        </p>
+                    )}
+                    {edge.output && (
+                        <details className="group type-small">
+                            <summary className="inline-flex w-fit cursor-pointer list-none items-center gap-1 rounded-md text-muted-foreground hover:text-foreground focus-visible:ring-2 focus-visible:ring-signal focus-visible:outline-none [&::-webkit-details-marker]:hidden">
+                                Last lines of the web server
+                            </summary>
+                            <pre className="mt-2 max-h-72 overflow-auto rounded-md border bg-recessed px-3 py-2 type-mono-small whitespace-pre-wrap text-foreground">
+                                {edge.output}
+                            </pre>
+                        </details>
+                    )}
+                </div>
+            )}
             {edge.storage === 'degraded' ? (
                 <div className="flex flex-col gap-2">
                     <p className="type-small text-muted-foreground">

@@ -221,10 +221,11 @@ wait_update() {
 }
 
 healthy() {
+	wait_healthy launchroomd in_lr
 	in_lr docker compose ps --format '{{.Service}} {{.State}} {{.Health}}' | while read -r service state health; do
 		[ "$state" = running ] || fail "$service is $state ($1)"
 		case "$service:$health" in
-		*:healthy | scheduler: | zot: | launchroomd:) ;;
+		*:healthy | scheduler: | zot:) ;;
 		*) fail "$service health is '$health' ($1)" ;;
 		esac
 	done

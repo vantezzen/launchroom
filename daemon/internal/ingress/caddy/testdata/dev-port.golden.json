@@ -260,6 +260,15 @@
                         {
                           "flush_interval": -1,
                           "handler": "reverse_proxy",
+                          "headers": {
+                            "request": {
+                              "set": {
+                                "X-Real-IP": [
+                                  "{http.vars.client_ip}"
+                                ]
+                              }
+                            }
+                          },
                           "health_checks": {
                             "passive": {
                               "fail_duration": "10s",

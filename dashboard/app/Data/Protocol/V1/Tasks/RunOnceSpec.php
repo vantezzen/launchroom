@@ -22,6 +22,7 @@ final class RunOnceSpec extends TaskSpec
      * @param  list<string>|null  $command
      * @param  list<string>|null  $args
      * @param  list<string>|null  $maskEnv
+     * @param  list<RunOnceMount>|null  $mounts  the service's volumes (release commands of a service with volumes; feature `releaseMounts`)
      */
     public function __construct(
         public string $service,
@@ -36,6 +37,7 @@ final class RunOnceSpec extends TaskSpec
         public ?array $maskEnv = null,
         public ?RunOnceProbe $probe = null,
         public ?Sealed $env = null,
+        public ?array $mounts = null,
     ) {}
 
     public function type(): DaemonTaskType
@@ -45,6 +47,9 @@ final class RunOnceSpec extends TaskSpec
 
     public function requiredFeatures(): array
     {
-        return $this->probe instanceof RunOnceProbe ? [DaemonFeature::GeneratedDockerfile] : [];
+        return array_values(array_filter([
+            $this->probe instanceof RunOnceProbe ? DaemonFeature::GeneratedDockerfile : null,
+            $this->mounts !== null ? DaemonFeature::ReleaseMounts : null,
+        ]));
     }
 }

@@ -7,6 +7,8 @@
 // `launchroomd firewall remove` deletes its nftables table (uninstall).
 // `launchroomd system-images` prints the built-in system image pins
 // (component=digest per line; the release workflow and e2e tests check them).
+// `launchroomd doctor`, `update-local`, `update-rollback` and `healthcheck`
+// are host-side tools (doctor.go).
 package main
 
 import (
@@ -47,6 +49,21 @@ func main() {
 	// helper container (internal/update, docs/11 §4).
 	if len(os.Args) >= 2 && os.Args[1] == names.SupervisorCommand {
 		os.Exit(runSupervisor(os.Args[2:]))
+	}
+	// Host-side tools (docs/11 §2.3, §4.4): the doctor, a manual update
+	// through the supervisor, finishing a failed rollback, and the compose
+	// healthcheck.
+	if len(os.Args) >= 2 {
+		switch os.Args[1] {
+		case "doctor":
+			os.Exit(runDoctor(os.Args[2:], os.Stdin, os.Stdout, os.Stderr))
+		case "update-local":
+			os.Exit(runUpdateLocal(os.Args[2:], os.Stdout, os.Stderr))
+		case "update-rollback":
+			os.Exit(runUpdateRollback(os.Args[2:], os.Stdout, os.Stderr))
+		case HealthcheckCommand:
+			os.Exit(runHealthcheck(os.Args[2:], os.Stdout))
+		}
 	}
 	cfg, err := config.FromProcess()
 	if err != nil {

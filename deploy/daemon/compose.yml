@@ -24,6 +24,9 @@ services:
     cap_drop: [ALL]
     security_opt: ["no-new-privileges:true"]
     read_only: true
+    # Last to be stopped when memory runs out (rootless Docker: 0, set by
+    # compose.rootless.yml).
+    oom_score_adj: -900
     labels:
       launchroom.managed: "true"
       launchroom.role: dockerd-guard
@@ -59,12 +62,22 @@ services:
     # Port discovery reads /proc/<pid>/net/tcp* of container processes.
     pid: host
     cap_add: [NET_ADMIN]
+    oom_score_adj: -900
     labels:
       launchroom.managed: "true"
       launchroom.role: launchroomd
     depends_on:
       dockerd-guard:
         condition: service_healthy
+    # The main loop's heartbeat is fresh (a stalled launchroomd turns
+    # unhealthy; it also exits by itself, and `restart: always` brings it
+    # back).
+    healthcheck:
+      test: ["CMD", "/usr/local/bin/launchroomd", "healthcheck"]
+      interval: 30s
+      timeout: 10s
+      start_period: 120s
+      retries: 3
     logging:
       driver: json-file
       options: { max-size: "10m", max-file: "3" }
@@ -97,15 +110,25 @@ services:
       # this server: on | ssh | database | off, and its port range.
       LR_REMOTE_ACCESS: ${LR_REMOTE_ACCESS:-on}
       LR_REMOTE_ACCESS_PORTS: ${LR_REMOTE_ACCESS_PORTS:-40100-40199}
+      # Local policy (docs/README D90): the watchdog that restarts a hung
+      # dashboard on this host and sends the fallback notice: on | notify | off.
+      LR_WATCHDOG: ${LR_WATCHDOG:-on}
       # Docker through dockerd-guard (D49).
       DOCKER_HOST: unix:///run/launchroom/docker.sock
     volumes:
       - guard-socket:/run/launchroom
       # launchroomd keys, enrollment.json, state.json, policy.yaml, caddy cache.
       - ./data:/data
+      # Empty, read-only: lives on Docker's own filesystem, so launchroomd
+      # (and `docker compose run --rm launchroomd doctor`) can measure the
+      # disk Docker writes images and volumes to.
+      - docker-fs:/run/docker-fs:ro
 
 volumes:
   # dockerd-guard's socket for launchroomd.
   guard-socket:
+    labels:
+      launchroom.managed: "true"
+  docker-fs:
     labels:
       launchroom.managed: "true"

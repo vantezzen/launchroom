@@ -76,6 +76,11 @@ type EngineInfo struct {
 	// OperatingSystem is the host OS as Docker sees it ("Ubuntu 24.04.1 LTS", "Docker Desktop").
 	OperatingSystem string
 	KernelVersion   string
+	// Name is the Docker host's name (Colima names its VM "colima").
+	Name string
+	// OSType and Architecture are the platform containers run on ("linux",
+	// "amd64"; NormalizeArch of Docker's uname value).
+	OSType, Architecture string
 }
 
 // Container is the subset of a container's inspect data the daemon uses.
@@ -109,6 +114,9 @@ type Container struct {
 	User, WorkingDir string
 	// Init: Docker runs its own init as PID 1 (HostConfig.Init; inspect only).
 	Init bool
+	// Error is Docker's error of the last start of the process (State.Error,
+	// e.g. a start command that doesn't exist; inspect only).
+	Error string
 }
 
 // ContainerState is Docker's status of a container.
@@ -169,8 +177,11 @@ type VolumeCreate struct {
 
 // LogsOptions selects container log lines.
 type LogsOptions struct {
-	Since  time.Time // zero = from the beginning
-	Tail   int       // < 0 = all lines
+	Since time.Time // zero = from the beginning
+	// Until excludes lines logged after it (zero: no bound). Docker applies
+	// Tail before Until: read enough lines to find the ones before it.
+	Until  time.Time
+	Tail   int // < 0 = all lines
 	Follow bool
 }
 

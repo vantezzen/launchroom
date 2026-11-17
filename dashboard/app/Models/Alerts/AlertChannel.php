@@ -37,6 +37,8 @@ use InvalidArgumentException;
  * @property CarbonImmutable|null $last_delivery_at
  * @property bool|null $last_delivery_ok
  * @property string|null $last_error
+ * @property bool $fallback launchroomd notifies through it while the dashboard is down (OD7; at most one per instance)
+ * @property bool $allow_private_hosts its URL may point at a private address (fallback only; set explicitly)
  * @property int|null $created_by
  * @property CarbonImmutable|null $created_at
  * @property CarbonImmutable|null $updated_at
@@ -52,6 +54,8 @@ final class AlertChannel extends Model implements SealedRow
     protected $attributes = [
         'enabled' => true,
         'min_severity' => 'warning',
+        'fallback' => false,
+        'allow_private_hosts' => false,
     ];
 
     public static function publicIdPrefix(): string
@@ -96,6 +100,8 @@ final class AlertChannel extends Model implements SealedRow
             'min_severity' => AlertSeverity::class,
             'last_delivery_at' => 'datetime',
             'last_delivery_ok' => 'boolean',
+            'fallback' => 'boolean',
+            'allow_private_hosts' => 'boolean',
         ];
     }
 

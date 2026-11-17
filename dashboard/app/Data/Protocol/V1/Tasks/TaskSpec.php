@@ -116,6 +116,8 @@ abstract class TaskSpec extends Data
             DaemonTaskType::Access => AccessSpec::class,
             DaemonTaskType::Inventory => InventorySpec::class,
             DaemonTaskType::InspectContainer => InspectContainerSpec::class,
+            DaemonTaskType::Cleanup => CleanupSpec::class,
+            DaemonTaskType::CertRetry => CertRetrySpec::class,
         };
     }
 

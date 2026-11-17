@@ -8,6 +8,7 @@ use App\Data\Attributes\PublicIdOf;
 use App\Data\Attributes\UnknownCodeAsNull;
 use App\Enums\WorkloadEventKind;
 use App\Enums\WorkloadEventReason;
+use App\Enums\WorkloadFailureCode;
 use Spatie\LaravelData\Attributes\Validation\Max;
 use Spatie\LaravelData\Attributes\Validation\Min;
 use Spatie\LaravelData\Attributes\Validation\Regex;
@@ -46,6 +47,14 @@ final class WorkloadEvent extends Data
         #[Max(1024)]
         public string|Optional $message = new Optional,
         public array|null|Optional $output = new Optional,
+        /** The signal that ended the process (exit codes above 128). */
+        #[Min(1), Max(64)]
+        public int|Optional $signal = new Optional,
+        /** launchroomd itself stopped or killed the process (137 without OOM after the stop grace). */
+        public bool|Optional $byLaunchroom = new Optional,
+        /** Why a create_failed event failed, typed at the source. */
+        #[UnknownCodeAsNull]
+        public WorkloadFailureCode|null|Optional $code = new Optional,
     ) {}
 
     /**
@@ -53,7 +62,8 @@ final class WorkloadEvent extends Data
      */
     public static function rules(): array
     {
-        return ['output' => ['nullable', 'array', 'max:30'], 'output.*.text' => ['string', 'max:2048']];
+        // At most 100 lines and 16 KiB together (launchroomd clips; Go MaxEventOutputLines/Bytes).
+        return ['output' => ['nullable', 'array', 'max:100'], 'output.*.text' => ['string', 'max:2048']];
     }
 
     /**

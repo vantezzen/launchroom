@@ -5,6 +5,7 @@ declare(strict_types=1);
 use App\Enums\ConnectionStyle;
 use App\Enums\DaemonTaskStatus;
 use App\Enums\TeamRole;
+use App\Enums\VariableType;
 use App\Models\AuditEvent;
 use App\Models\Connection;
 use App\Models\DaemonTask;
@@ -12,6 +13,8 @@ use App\Models\Deployment;
 use App\Models\Project;
 use App\Models\Service;
 use App\Models\Team;
+use App\Models\Variable;
+use App\Services\Variables\VariableStore;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Queue;
 use Tests\Support\GitHubFake;
@@ -102,10 +105,12 @@ test('plan previews work before the project exists', function (): void {
     $this->actingAs($this->developer)->getJson($url)->assertOk()
         ->assertJsonPath('status', 'ready')
         ->assertJsonPath('suggestions.processes', [['name' => 'worker', 'command' => ['node', 'worker.js']]])
-        ->assertJsonPath('suggestions.databases.0', ['engine' => 'postgres', 'reason' => 'DATABASE_URL in the code', 'apps' => ['apps/web']])
+        ->assertJsonPath('suggestions.databases.0', ['engine' => 'postgres', 'reason' => 'DATABASE_URL in the code', 'apps' => ['apps/web'], 'fallback' => false])
         ->assertJsonPath('suggestions.databases.1.engine', 'redis');
 
-    // Laravel's config references every driver: no database guesses from code.
+    // Laravel's config references every driver: no database guesses from
+    // code, only Postgres in place of its SQLite default (when the app has
+    // no database of that kind yet, OD22).
     $task->forceFill(['result' => ['plan' => ['durationMs' => 1200, 'summary' => [
         'builder' => 'railpack', 'builderReason' => 'preset', 'framework' => 'laravel',
         'processes' => [['name' => 'queue', 'args' => ['php', 'artisan', 'queue:work', '--tries=3']], ['name' => 'scheduler', 'args' => ['php', 'artisan', 'schedule:work']]],
@@ -113,7 +118,7 @@ test('plan previews work before the project exists', function (): void {
     ]]]])->save();
     $this->actingAs($this->developer)->getJson($url)->assertOk()
         ->assertJsonPath('suggestions.processes.1.name', 'scheduler')
-        ->assertJsonPath('suggestions.databases', []);
+        ->assertJsonPath('suggestions.databases', [['engine' => 'postgres', 'reason' => 'Laravel uses SQLite by default, and its file would be reset on every deploy', 'apps' => ['apps/web'], 'fallback' => true]]);
 });
 
 test('importing creates the suggested processes the user kept as workers of their app', function (): void {
@@ -211,4 +216,28 @@ test('a database connects to an app in the repository root (sent as an empty fol
     $app = Service::query()->where('project_id', $project->id)->where('name', 'laravel-demo')->sole();
 
     expect(Connection::query()->where('project_id', $project->id)->where('from_service_id', $app->id)->count())->toBe(1);
+});
+
+test('secrets the plan asked for are saved as secret variables of the app, never flashed', function (): void {
+    Queue::fake();
+    $payload = [
+        'name' => 'Shop', 'repository' => $this->repository->public_id, 'branch' => 'main', 'deploy' => false,
+        'apps' => [['name' => 'web', 'port' => 3000, 'framework' => 'Rails', 'secrets' => ['RAILS_MASTER_KEY' => 'c0ffee'.str_repeat('0', 26), 'EMPTY_ONE' => '']]],
+    ];
+
+    $this->actingAs($this->developer)->post(route('projects.import.store'), [...$payload, 'apps' => [[...$payload['apps'][0], 'secrets' => ['not a name' => 'x']]]])
+        ->assertSessionHasErrors('apps.0.secrets');
+    expect(session()->getOldInput('apps.0.secrets'))->toBeNull()
+        ->and(Project::query()->count())->toBe(0);
+
+    $this->actingAs($this->developer)->post(route('projects.import.store'), $payload)->assertRedirect()->assertSessionHasNoErrors();
+
+    $web = Service::query()->where('name', 'web')->sole();
+    $variable = Variable::query()->where('service_id', $web->id)->sole();
+    $production = Project::query()->sole()->production()->sole();
+
+    expect($variable->key)->toBe('RAILS_MASTER_KEY')
+        ->and($variable->type)->toBe(VariableType::Secret)
+        ->and($variable->targets->pluck('environment_id')->all())->toBe([$production->id])
+        ->and(resolve(VariableStore::class)->plaintext($variable->project, $variable))->toBe('c0ffee'.str_repeat('0', 26));
 });

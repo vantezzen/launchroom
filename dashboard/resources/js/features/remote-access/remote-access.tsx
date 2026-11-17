@@ -757,7 +757,9 @@ function LiveAccess({
     refresh: () => void;
 }) {
     const now = useNow();
-    const [ending, setEnding] = useState(false);
+    const [endRequested, setEndRequested] = useState(false);
+    const [endError, setEndError] = useState<string | null>(null);
+    const ending = endRequested || access.ending;
     const ready = access.port !== null && access.host !== null;
     const total =
         (Date.parse(access.expiresAt) - Date.parse(access.createdAt)) / 1000;
@@ -768,17 +770,25 @@ function LiveAccess({
     const share = total > 0 ? Math.max(0, Math.min(1, left / total)) : 0;
 
     const end = async () => {
-        setEnding(true);
+        setEndRequested(true);
+        setEndError(null);
 
         try {
             await endAccess(access.id);
+        } catch (failure) {
+            setEndRequested(false);
+            setEndError(
+                failure instanceof Error
+                    ? failure.message
+                    : 'The access couldn’t be ended. Try again.',
+            );
         } finally {
             refresh();
         }
     };
 
     const state = ending
-        ? { label: 'Ending…', tone: 'progress' as const }
+        ? { label: 'Closing the port…', tone: 'progress' as const }
         : !ready
           ? { label: 'Starting the endpoint', tone: 'progress' as const }
           : access.activeConnections > 0
@@ -810,6 +820,14 @@ function LiveAccess({
                         End now
                     </Button>
                 </div>
+                {endError && (
+                    <p
+                        role="alert"
+                        className="border-t px-4 py-2.5 type-small text-status-error"
+                    >
+                        {endError}
+                    </p>
+                )}
                 <div className="grid grid-cols-2 border-t">
                     <div className="flex flex-col gap-0.5 px-4 py-3">
                         <span className="type-small text-muted-foreground">
@@ -1152,7 +1170,8 @@ function OtherAccess({
     access: Access;
     refresh: () => void;
 }) {
-    const [ending, setEnding] = useState(false);
+    const [endRequested, setEndRequested] = useState(false);
+    const ending = endRequested || access.ending;
 
     return (
         <div className="flex items-center justify-between gap-3 px-4 py-2.5">
@@ -1173,11 +1192,13 @@ function OtherAccess({
                     size="sm"
                     disabled={ending}
                     onClick={() => {
-                        setEnding(true);
-                        void endAccess(access.id).finally(refresh);
+                        setEndRequested(true);
+                        void endAccess(access.id)
+                            .catch(() => setEndRequested(false))
+                            .finally(refresh);
                     }}
                 >
-                    End
+                    {ending ? 'Closing…' : 'End'}
                 </Button>
             )}
         </div>

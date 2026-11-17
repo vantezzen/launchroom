@@ -48,9 +48,11 @@ export function RecentSessions({
                                 </b>{' '}
                                 <span className="text-muted-foreground">
                                     opened{' '}
-                                    {item.shell
-                                        ? item.shell.replace('/bin/', '')
-                                        : 'a console'}{' '}
+                                    {item.kind === 'recovery'
+                                        ? 'a recovery shell'
+                                        : item.shell
+                                          ? item.shell.replace('/bin/', '')
+                                          : 'a console'}{' '}
                                     in {item.replicaLabel.toLowerCase()}
                                     {item.serverName
                                         ? ` on ${item.serverName}`

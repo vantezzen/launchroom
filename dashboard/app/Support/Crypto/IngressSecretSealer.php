@@ -13,7 +13,9 @@ use SensitiveParameter;
  * {"serverId", "purpose", "values"})). The server id and purpose in the
  * plaintext bind the box to one field of one server's NodeState; launchroomd
  * refuses it anywhere else. Only edge servers ever receive one (the
- * client_auth edge secret only the control-plane server).
+ * client_auth edge secret only the control-plane server), except the
+ * fallback_channel secret of system.watchdog (the control-plane server and
+ * its one peer).
  */
 final class IngressSecretSealer
 {
@@ -24,9 +26,12 @@ final class IngressSecretSealer
     /** The edge secret of the dashboard's system routes (mTLS, docs/03 §4.3). */
     public const string CLIENT_AUTH = 'client_auth';
 
+    /** The secret of the watchdog's fallback channel (system.watchdog.fallback.secret): "url", or "password" and an optional "username". */
+    public const string FALLBACK_CHANNEL = 'fallback_channel';
+
     /**
      * @param  string  $sealingKey  `x25519:<base64>` from enrollment
-     * @param  self::DNS|self::CERT_STORAGE|self::CLIENT_AUTH  $purpose
+     * @param  self::DNS|self::CERT_STORAGE|self::CLIENT_AUTH|self::FALLBACK_CHANNEL  $purpose
      * @param  array<string, string>  $values
      */
     public static function seal(string $sealingKey, string $serverId, string $purpose, #[SensitiveParameter] array $values): string

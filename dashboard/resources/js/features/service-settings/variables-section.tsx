@@ -665,11 +665,31 @@ export function VariablesSection({
                                     key={row.key}
                                     className="grid grid-cols-[minmax(0,2fr)_minmax(0,3fr)] gap-3 py-2"
                                 >
-                                    <dt className="truncate type-mono-small">
+                                    <dt
+                                        className={cn(
+                                            'truncate type-mono-small',
+                                            (row.overridden ||
+                                                row.removedNextDeploy) &&
+                                                'text-muted-foreground line-through',
+                                        )}
+                                    >
                                         {row.key}
                                     </dt>
-                                    <dd className="type-mono-small [overflow-wrap:anywhere] text-muted-foreground">
-                                        {row.value}
+                                    <dd className="flex min-w-0 flex-col gap-0.5">
+                                        <span className="type-mono-small [overflow-wrap:anywhere] text-muted-foreground">
+                                            {row.value}
+                                        </span>
+                                        {row.overridden ? (
+                                            <span className="type-small text-muted-foreground">
+                                                Replaced by your variable
+                                            </span>
+                                        ) : (
+                                            row.note && (
+                                                <span className="type-small text-muted-foreground">
+                                                    {row.note}
+                                                </span>
+                                            )
+                                        )}
                                     </dd>
                                 </div>
                             ))}

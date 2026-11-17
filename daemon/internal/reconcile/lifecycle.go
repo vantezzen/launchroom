@@ -39,8 +39,16 @@ const (
 	settledAfter = 30 * time.Second
 	// startupWindow bounds how long a workload counts as starting.
 	startupWindow = 15 * time.Minute
-	// exitTailLines are the output lines attached to an exit.
+	// exitTailLines are the output lines attached to an exit, a stop or a
+	// removal (with state.MaxEventOutputBytes of text at most).
 	exitTailLines = state.MaxEventOutputLines
+	// boundedTailRead is how many lines a tail bounded by a run's end reads:
+	// Docker applies its tail before its until filter, so a container that
+	// already logged a new run needs more lines to reach the old run's end.
+	boundedTailRead = 1000
+	// untilSlack: a line's log time may trail the process exit a little
+	// (Docker's log copier); lines of a later run are cut by its start.
+	untilSlack = 2 * time.Second
 )
 
 // mark is what launchroomd remembers about a workload's container between
@@ -64,6 +72,19 @@ type mark struct {
 	// container runs again after a restart.
 	lastExit  *int
 	lastOOMed bool
+	// selfRestart: launchroomd restarted the container itself (liveness);
+	// its next start is not reported as "started" (the restarted event
+	// with reason health says it).
+	selfRestart bool
+	// healthRestarts are the liveness restarts of the last hour;
+	// unresponsiveSince is set once the cap was reached while the check
+	// still fails (issue unresponsive).
+	healthRestarts    []time.Time
+	unresponsiveSince time.Time
+	// startFailure is why the last run couldn't start its command (an exit
+	// right after the start that says so); reported while the container
+	// doesn't run steadily (WorkloadStatus.failure).
+	startFailure *state.WorkloadFailure
 }
 
 // eventLog buffers events until a report carrying them was accepted.
@@ -97,14 +118,30 @@ func (r *Reconciler) emit(ev state.WorkloadEvent) {
 	r.emitLocked(ev)
 }
 
+// maxReportEventBytes bounds the output text of the events one report
+// carries (256 events of 16 KiB would be 4 MiB): the rest goes with the
+// next report.
+const maxReportEventBytes = 1 << 20
+
 // PendingEvents returns the oldest undelivered events (at most
-// state.MaxReportEvents) for the next report.
+// state.MaxReportEvents, with at most maxReportEventBytes of output, at
+// least one) for the next report.
 func (r *Reconciler) PendingEvents() []state.WorkloadEvent {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	n := min(len(r.events.buf), state.MaxReportEvents)
 	if n == 0 {
 		return nil
+	}
+	bytes := 0
+	for i := range n {
+		for _, l := range r.events.buf[i].Output {
+			bytes += len(l.Text)
+		}
+		if bytes > maxReportEventBytes && i > 0 {
+			n = i
+			break
+		}
 	}
 	return slices.Clone(r.events.buf[:n])
 }
@@ -124,6 +161,14 @@ func (r *Reconciler) AckEvents(sent []state.WorkloadEvent) {
 type exitTail struct {
 	container string
 	ev        state.WorkloadEvent
+	run       runBounds
+}
+
+// runBounds delimit one run of a container in its log: lines from since
+// (zero: any) up to until (zero: now) and before (zero: unknown) the next
+// run started.
+type runBounds struct {
+	since, until, before time.Time
 }
 
 // trackLocked compares a fresh observation of a workload's container with
@@ -139,26 +184,33 @@ func (r *Reconciler) trackLocked(id state.WorkloadID, deployment state.Deploymen
 	recent := func(t time.Time) bool { return !t.IsZero() && !t.Before(r.boot) }
 	if !had || prev.container != c.ID {
 		// A container launchroomd hasn't seen before: report its start, but
-		// not containers that were running before launchroomd started.
+		// not containers that were running before launchroomd started (and
+		// have no persisted mark, marks.go).
 		m = mark{container: c.ID, deployment: m.deployment, startedAt: c.StartedAt, finishedAt: c.FinishedAt, restarts: c.RestartCount}
 		if recent(c.StartedAt) {
 			r.emitLocked(state.WorkloadEvent{Workload: id, Deployment: m.deployment, At: c.StartedAt, Kind: state.EventStarted})
 		}
 		if recent(c.FinishedAt) && !c.FinishedAt.Before(c.StartedAt) && !c.Running() {
-			exits = append(exits, r.exitLocked(id, m.deployment, c))
+			exits = append(exits, r.exitLocked(id, m.deployment, c, c.StartedAt))
 			m.noteExit(c)
 		}
 		r.marks[id] = m
 		return exits
 	}
-	if c.FinishedAt.After(prev.finishedAt) && recent(c.FinishedAt) {
-		exits = append(exits, r.exitLocked(id, m.deployment, c))
+	// The same container as last time (also across a launchroomd restart,
+	// with its persisted mark): every exit after the mark is new, including
+	// exits while launchroomd was down.
+	if c.FinishedAt.After(prev.finishedAt) {
+		exits = append(exits, r.exitLocked(id, m.deployment, c, prev.startedAt))
 		m.noteExit(c)
 	}
-	if c.StartedAt.After(prev.startedAt) && recent(c.StartedAt) {
-		if c.RestartCount > prev.restarts {
+	if c.StartedAt.After(prev.startedAt) {
+		switch {
+		case m.selfRestart && c.RestartCount == prev.restarts:
+			m.selfRestart = false // reported as restarted (reason health)
+		case c.RestartCount > prev.restarts:
 			r.emitLocked(state.WorkloadEvent{Workload: id, Deployment: m.deployment, At: c.StartedAt, Kind: state.EventRestarted, Restarts: c.RestartCount})
-		} else {
+		default:
 			r.emitLocked(state.WorkloadEvent{Workload: id, Deployment: m.deployment, At: c.StartedAt, Kind: state.EventStarted})
 		}
 		m.passedAt = time.Time{}
@@ -170,13 +222,23 @@ func (r *Reconciler) trackLocked(id state.WorkloadID, deployment state.Deploymen
 
 // exitLocked builds an exit event; its output is read afterwards. The exit
 // code is known only while the container is down: Docker resets it when its
-// restart policy starts the container again.
-func (r *Reconciler) exitLocked(id state.WorkloadID, deployment state.DeploymentID, c docker.Container) exitTail {
+// restart policy starts the container again (the exit watcher reads it
+// before that, exitwatch.go). runStart is when the run that ended started.
+func (r *Reconciler) exitLocked(id state.WorkloadID, deployment state.DeploymentID, c docker.Container, runStart time.Time) exitTail {
 	ev := state.WorkloadEvent{Workload: id, Deployment: deployment, At: c.FinishedAt, Kind: state.EventExited, OOMKilled: c.OOMKilled}
 	if code, ok := exitCode(c); ok {
 		ev.ExitCode = &code
+		ev.Signal = signalOf(code)
 	}
-	return exitTail{container: c.ID, ev: ev}
+	ev.ByLaunchroom = r.stoppedByUsLocked(c.ID, c.FinishedAt)
+	x := exitTail{container: c.ID, ev: ev, run: runBounds{until: c.FinishedAt}}
+	if !runStart.After(c.FinishedAt) {
+		x.run.since = runStart
+	}
+	if c.StartedAt.After(c.FinishedAt) {
+		x.run.before = c.StartedAt // restarted since: cut the new run
+	}
+	return x
 }
 
 func exitCode(c docker.Container) (int, bool) {
@@ -184,6 +246,14 @@ func exitCode(c docker.Container) (int, bool) {
 		return 0, false
 	}
 	return c.ExitCode, true
+}
+
+// signalOf is the signal an exit code says ended the process (128+n), 0 if none.
+func signalOf(code int) int {
+	if code > 128 && code <= 128+64 {
+		return code - 128
+	}
+	return 0
 }
 
 // noteExit remembers an exit's code for the crash-loop issue.
@@ -194,21 +264,81 @@ func (m *mark) noteExit(c docker.Container) {
 	m.lastOOMed = m.lastOOMed || c.OOMKilled
 }
 
-// finishExits reads the last lines of each exited container and emits the
-// exit events (I/O without the lock; bounded by a short timeout each).
+// finishExits reads the last lines of each exited run and emits the exit
+// events (I/O without the lock; bounded by a short timeout each). Exits
+// launchroomd caused itself carry no lines: the stopped, removed or
+// restarted event it emits has them.
 func (r *Reconciler) finishExits(ctx context.Context, exits []exitTail) {
 	for _, x := range exits {
-		x.ev.Output = r.tail(ctx, x.container)
+		if !x.ev.ByLaunchroom {
+			x.ev.Output = r.tailRun(ctx, x.container, x.run)
+			r.classifyExit(&x.ev)
+		}
 		r.emit(x.ev)
+	}
+	if len(exits) > 0 {
+		r.saveMarks()
 	}
 }
 
-// tail returns a container's last output lines (best effort).
-func (r *Reconciler) tail(ctx context.Context, container string) []state.LogLine {
+// classifyExit types an exit whose lines say the start command couldn't
+// run (the container starts, the init's exec fails: exit 127 or 126), and
+// remembers it as the workload's start failure; any other exit clears it.
+func (r *Reconciler) classifyExit(ev *state.WorkloadEvent) {
+	code := -1
+	if ev.ExitCode != nil {
+		code = *ev.ExitCode
+	}
+	lines := make([]string, len(ev.Output))
+	for i, l := range ev.Output {
+		lines[i] = l.Text
+	}
+	fc, msg := docker.ExitFailure(code, lines)
+	ev.Code = fc
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	m, ok := r.marks[ev.Workload]
+	if !ok {
+		return
+	}
+	m.startFailure = nil
+	if fc != "" {
+		m.startFailure = &state.WorkloadFailure{Code: fc, Message: state.Clip(msg, 1024), At: ev.At.UTC()}
+	}
+	r.marks[ev.Workload] = m
+}
+
+// startFailureLocked is a workload's start failure while its container
+// doesn't run steadily (r.mu held).
+func (r *Reconciler) startFailureLocked(id state.WorkloadID, o *observed, now time.Time) *state.WorkloadFailure {
+	m, ok := r.marks[id]
+	if !ok || m.startFailure == nil || o == nil || o.c.ID != m.container {
+		return nil
+	}
+	if o.c.Running() && !o.c.Restarting() && now.Sub(o.c.StartedAt) >= stableRun {
+		return nil
+	}
+	f := *m.startFailure
+	return &f
+}
+
+// tailRun returns the last output lines of one run of a container (best
+// effort): at most exitTailLines lines and state.MaxEventOutputBytes of
+// text. Without a known next start, the container is inspected after the
+// read, so lines of a run that started meanwhile are cut.
+func (r *Reconciler) tailRun(ctx context.Context, container string, b runBounds) []state.LogLine {
 	ctx, cancel := context.WithTimeout(ctx, 3*time.Second)
 	defer cancel()
+	opts := docker.LogsOptions{Tail: exitTailLines, Since: b.since}
+	if !b.until.IsZero() {
+		opts.Until = b.until.Add(untilSlack)
+		opts.Tail = boundedTailRead
+	}
 	var lines []state.LogLine
-	_ = r.o.Docker.StreamLogs(ctx, container, docker.LogsOptions{Tail: exitTailLines}, func(l docker.LogLine) error {
+	_ = r.o.Docker.StreamLogs(ctx, container, opts, func(l docker.LogLine) error {
+		if !l.Time.IsZero() && !b.since.IsZero() && l.Time.Before(b.since) {
+			return nil
+		}
 		line := state.LogLine{Time: l.Time.UTC(), Stream: state.StreamStdout, Text: state.Clip(strings.TrimRight(l.Text, "\r\n"), 2048)}
 		if l.Stream == "stderr" {
 			line.Stream = state.StreamStderr
@@ -217,10 +347,34 @@ func (r *Reconciler) tail(ctx context.Context, container string) []state.LogLine
 			line.Time = r.o.Now().UTC()
 		}
 		lines = append(lines, line)
+		if len(lines) > 4*exitTailLines {
+			lines = slices.Delete(lines, 0, len(lines)-exitTailLines)
+		}
 		return nil
 	})
+	before := b.before
+	if before.IsZero() && !b.until.IsZero() && len(lines) > 0 {
+		if c, err := r.o.Docker.InspectContainer(ctx, container); err == nil && c.StartedAt.After(b.until) {
+			before = c.StartedAt
+		}
+	}
+	if !before.IsZero() {
+		lines = slices.DeleteFunc(lines, func(l state.LogLine) bool { return !l.Time.Before(before) })
+	}
+	return clipOutput(lines)
+}
+
+// clipOutput keeps the last lines within the event limits.
+func clipOutput(lines []state.LogLine) []state.LogLine {
 	if over := len(lines) - exitTailLines; over > 0 {
 		lines = lines[over:]
+	}
+	total := 0
+	for i := len(lines) - 1; i >= 0; i-- {
+		total += len(lines[i].Text)
+		if total > state.MaxEventOutputBytes {
+			return lines[i+1:]
+		}
 	}
 	return lines
 }
@@ -279,6 +433,12 @@ func (r *Reconciler) issueLocked(spec *state.WorkloadSpec, o observed, probe *he
 		return issue
 	}
 	m.loopSince = time.Time{}
+
+	if probe != nil && probe.State == state.ProbePassing {
+		m.unresponsiveSince = time.Time{}
+	} else if !m.unresponsiveSince.IsZero() {
+		return &state.WorkloadIssue{Kind: state.IssueUnresponsive, Since: m.unresponsiveSince.UTC(), Restarts: len(m.healthRestarts)}
+	}
 
 	kind := portIssue(spec, o, probe)
 	if kind == "" || kind != m.portIssue {
@@ -400,7 +560,7 @@ func (r *Reconciler) Watch(ctx context.Context) bool {
 		if err != nil {
 			continue // removed in between: the next pass sees it
 		}
-		o := observed{c: c}
+		o := observed{c: c, at: r.o.Now()}
 		if c.Running() && c.Pid > 0 {
 			if ls, err := r.o.Ports.Listeners(c.Pid); err == nil {
 				o.ports = ls

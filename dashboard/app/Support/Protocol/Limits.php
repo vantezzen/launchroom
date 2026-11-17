@@ -16,6 +16,8 @@ final class Limits
 
     public const int ARGV = 256;
 
+    public const int CERT_RETRY_HOSTS = 100;
+
     public const int CERT_STORAGE_MESH_PORT = 6379;
 
     public const int ENV_VALUE_BYTES = 131072;
@@ -42,7 +44,13 @@ final class Limits
 
     public const int REGISTRY_MESH_PORT = 5000;
 
+    public const int RESTART_AFTER_MAX_SECONDS = 3600;
+
+    public const int RESTART_AFTER_MIN_SECONDS = 60;
+
     public const int ROUTE_UPSTREAMS = 64;
+
+    public const int STOP_TIMEOUT_SECONDS = 300;
 
     public const int WAF_EXCLUDABLE_MAX = 944999;
 

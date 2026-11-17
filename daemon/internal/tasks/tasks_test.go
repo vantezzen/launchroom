@@ -90,3 +90,32 @@ func TestCancelledByDashboard(t *testing.T) {
 		t.Fatalf("%+v", got)
 	}
 }
+
+// A "task.cancelled" nudge (HeartbeatAll) makes a running task learn of its
+// cancellation at once, not at its next scheduled heartbeat.
+func TestHeartbeatAllDeliversCancellationAtOnce(t *testing.T) {
+	cp := &taskstest.ControlPlane{Cancel: true}
+	started := make(chan struct{})
+	r := New(Options{Client: cp, HeartbeatEvery: time.Hour, Handlers: map[state.TaskType]Handler{
+		state.TaskLogs: func(ctx context.Context, _ state.Task) (state.TaskResults, error) {
+			close(started)
+			<-ctx.Done()
+			return state.TaskResults{}, ctx.Err()
+		},
+	}})
+	const id = state.TaskID("tsk_01J9Z8X7W6V5T4S3R2Q1P0N9N6")
+	cp.Lease = []state.Task{taskstest.Task(id, state.TaskLogs, &state.LogsSpec{Workload: wl}, time.Minute)}
+	r.LeaseOnce(t.Context())
+	<-started
+	r.HeartbeatAll()
+	done := make(chan struct{})
+	go func() { r.Wait(); close(done) }()
+	select {
+	case <-done:
+	case <-time.After(5 * time.Second):
+		t.Fatal("the task did not stop after HeartbeatAll")
+	}
+	if got := cp.Completion(id); got == nil || got.Outcome != state.OutcomeCancelled {
+		t.Fatalf("%+v", got)
+	}
+}

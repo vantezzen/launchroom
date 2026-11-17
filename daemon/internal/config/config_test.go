@@ -382,3 +382,15 @@ func TestLoadGuard(t *testing.T) {
 		}
 	}
 }
+
+func TestWatchdogSetting(t *testing.T) {
+	for in, want := range map[string]string{"": "on", "on": "on", "NOTIFY": "notify", " off ": "off"} {
+		cfg, err := Load(nil, envOf(map[string]string{EnvControlPlaneURL: "https://dash.example.com", EnvWatchdog: in}), noFile)
+		if err != nil || cfg.Watchdog != want {
+			t.Errorf("LR_WATCHDOG=%q: got %q, %v; want %q", in, cfg.Watchdog, err, want)
+		}
+	}
+	if _, err := Load(nil, envOf(map[string]string{EnvControlPlaneURL: "https://dash.example.com", EnvWatchdog: "maybe"}), noFile); err == nil {
+		t.Error("LR_WATCHDOG=maybe accepted")
+	}
+}

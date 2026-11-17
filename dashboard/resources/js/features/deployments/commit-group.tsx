@@ -5,6 +5,7 @@ import { Duration } from '@/components/elapsed';
 import { Logo } from '@/components/logo';
 import { Status } from '@/components/status';
 import { TimeAgo } from '@/components/time-ago';
+import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import {
     DropdownMenu,
@@ -287,6 +288,14 @@ export function CommitGroupCard({
                                     <span className="truncate type-label">
                                         {deployment.serviceName}
                                     </span>
+                                    {deployment.rollbackReason && (
+                                        <Badge
+                                            variant="outline"
+                                            title={deployment.rollbackReason}
+                                        >
+                                            Rolled back automatically
+                                        </Badge>
+                                    )}
                                 </Link>
                                 {deployment.status === 'failed' &&
                                     deployment.failureSummary && (

@@ -15,6 +15,8 @@ import {
 } from '@/features/service-panel/panel-signals';
 import { DeploymentsTab } from '@/features/deployments/deployments-tab';
 import { ServiceLogs } from '@/features/log-explorer/service-logs';
+import { CronRuns } from './cron-runs';
+import { RuntimeFacts } from './runtime-facts';
 import { ServiceStagedBar } from './service-staged-bar';
 import { warmPages, whenIdle } from '@/lib/idle';
 import { analyticsHref } from '@/lib/links';
@@ -282,6 +284,9 @@ export function ServicePanel({
                         deploy. Discard the change to keep it.
                     </p>
                 )}
+
+                {panel.runtime && <RuntimeFacts facts={panel.runtime} />}
+                <CronRuns runs={panel.cronRuns} />
 
                 <nav
                     aria-label={`${node.name} sections`}

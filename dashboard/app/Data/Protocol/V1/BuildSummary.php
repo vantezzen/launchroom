@@ -29,6 +29,10 @@ final class BuildSummary extends Data
      * @param  list<BuildWarning>|null  $warnings
      * @param  list<PhpExtension>|null  $phpExtensions
      * @param  array<string, mixed>|null  $plan
+     * @param  list<EnvAlias>|null  $envAliases
+     * @param  list<RequiredSecret>|null  $requiredSecrets
+     * @param  list<VolumeSuggestion>|null  $volumeSuggestions
+     * @param  list<PhpDependencyExtension>|null  $phpDependencyExtensions
      */
     public function __construct(
         public ChosenBuilder $builder,
@@ -68,6 +72,18 @@ final class BuildSummary extends Data
         public ?array $phpExtensions = null,
         /** What the launchroom Next.js deployment adapter reported (build tasks of Next ≥ 16.2 apps). */
         public ?NextBuildInfo $next = null,
+        /** Framework variables set to system values per environment (docs/06 §3.1). */
+        public ?array $envAliases = null,
+        /** Secrets the app needs that launchroom can't generate (asked in the plan preview). */
+        public ?array $requiredSecrets = null,
+        /** Folders whose files should outlive a deploy. */
+        public ?array $volumeSuggestions = null,
+        /** The monorepo workspace the app belongs to. */
+        public ?WorkspaceInfo $workspace = null,
+        /** PHP extensions added because composer dependencies require them. */
+        public ?array $phpDependencyExtensions = null,
+        /** The built image's user and exposed ports. */
+        public ?ImageFacts $image = null,
     ) {}
 
     /**
@@ -86,6 +102,10 @@ final class BuildSummary extends Data
             'envReferences' => ['nullable', 'array', 'max:256'],
             'envReferences.*' => ['string', 'max:256'],
             'phpExtensions' => ['nullable', 'array', 'max:8'],
+            'envAliases' => ['nullable', 'array', 'max:16'],
+            'requiredSecrets' => ['nullable', 'array', 'max:8'],
+            'volumeSuggestions' => ['nullable', 'array', 'max:8'],
+            'phpDependencyExtensions' => ['nullable', 'array', 'max:32'],
         ];
     }
 }

@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Data\Projects;
 
 use App\Support\Protocol\Grammar;
+use SensitiveParameter;
 use Spatie\LaravelData\Attributes\Validation\Between;
 use Spatie\LaravelData\Attributes\Validation\Max;
 use Spatie\LaravelData\Attributes\Validation\Min;
@@ -18,6 +19,7 @@ final class ImportAppData extends Data
 {
     /**
      * @param  list<ImportProcessData>  $processes  suggested processes to add as workers of this app
+     * @param  array<string, string|null>  $secrets  required secrets pasted on import (RAILS_MASTER_KEY): name => value (empty: skipped)
      */
     public function __construct(
         #[Min(1), Max(63)]
@@ -31,5 +33,27 @@ final class ImportAppData extends Data
         public ?string $framework = null,
         #[Max(6)]
         public array $processes = [],
+        /** Created as secret variables of the app in production; never flashed or logged (SensitiveInput). */
+        #[SensitiveParameter]
+        public array $secrets = [],
     ) {}
+
+    /**
+     * @return array<string, list<string>>
+     */
+    public static function rules(): array
+    {
+        return [
+            'secrets' => ['sometimes', 'array', 'max:8'],
+            'secrets.*' => ['nullable', 'string', 'max:4096'],
+        ];
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
+    public function __debugInfo(): array
+    {
+        return ['name' => $this->name, 'rootDirectory' => $this->rootDirectory, 'secrets' => array_fill_keys(array_keys($this->secrets), '[redacted]')];
+    }
 }

@@ -23,7 +23,8 @@ use Throwable;
  *
  * 1. default schedules for databases added since the last tick;
  * 2. runs follow their daemon tasks (catches anything the completion hook missed);
- * 3. due schedules start a backup (cron in UTC; at most once per minute);
+ * 3. due schedules start a backup (cron in UTC; at most once per minute; a
+ *    slot missed while the scheduler was down runs once, late, CatchUp);
  * 4. daily retention per schedule;
  * 5. restores move forward;
  * 6. deletions waiting for their final backups move forward (docs/14 §9.13);
@@ -69,7 +70,7 @@ final readonly class RunBackupTick
             ->get();
 
         foreach ($due as $schedule) {
-            if (! $schedule->isDue($minute)) {
+            if (! $schedule->owedRun($now) instanceof CarbonImmutable) {
                 continue;
             }
 

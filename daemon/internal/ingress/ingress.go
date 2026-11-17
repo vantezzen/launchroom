@@ -13,6 +13,9 @@ type Endpoint struct {
 	Addr    netip.Addr // container IP on its primary network
 	Serving bool       // role serving (not draining)
 	Ready   bool       // running and healthy (or running long enough without a probe)
+	// Running is true while the container runs, ready or not: a route with
+	// no ready upstream fails open to running ones (HEAL-10).
+	Running bool
 }
 
 // Resolver looks up a workload's endpoint (ok=false: no container).

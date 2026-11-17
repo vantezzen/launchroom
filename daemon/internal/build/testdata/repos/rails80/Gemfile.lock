@@ -1,0 +1,14 @@
+GEM
+  remote: https://rubygems.org/
+  specs:
+    puma (6.5.0)
+    rails (8.0.1)
+      actioncable (= 8.0.1)
+    solid_queue (1.1.2)
+    sqlite3 (2.5.0-x86_64-linux-gnu)
+    thruster (0.1.10-x86_64-linux)
+
+DEPENDENCIES
+  rails (~> 8.0.1)
+  solid_queue
+  thruster

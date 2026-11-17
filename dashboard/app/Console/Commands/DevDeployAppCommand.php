@@ -6,12 +6,14 @@ namespace App\Console\Commands;
 
 use App\Actions\Connections\CreateConnection;
 use App\Actions\Deployments\DeployEnvironment;
+use App\Actions\Previews\UpdatePreviewSettings;
 use App\Actions\Projects\CreateProject;
 use App\Actions\Projects\DeleteProject;
 use App\Actions\Services\CreateService;
 use App\Actions\Services\UpdateServiceSettings;
 use App\Console\InstanceOwner;
 use App\Data\Audit\AuditActor;
+use App\Data\Previews\PreviewSettingsInput;
 use App\Data\Projects\CreateProjectData;
 use App\Data\Projects\DeleteProjectData;
 use App\Data\Services\CreateServiceData;
@@ -20,6 +22,7 @@ use App\Enums\Backups\DeletionOutcome;
 use App\Enums\ConnectionMode;
 use App\Enums\ConnectionStyle;
 use App\Enums\Git\GitProviderKind;
+use App\Enums\Previews\ForkPolicy;
 use App\Enums\ServiceKind;
 use App\Models\Deployment;
 use App\Models\Domain;
@@ -27,6 +30,7 @@ use App\Models\Project;
 use App\Models\Server;
 use App\Models\Service;
 use App\Models\Team;
+use App\Models\User;
 use Illuminate\Console\Attributes\Description;
 use Illuminate\Console\Attributes\Signature;
 use Illuminate\Console\Command;
@@ -45,13 +49,13 @@ use Illuminate\Database\Eloquent\Builder;
  * are staged through the regular settings action before the first deploy,
  * so the scheduler places them; `--replace` deletes an existing project of
  * the same name first (no final backup); `--json` prints machine-readable
- * ids. Refuses outside `local`.
+ * ids; `--previews` turns pull request previews on. Refuses outside `local`.
  */
-#[Signature('launchroom:dev:deploy-app {--name=hello : Project name} {--fixture=node-hello : Fixture in dev/fixtures} {--branch=main : Branch to deploy} {--without-database : Skip the Postgres service} {--git-url=http://git-fixtures:8080 : Base URL of the fixture git server} {--replicas=1 : Replicas of the app} {--app-servers= : Comma-separated servers (names or public ids) the app may run on} {--db-servers= : Comma-separated servers the database may run on} {--replace : Delete an existing project of this name first} {--json : Print ids as JSON}')]
+#[Signature('launchroom:dev:deploy-app {--name=hello : Project name} {--fixture=node-hello : Fixture in dev/fixtures} {--branch=main : Branch to deploy} {--without-database : Skip the Postgres service} {--git-url=http://git-fixtures:8080 : Base URL of the fixture git server} {--replicas=1 : Replicas of the app} {--app-servers= : Comma-separated servers (names or public ids) the app may run on} {--db-servers= : Comma-separated servers the database may run on} {--replace : Delete an existing project of this name first} {--previews : Turn previews on (pull request environments)} {--json : Print ids as JSON}')]
 #[Description('Local dev only: create a project with a fixture app (built from git-fixtures) and Postgres, and deploy it')]
 final class DevDeployAppCommand extends Command
 {
-    public function handle(CreateProject $createProject, CreateService $createService, CreateConnection $connect, DeployEnvironment $deploy, UpdateServiceSettings $settings, DeleteProject $deleteProject): int
+    public function handle(CreateProject $createProject, CreateService $createService, CreateConnection $connect, DeployEnvironment $deploy, UpdateServiceSettings $settings, DeleteProject $deleteProject, UpdatePreviewSettings $previews): int
     {
         if (! app()->environment('local')) {
             $this->components->error('This command only runs in the local dev environment.');
@@ -137,6 +141,11 @@ final class DevDeployAppCommand extends Command
 
         if ($postgres instanceof Service) {
             $this->place($settings, $postgres, $production->id, 1, $dbServers);
+        }
+
+        if ($this->option('previews') === true && $owner instanceof User) {
+            // The defaults of Settings → Previews, switched on (docs/06 §5).
+            $previews->handle($project, new PreviewSettingsInput(true, null, null, null, 2, 7, ForkPolicy::Off, false, false), $owner, $actor);
         }
 
         $result = $deploy->handle($production, $owner, $actor, 'dev app');

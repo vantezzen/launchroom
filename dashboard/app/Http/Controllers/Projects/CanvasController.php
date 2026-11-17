@@ -25,12 +25,14 @@ use App\Models\Service;
 use App\Models\Sessions\InteractiveSession;
 use App\Models\User;
 use App\Queries\CanvasGraph;
+use App\Queries\CronRunHistory;
 use App\Queries\CurrentEnvironmentSpec;
 use App\Queries\Previews\PreviewCanvas;
 use App\Queries\ProjectShell;
 use App\Queries\ServiceControls;
 use App\Queries\ServiceDeployments;
 use App\Queries\ServiceOrigin;
+use App\Queries\ServiceRuntimeFacts;
 use App\Queries\ServiceSettings;
 use Closure;
 use Illuminate\Container\Attributes\CurrentUser;
@@ -110,6 +112,8 @@ final class CanvasController extends Controller
                 actionNeededFinding: count($findings) === 1 ? $findings[0] : null,
                 controls: $this->controls->for($instance, $user, $spec()),
                 origin: resolve(ServiceOrigin::class)->for($instance),
+                runtime: resolve(ServiceRuntimeFacts::class)->for($instance),
+                cronRuns: $service->kind === ServiceKind::Cron ? resolve(CronRunHistory::class)->for($instance, 5) : [],
             );
         };
 

@@ -51,7 +51,8 @@ final class Task extends Data
             'leaseExpiresAt' => ProtocolJson::time($this->leaseExpiresAt),
             'attempt' => $this->attempt,
             'deadline' => ProtocolJson::time($this->deadline),
-            'spec' => $this->spec->toProtocol(),
+            // An object even without fields (cleanup: `{}`, never `[]`).
+            'spec' => (object) $this->spec->toProtocol(),
         ];
     }
 }

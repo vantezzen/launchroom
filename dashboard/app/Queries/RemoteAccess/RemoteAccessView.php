@@ -83,6 +83,7 @@ final class RemoteAccessView
             endedByOther: $access->ended_by_id !== null && $access->ended_by_id !== $access->user_id,
             protocol: $engine?->remoteAccess(),
             client: $engine?->client(),
+            ending: $live && $access->ended_by_id !== null,
         );
     }
 

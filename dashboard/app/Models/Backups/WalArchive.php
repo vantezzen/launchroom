@@ -9,6 +9,8 @@ use App\Models\Concerns\BelongsToTeam;
 use App\Models\Concerns\HasPublicId;
 use App\Models\Server;
 use App\Models\ServiceInstance;
+use App\Support\Cron\CatchUp;
+use Carbon\CarbonImmutable;
 use Cron\CronExpression;
 use DateTimeInterface;
 use Illuminate\Database\Eloquent\Attributes\Fillable;
@@ -62,9 +64,15 @@ final class WalArchive extends Model
         return 'wal';
     }
 
-    public function baseBackupDue(DateTimeInterface $at): bool
+    /**
+     * The base-backup slot owed at $now (CatchUp): the latest slot after the
+     * last scheduled base backup, or after archiving was turned on.
+     */
+    public function owedBaseBackup(DateTimeInterface $now): ?CarbonImmutable
     {
-        return $this->enabled && CronExpression::isValidExpression($this->base_cron) && new CronExpression($this->base_cron)->isDue($at, 'UTC');
+        $since = $this->last_base_run_at ?? $this->enabled_at ?? $this->created_at;
+
+        return $this->enabled && $since !== null ? CatchUp::owed($this->base_cron, $since, $now) : null;
     }
 
     public function nextBaseBackupAt(DateTimeInterface $after): ?DateTimeInterface

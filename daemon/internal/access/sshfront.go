@@ -279,7 +279,12 @@ func (f *sshFront) run(ctx context.Context, ch countingChannel, argv []string, p
 		}()
 		_, _ = io.Copy(ch, t)
 		_ = t.Close()
-		code, err := t.ExitCode(context.WithoutCancel(ctx))
+		// The access ended or the client left: Close hung the shell up, so
+		// its exit code is there at once or not at all. Don't hold the
+		// access' teardown for the engine's call timeout.
+		ectx, cancel := context.WithTimeout(context.WithoutCancel(ctx), exitCodeWait)
+		defer cancel()
+		code, err := t.ExitCode(ectx)
 		if err != nil {
 			return 255
 		}

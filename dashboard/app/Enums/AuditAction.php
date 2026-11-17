@@ -143,6 +143,8 @@ enum AuditAction: string
     case ConsoleSessionEnded = 'session.console_ended';
     case DataSessionStarted = 'session.data_started';
     case DataSessionEnded = 'session.data_ended';
+    case RecoverySessionStarted = 'session.recovery_started';
+    case RecoverySessionEnded = 'session.recovery_ended';
     case DatabaseStatementExecuted = 'database.statement_executed';
     case SessionRecordingViewed = 'session.recording_viewed';
     case ConsoleRecordingChanged = 'team.console_recording_changed';
@@ -216,4 +218,10 @@ enum AuditAction: string
     // Account settings (docs/09 R10).
     case AccountEmailChanged = 'account.email_changed';
     case AccountPasswordChanged = 'account.password_changed';
+    // `./launchroom reset-password` (OD20): a one-time sign-in link printed on the server.
+    case SignInLinkIssued = 'account.sign_in_link_issued';
+    // Private registries (D91): team sign-in details for upstream registries.
+    case RegistryCredentialCreated = 'registry.credential_created';
+    case RegistryCredentialUpdated = 'registry.credential_updated';
+    case RegistryCredentialDeleted = 'registry.credential_deleted';
 }

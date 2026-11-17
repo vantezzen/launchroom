@@ -71,6 +71,10 @@ func newSpec(t TaskType) (TaskSpec, error) {
 		return &InventorySpec{}, nil
 	case TaskInspectContainer:
 		return &InspectContainerSpec{}, nil
+	case TaskCleanup:
+		return &CleanupSpec{}, nil
+	case TaskCertRetry:
+		return &CertRetrySpec{}, nil
 	default:
 		return nil, fmt.Errorf("unknown task type %q", truncate(string(t)))
 	}
@@ -522,6 +526,19 @@ type RunOnceSpec struct {
 	// probe.within, then stops it. With a probe, command and args may both be
 	// omitted (the image's own CMD runs).
 	Probe *RunOnceProbe `json:"probe,omitzero" jsonschema:"nullable" lr:"feature=generatedDockerfile"`
+	// Mounts are the service's volumes, mounted as its workloads mount them
+	// (release commands of a service that keeps data on a volume, e.g.
+	// SQLite migrations; daemon feature "releaseMounts"). Every volume must
+	// be declared in the server's verified NodeState for the same service
+	// and environment.
+	Mounts []RunOnceMount `json:"mounts,omitzero" jsonschema:"nullable,maxItems=32" lr:"feature=releaseMounts"`
+}
+
+// RunOnceMount mounts one of the service's volumes into a run_once container.
+type RunOnceMount struct {
+	Volume   VolumeID      `json:"volume"`
+	Target   ContainerPath `json:"target"`
+	ReadOnly bool          `json:"readOnly,omitzero"`
 }
 
 // RunOnceProbe is the start check of a run_once task.
@@ -558,6 +575,15 @@ func (s *RunOnceSpec) Validate() error {
 	}
 	checkArgv(&e, "args", s.Args)
 	e.check("env", s.Env)
+	checkCount(&e, "mounts", len(s.Mounts), 0, 32)
+	targets := make([]ContainerPath, 0, len(s.Mounts))
+	for i, m := range s.Mounts {
+		mp := idx("mounts", i)
+		e.check(mp+".volume", m.Volume)
+		e.check(mp+".target", m.Target)
+		targets = append(targets, m.Target)
+	}
+	unique(&e, "mounts.target", targets)
 	checkCount(&e, "maskEnv", len(s.MaskEnv), 0, maxMaskEnvNames)
 	for i, n := range s.MaskEnv {
 		e.check(idx("maskEnv", i), n)

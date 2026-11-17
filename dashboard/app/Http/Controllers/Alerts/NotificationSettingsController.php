@@ -13,9 +13,11 @@ use App\Http\Controllers\Controller;
 use App\Http\Routing\CurrentTeam;
 use App\Models\Alerts\Alert;
 use App\Models\Alerts\AlertChannel;
+use App\Models\Server;
 use App\Models\Team;
 use App\Models\User;
 use App\Services\Alerts\AlertRuleSettings;
+use App\Services\Alerts\FallbackWatchdog;
 use App\Services\Alerts\Senders\EmailSender;
 use Illuminate\Container\Attributes\CurrentUser;
 use Illuminate\Support\Facades\Gate;
@@ -54,6 +56,9 @@ final class NotificationSettingsController extends Controller
             'openAlertCount' => $openCount,
             'canManage' => Gate::allows('create', [AlertChannel::class, $team]),
             'mailConfigured' => EmailSender::configured(),
+            // "Also use it when launchroom itself is down" (OD7): instance owners, a channel of the main server's team.
+            'canSetFallback' => Gate::allows('manageInstance') && Server::query()->controlPlane()->where('team_id', $team->id)->exists(),
+            'fallbackEmailAvailable' => FallbackWatchdog::smtpAvailable(),
             'defaultEmail' => $user->email,
         ]);
     }

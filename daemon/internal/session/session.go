@@ -56,6 +56,8 @@ type Options struct {
 	// Trusted verifies signed dashboard commands.
 	Trusted func() Verifier
 	Docker  Docker
+	// Recovery enables recovery sessions (nil: refused).
+	Recovery *Recovery
 	// WorkloadEnv opens the sealed env of a workload in the verified NodeState.
 	WorkloadEnv func(state.WorkloadID) (map[string]secret.Secret, error)
 	// InDesiredState reports whether a workload is in the verified NodeState.
@@ -120,6 +122,7 @@ func (o Options) handle(ctx context.Context, t state.Task) (state.TaskResults, e
 	if !ok {
 		return state.TaskResults{}, errors.New("session handler got a non-session spec")
 	}
+	hs := newHandshake(o.Now)
 	res := &state.SessionResult{EndReason: state.EndError}
 	out := state.TaskResults{Session: res}
 	if !o.Allowed(spec.Kind) {
@@ -134,27 +137,30 @@ func (o Options) handle(ctx context.Context, t state.Task) (state.TaskResults, e
 	if err != nil || len(key) != 32 {
 		return out, &state.StartError{Code: state.FailSessionKey, Err: errors.New("session key: not 32 bytes of base64url")}
 	}
-	s := &run{o: o, t: t, spec: spec, res: res, codec: NewCodec(key, spec.Session, true), log: o.Log.With("session", spec.Session, "kind", spec.Kind)}
+	s := &run{o: o, t: t, spec: spec, res: res, codec: NewCodec(key, spec.Session, true), log: o.Log.With("session", spec.Session, "kind", spec.Kind), hs: hs}
 	if err := s.prepare(ctx); err != nil {
 		if errors.Is(err, ErrRefused) {
 			res.EndReason = state.EndRefused
 		}
 		return out, err
 	}
-	defer s.cleanup()
+	defer s.cleanup() //nolint:contextcheck // removal outlives the session's context
 	var cfg *state.NudgeConfig
 	if o.Nudge != nil {
 		if cfg, err = o.Nudge(ctx); err != nil {
 			return out, &state.StartError{Code: state.FailRelayUnreachable, Err: fmt.Errorf("session: realtime settings: %w", err)}
 		}
 	}
+	hs.settings = o.Now()
 	relay, err := Dial(ctx, RelayOptions{
 		Nudge: cfg, ControlPlaneURL: o.controlPlane(), Channel: spec.Channel, Auth: o.Auth,
 		DaemonVersion: o.DaemonVersion, HTTPClient: o.HTTPClient,
 	})
 	if err != nil {
+		s.log.Info("session relay unreachable", append(hs.unfinished(), "err", err)...)
 		return out, &state.StartError{Code: state.FailRelayUnreachable, Err: err}
 	}
+	hs.relayJoined(s.log)
 	s.relay = relay
 	defer relay.Close()
 	var trusted Verifier
@@ -163,7 +169,8 @@ func (o Options) handle(ctx context.Context, t state.Task) (state.TaskResults, e
 	}
 	s.guard = newCommandGuard(trusted, spec.Session, o.Now)
 	s.loop(ctx)
-	s.log.Info("session ended", "reason", res.EndReason)
+	// A browser that never sent a frame: how far the start got, and when.
+	s.log.Info("session ended", append([]any{"reason", res.EndReason}, hs.unfinished()...)...)
 	// A session that couldn't start fails its task with the reason, so
 	// the dashboard can show and log it (the browser got it in the end frame).
 	return out, s.failure
@@ -179,12 +186,14 @@ type run struct {
 	guard *commandGuard
 	relay *Relay
 	log   *slog.Logger
+	hs    *handshake
 	// failure is why the session couldn't start (nil otherwise).
 	failure error
 
 	sendMu sync.Mutex
 
-	// console
+	// console (and recovery: recovery is the container's name)
+	recovery  string
 	container string
 	shell     string
 	tty       *docker.TTYExec
@@ -197,6 +206,9 @@ type run struct {
 	// data
 	engine   *engineRunner
 	commands chan *state.SessionCommand
+	// stopWork cancels the running command and skips the queued ones when
+	// the session ends: the task completes at once, not after them.
+	stopWork context.CancelFunc
 	workerWG sync.WaitGroup
 	activity chan struct{}
 	resMu    sync.Mutex
@@ -205,6 +217,16 @@ type run struct {
 // prepare applies the local policy and resolves the target before any
 // connection is made.
 func (s *run) prepare(ctx context.Context) error {
+	if s.spec.Kind == state.SessionRecovery {
+		err := s.prepareRecovery(ctx)
+		if err == nil {
+			err = s.prepareConsole(ctx)
+		}
+		if err != nil {
+			s.endRecovery() //nolint:contextcheck // removal outlives the session's context
+		}
+		return err
+	}
 	id, err := s.target(ctx)
 	if err != nil {
 		return err
@@ -212,15 +234,7 @@ func (s *run) prepare(ctx context.Context) error {
 	s.container = id
 	switch s.spec.Kind {
 	case state.SessionConsole:
-		shell, err := s.pickShell(ctx)
-		if err != nil {
-			return err
-		}
-		s.shell = shell
-		if s.spec.Record {
-			env, _ := s.o.WorkloadEnv(s.spec.Workload)
-			s.recorder = newRecorder(tasks.NewTaskLogShipper(ctx, s.o.Logs, s.t.ID, s.t.Attempt), maskerFor(env))
-		}
+		return s.prepareConsole(ctx)
 	case state.SessionData:
 		env, err := s.o.WorkloadEnv(s.spec.Workload)
 		if err != nil {
@@ -231,6 +245,23 @@ func (s *run) prepare(ctx context.Context) error {
 			return err
 		}
 		s.engine = eng
+	}
+	return nil
+}
+
+// prepareConsole picks the shell and the recorder of a console (also in a
+// recovery container).
+func (s *run) prepareConsole(ctx context.Context) error {
+	{
+		shell, err := s.pickShell(ctx)
+		if err != nil {
+			return err
+		}
+		s.shell = shell
+		if s.spec.Record {
+			env, _ := s.o.WorkloadEnv(s.spec.Workload)
+			s.recorder = newRecorder(tasks.NewTaskLogShipper(ctx, s.o.Logs, s.t.ID, s.t.Attempt), maskerFor(env))
+		}
 	}
 	return nil
 }
@@ -302,12 +333,14 @@ func (s *run) cleanup() {
 		_ = s.tty.Close()
 	}
 	if s.commands != nil {
+		s.stopWork()
 		close(s.commands)
 		s.workerWG.Wait()
 	}
 	if s.recorder != nil {
 		s.recorder.close()
 	}
+	s.endRecovery()
 }
 
 // send seals and sends one payload (serialised: the main loop and the data
@@ -394,6 +427,9 @@ func (s *run) loop(ctx context.Context) {
 					continue
 				}
 				lastSeen = now()
+				if s.hs != nil {
+					s.hs.firstFrame(s.log)
+				}
 				switch p.T {
 				case THello:
 					if helloed {
@@ -543,7 +579,7 @@ func (s *run) exitedCh() <-chan struct{} {
 // start begins the session after the browser's hello.
 func (s *run) start(ctx context.Context, hello Payload) error {
 	switch s.spec.Kind {
-	case state.SessionConsole:
+	case state.SessionConsole, state.SessionRecovery:
 		cols, rows := s.spec.Cols, s.spec.Rows
 		if validSize(hello.Cols, hello.Rows) {
 			cols, rows = hello.Cols, hello.Rows
@@ -566,8 +602,10 @@ func (s *run) start(ctx context.Context, hello Payload) error {
 		return s.send(ctx, Payload{T: TStarted, Shell: s.shell})
 	case state.SessionData:
 		s.commands = make(chan *state.SessionCommand, 8)
+		var wctx context.Context
+		wctx, s.stopWork = context.WithCancel(context.WithoutCancel(ctx))
 		s.workerWG.Add(1)
-		go s.worker(context.WithoutCancel(ctx))
+		go s.worker(wctx)
 		return s.send(ctx, Payload{T: TStarted})
 	}
 	return nil

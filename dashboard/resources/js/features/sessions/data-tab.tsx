@@ -33,6 +33,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Textarea } from '@/components/ui/textarea';
 import { cn } from '@/lib/utils';
 import type { ServiceRef } from './api';
+import { rowCount } from './format';
 import { NullChip, ResultExport, ResultGrid } from './result-grid';
 import type { DataResult } from './result-types';
 import { riskyStatement } from './risky-statement';
@@ -203,7 +204,13 @@ const DIALECT: Record<
 };
 
 type Selection =
-    | { kind: 'table'; schema: string; name: string; rows?: number }
+    | {
+          kind: 'table';
+          schema: string;
+          name: string;
+          rows?: number;
+          estimate?: boolean;
+      }
     | { kind: 'key'; key: string }
     | null;
 
@@ -303,10 +310,12 @@ function Workspace({
                                                   : selection.key}
                                         </span>
                                         {selection?.kind === 'table' &&
-                                            rowsLabel(selection.rows) !==
-                                                null && (
+                                            selection.rows !== undefined && (
                                                 <span className="text-faint tabular-nums">
-                                                    {rowsLabel(selection.rows)}{' '}
+                                                    {rowCount(
+                                                        selection.rows,
+                                                        selection.estimate,
+                                                    )}{' '}
                                                     rows
                                                 </span>
                                             )}
@@ -414,16 +423,6 @@ function SidebarFilter({
     );
 }
 
-function rowsLabel(rows: number | undefined): string | null {
-    if (rows === undefined) {
-        return null;
-    }
-
-    return rows >= 1000
-        ? `~${new Intl.NumberFormat('en', { notation: 'compact' }).format(rows)}`
-        : String(rows);
-}
-
 function SchemaSidebar({
     noun,
     result,
@@ -495,6 +494,7 @@ function SchemaSidebar({
                                                 schema: group.name,
                                                 name: item.name,
                                                 rows: item.rows,
+                                                estimate: item.estimate,
                                             })
                                         }
                                         className={cn(
@@ -520,9 +520,17 @@ function SchemaSidebar({
                                                     )}
                                                 </span>
                                             )}
-                                        <span className="shrink-0 text-faint tabular-nums">
-                                            {rowsLabel(item.rows)}
-                                        </span>
+                                        {item.rows !== undefined && (
+                                            <span
+                                                className="shrink-0 text-faint tabular-nums"
+                                                title={`${rowCount(item.rows, item.estimate, true)} rows`}
+                                            >
+                                                {rowCount(
+                                                    item.rows,
+                                                    item.estimate,
+                                                )}
+                                            </span>
+                                        )}
                                     </button>
                                 );
                             })}
@@ -687,7 +695,12 @@ function TableBrowser({
     table,
 }: {
     run: Run;
-    table: { schema: string; name: string; rows?: number };
+    table: {
+        schema: string;
+        name: string;
+        rows?: number;
+        estimate?: boolean;
+    };
 }) {
     const [page, setPage] = useState(0);
     const [result, setResult] = useState<DataResult | null>(null);
@@ -714,11 +727,17 @@ function TableBrowser({
         setPage((p) => p + by);
     };
     const count = result?.status === 'ok' ? (result.rows?.length ?? 0) : 0;
-    const total = rowsLabel(table.rows);
+    const total = rowCount(table.rows, table.estimate, true);
+    // An exact count ends paging; an estimate only says roughly where.
+    const last =
+        count < PAGE ||
+        (table.rows !== undefined &&
+            !table.estimate &&
+            (page + 1) * PAGE >= table.rows);
     const rows = result?.rows ?? [];
 
     // The pager sits on the title line, so paging never needs a scroll
-    // past the rows: "orders  Rows 1–50 of ~5.1K  ‹ ›" (docs/08 §15).
+    // past the rows: "orders  Rows 1–50 of about 5.1K  ‹ ›" (docs/08 §15).
     return (
         <div className="flex flex-col gap-3">
             <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
@@ -754,7 +773,7 @@ function TableBrowser({
                         variant="outline"
                         size="icon-sm"
                         aria-label="Next page"
-                        disabled={count < PAGE || result === null}
+                        disabled={last || result === null}
                         onClick={() => go(1)}
                     >
                         <ChevronRight />

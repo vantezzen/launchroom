@@ -32,6 +32,7 @@ final class TaskResult extends Data
         public ?DataImportResult $dataImport = null,
         public ?DataExportResult $dataExport = null,
         public ?AccessResult $access = null,
+        public ?CleanupResult $cleanup = null,
     ) {}
 
     /**

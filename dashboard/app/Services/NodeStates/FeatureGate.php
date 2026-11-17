@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Services\NodeStates;
 
+use App\Data\Protocol\V1\HealthSpec;
 use App\Data\Protocol\V1\NodeState;
 use App\Data\Protocol\V1\RouteSpec;
 use App\Data\Protocol\V1\VolumeSpec;
@@ -51,6 +52,26 @@ final class FeatureGate
                     $workload->shipLogs = false;
                 }),
                 NodeStateField::WorkloadFiles => self::dropFiles($state, $server),
+                NodeStateField::SystemWatchdog => $state->system->watchdog = null,
+                NodeStateField::HealthHost => self::eachWorkload($state, static function (WorkloadSpec $workload): void {
+                    if ($workload->health instanceof HealthSpec) {
+                        $workload->health->host = null;
+                    }
+                }),
+                NodeStateField::HealthRestartAfter => self::eachWorkload($state, static function (WorkloadSpec $workload): void {
+                    if ($workload->health instanceof HealthSpec) {
+                        $workload->health->restartAfter = null;
+                    }
+                }),
+                NodeStateField::MountInitOwner => self::eachWorkload($state, static function (WorkloadSpec $workload): void {
+                    if ($workload->mounts !== null) {
+                        $workload->mounts = array_map(static function (array $mount): array {
+                            unset($mount['initOwner']);
+
+                            return $mount;
+                        }, $workload->mounts);
+                    }
+                }),
                 // RenderWithout: the renderer already asked accepts() while building.
                 NodeStateField::RouteStopped, NodeStateField::SharedVolume, NodeStateField::WorkloadSchedule,
                 NodeStateField::WorkloadStop, NodeStateField::WorkloadWalArchive, NodeStateField::IngressDnsProvider => null,

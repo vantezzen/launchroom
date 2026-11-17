@@ -180,6 +180,11 @@ func TestSubscribesAndDispatchesNudges(t *testing.T) {
 	if got := wait(t, events, "event"); got != state.NudgeTaskAvailable {
 		t.Fatalf("event = %q", got)
 	}
+	// A cancelled task is dispatched too (its runner heartbeats at once).
+	p.send <- `{"event":"task.cancelled","channel":"private-daemon.` + string(testServer) + `","data":"[]"}`
+	if got := wait(t, events, "event"); got != state.NudgeTaskCancelled {
+		t.Fatalf("event = %q", got)
+	}
 
 	// Server pings are answered.
 	p.send <- `{"event":"pusher:ping","data":"{}"}`

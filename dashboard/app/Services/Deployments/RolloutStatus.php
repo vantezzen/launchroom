@@ -10,9 +10,11 @@ use App\Enums\DeploymentFailureClass;
 use App\Enums\Mesh\MeshPath;
 use App\Enums\PortHint;
 use App\Enums\ServerStatus;
+use App\Enums\WorkloadIssueKind;
 use App\Enums\WorkloadPhase;
 use App\Models\Placement;
 use App\Models\Server;
+use App\Support\Deployments\ExitMeaning;
 use App\Support\Deployments\LifecycleLines;
 use App\Support\Deployments\PullProgressMessage;
 use Carbon\CarbonImmutable;
@@ -283,18 +285,35 @@ final readonly class RolloutStatus
     }
 
     /**
-     * The port hint as a failed step's meta, for FailureCatalogue.
+     * What the failed replica says about itself, as a failed step's meta for
+     * FailureCatalogue: the port hint, the probe hint and the start of the
+     * probe's answer, the typed start failure, the last exit and its server.
      *
-     * @return array{portHint?: string, listening?: list<int>, port?: int}
+     * @return array<string, mixed>
      */
     public function failureMeta(?Placement $placement): array
     {
-        $hint = $this->portHint($placement);
+        if (! $placement instanceof Placement) {
+            return [];
+        }
 
-        return $hint === null ? [] : array_filter([
-            'portHint' => $hint['hint']->value,
-            'listening' => $hint['listening'],
-            'port' => $hint['port'],
+        $hint = $this->portHint($placement);
+        $exit = $placement->last_exit;
+        $issue = $placement->issue;
+        $server = $this->servers()->get($placement->server_id);
+
+        return array_filter([
+            'portHint' => $hint['hint']->value ?? null,
+            'listening' => $hint['listening'] ?? null,
+            'port' => $hint['port'] ?? null,
+            'failureCode' => $exit?->failure?->value,
+            'probeHint' => $placement->probe?->hint?->value,
+            'probeBody' => $placement->probe?->body,
+            'exitCode' => $exit->code ?? $issue?->exitCode,
+            'oomKilled' => ($exit !== null && $exit->oomKilled) || ($issue !== null && $issue->oomKilled) ? true : null,
+            'signal' => $exit?->signal,
+            'byLaunchroom' => $exit !== null && $exit->byLaunchroom ? true : null,
+            'server' => $server instanceof Server ? $server->public_id : null,
         ], static fn (mixed $value): bool => $value !== null && $value !== []);
     }
 
@@ -310,6 +329,12 @@ final readonly class RolloutStatus
         }
 
         $hint = $issue->kind->portHint();
+
+        if ($issue->kind === WorkloadIssueKind::Unresponsive) {
+            $restarts = $issue->restarts ?? 3;
+
+            return [DeploymentFailureClass::HealthTimeout, "The health check kept failing after launchroom restarted the container {$restarts} times this hour, so launchroom leaves it running until the check passes.".$this->probeError($placement).$this->output($placement)];
+        }
 
         if (! $hint instanceof PortHint) {
             return [DeploymentFailureClass::RuntimeError, $this->crashLoop($placement, $issue)];
@@ -336,7 +361,7 @@ final readonly class RolloutStatus
             $placement->phase === WorkloadPhase::Failed && $placement->message !== null && $placement->message !== '' => "{$name} couldn't run the container: {$placement->message}",
             $placement->phase === WorkloadPhase::Removed => "launchroom removed the container before it became healthy{$this->removedBecause($placement)}.",
             $exit !== null && $exit->oomKilled => 'Out of memory: the container was killed before it became healthy. Raise its memory limit in Settings → Scaling.',
-            $exit !== null && $exit->code !== null => "The container exited with code {$exit->code} before it became healthy.",
+            $exit !== null && $exit->code !== null => "The container exited with code {$exit->code} before it became healthy".$this->meaning(ExitMeaning::notableOfExit($exit)),
             $placement->message !== null && $placement->message !== '' => $placement->message,
             default => "The container {$placement->phase->value} before it became healthy.",
         };
@@ -349,11 +374,30 @@ final readonly class RolloutStatus
         $restarts = $issue->restarts ?? $placement->restart_count;
         $code = $issue->exitCode;
 
+        $exit = $placement->last_exit;
+        $meaning = $code !== null && $exit !== null && $exit->code === $code
+            ? ExitMeaning::notableOfExit($exit)
+            : ExitMeaning::notable($code);
+
         $message = $issue->oomKilled
             ? "The container keeps running out of memory: it was killed {$restarts} times. Raise its memory limit in Settings → Scaling."
-            : 'The container keeps crashing: it exited'.($code === null ? '' : " with code {$code}")." and was restarted {$restarts} times.";
+            : 'The container keeps crashing: it exited'.($code === null ? '' : " with code {$code}")." and was restarted {$restarts} times".$this->meaning($meaning);
 
         return $message.$this->output($placement);
+    }
+
+    /** ": it was killed (SIGKILL)." after an exit sentence, else ".". */
+    private function meaning(?string $meaning): string
+    {
+        return $meaning === null ? '.' : ": {$meaning}.";
+    }
+
+    /** The probe's last error and the start of its answer, for an unresponsive replica. */
+    private function probeError(Placement $placement): string
+    {
+        $error = $placement->probe?->lastError;
+
+        return $error === null || $error === '' ? '' : " Last check: {$error}.";
     }
 
     private function removedBecause(Placement $placement): string

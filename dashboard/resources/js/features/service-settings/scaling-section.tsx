@@ -1,5 +1,5 @@
 import { Link, useForm } from '@inertiajs/react';
-import { Database, Plus, Tag, X } from 'lucide-react';
+import { Database, Plus, Tag, TriangleAlert, X } from 'lucide-react';
 import { useEffect, useMemo, useState } from 'react';
 import type { FormEvent } from 'react';
 import InputError from '@/components/input-error';
@@ -704,6 +704,31 @@ export function ScalingSection({ context }: { context: SettingsContext }) {
                             message={error('replicas')}
                             className="px-5 pb-3"
                         />
+                        {draft.replicas > 1 &&
+                            settings.replicaWarnings.length > 0 && (
+                                <ul
+                                    className="flex flex-col gap-2 border-t bg-status-progress-soft/50 px-5 py-3"
+                                    aria-label="With more than one replica"
+                                >
+                                    {settings.replicaWarnings.map((warning) => (
+                                        <li
+                                            key={warning}
+                                            className="flex gap-2.5 type-small"
+                                        >
+                                            <TriangleAlert
+                                                aria-hidden="true"
+                                                className="mt-0.5 size-3.5 shrink-0 text-status-progress"
+                                            />
+                                            <span>
+                                                <span className="sr-only">
+                                                    Warning:{' '}
+                                                </span>
+                                                {warning}
+                                            </span>
+                                        </li>
+                                    ))}
+                                </ul>
+                            )}
                     </SettingsCard>
                 )}
 

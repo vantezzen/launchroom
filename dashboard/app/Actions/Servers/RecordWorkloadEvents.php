@@ -12,6 +12,7 @@ use App\Data\Specs\ServiceSpec;
 use App\Enums\DeploymentStatus;
 use App\Enums\LogSourceKind;
 use App\Enums\WorkloadEventKind;
+use App\Enums\WorkloadFailureCode;
 use App\Events\LogChunksStored;
 use App\Models\DaemonTask;
 use App\Models\Deployment;
@@ -37,9 +38,11 @@ use App\Support\Logs\LogChunkRow;
  * A server only writes about what it runs: the workload's placement on this
  * server, else one launchroom just retired (RetiredWorkloads), else the
  * event's deployment with a task or placement here. An exit's last lines go
- * to the placement (`last_exit`, failure messages) and, for a live
- * deployment, into the log after the exit line; while a deployment rolls out,
- * the container's output is in the log already (startup output).
+ * to the placement (`last_exit` with its signal, whether launchroom stopped
+ * it and launchroomd's typed start failure, G1/G5) and, for a live
+ * deployment, into the log after the exit line, as do the last lines of a
+ * stopped, removed or health-restarted container (G8); while a deployment
+ * rolls out, the container's output is in the log already (startup output).
  */
 final readonly class RecordWorkloadEvents
 {
@@ -89,26 +92,44 @@ final readonly class RecordWorkloadEvents
             $line = $this->context($server, $deployment, $placement)->line($event);
             $lines = [['time' => $event->at, 'stream' => 'system', 'text' => $line['text'], 'step' => $section, 'level' => $line['level']]];
 
-            if ($event->kind === WorkloadEventKind::Exited) {
-                $output = array_map(fn (LogLine $out): array => [
-                    'time' => $out->time,
-                    'stream' => $out->stream,
-                    'text' => $this->masker->mask($deployment->id, $out->text),
-                ], $event->lines());
+            $output = array_map(fn (LogLine $out): array => [
+                'time' => $out->time,
+                'stream' => $out->stream,
+                'text' => $this->masker->mask($deployment->id, $out->text),
+            ], $event->lines());
+            $code = $event->code instanceof WorkloadFailureCode ? $event->code : null;
+            $message = is_string($event->message) && $event->message !== '' ? $this->masker->mask($deployment->id, $event->message) : null;
 
-                if ($placement instanceof Placement) {
-                    $placement->forceFill(['last_exit' => new ContainerExitData(
-                        at: $event->at,
-                        code: is_int($event->exitCode) ? $event->exitCode : null,
-                        oomKilled: $event->oomKilled === true,
-                        output: $output,
-                    )])->save();
-                }
+            if ($event->kind === WorkloadEventKind::Exited && $placement instanceof Placement) {
+                $placement->forceFill(['last_exit' => new ContainerExitData(
+                    at: $event->at,
+                    code: is_int($event->exitCode) ? $event->exitCode : null,
+                    oomKilled: $event->oomKilled === true,
+                    output: $output,
+                    signal: is_int($event->signal) ? $event->signal : null,
+                    byLaunchroom: $event->byLaunchroom === true,
+                    failure: $code,
+                    message: $code instanceof WorkloadFailureCode ? $message : null,
+                )])->save();
+            }
 
-                if ($section === 'runtime') {
-                    foreach ($output as $out) {
-                        $lines[] = [...$out, 'step' => $section];
-                    }
+            // A typed create or start failure (G5): kept like an exit, so
+            // the failed step and the panel can say why.
+            if ($event->kind === WorkloadEventKind::CreateFailed && $code instanceof WorkloadFailureCode && $placement instanceof Placement) {
+                $placement->forceFill(['last_exit' => new ContainerExitData(
+                    at: $event->at,
+                    output: $output,
+                    failure: $code,
+                    message: $message,
+                )])->save();
+            }
+
+            // The last lines of an exit, and of a container launchroom
+            // stopped or removed (G8), follow the line once the deployment
+            // is live; while it rolls out, its output is in the log already.
+            if ($section === 'runtime' && in_array($event->kind, [WorkloadEventKind::Exited, WorkloadEventKind::Stopped, WorkloadEventKind::Removed, WorkloadEventKind::Restarted], true)) {
+                foreach ($output as $out) {
+                    $lines[] = [...$out, 'step' => $section];
                 }
             }
 

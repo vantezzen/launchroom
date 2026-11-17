@@ -54,6 +54,8 @@ lastDeliveryAt: string | null,
 lastDeliveryOk: boolean | null,
 lastError: string | null,
 canManage: boolean,
+fallback: boolean,
+allowPrivateHosts: boolean,
 };
 export type AlertChannelInput = {
 kind: App.Enums.Alerts.AlertChannelKind,
@@ -69,6 +71,8 @@ minSeverity: App.Enums.Alerts.AlertSeverity | null,
 recipients: string[] | null,
 secretUrl: string | null,
 rotateSecret: boolean,
+fallback: boolean | null,
+allowPrivateHosts: boolean | null,
 };
 export type AlertRuleData = {
 rule: App.Enums.Alerts.AlertRule,
@@ -922,6 +926,8 @@ notes: App.Data.Blueprints.BlueprintNote[],
 files: App.Data.Services.ConfigFile[],
 provides: App.Data.Blueprints.BlueprintVariable[],
 backupConsistency: App.Enums.Backups.VolumeConsistency | null,
+stopTimeoutSeconds: number | null,
+stopSignal: string | null,
 };
 export type BlueprintServicePreviewData = {
 key: string,
@@ -1060,6 +1066,7 @@ image: string | null,
 activeDeploymentId: string | null,
 workloads: App.Data.Canvas.WorkloadData[],
 capabilityOptions: App.Data.Canvas.CapabilityOptionData[],
+rootImage: boolean,
 };
 export type CanvasEdgeData = {
 id: string,
@@ -1207,6 +1214,11 @@ warnings: string[],
 planJson: Record<string, any> | null,
 next: App.Data.Protocol.V1.NextBuildInfo | null,
 phpExtensions: string[],
+envAliases: string[],
+requiredSecrets: App.Data.Protocol.V1.RequiredSecret[],
+missingSecrets: string[],
+volumeSuggestions: App.Data.Protocol.V1.VolumeSuggestion[],
+sqliteWarning: string | null,
 };
 export type DnsRecordData = {
 type: string,
@@ -1428,6 +1440,8 @@ actionNeeded: number,
 actionNeededFinding: string | null,
 controls: App.Data.Canvas.ServiceControlsData | null,
 origin: App.Data.Canvas.ServiceOriginData | null,
+runtime: App.Data.Canvas.ServiceRuntimeFactsData | null,
+cronRuns: App.Data.Services.CronRunData[],
 };
 export type ServicePlacementData = {
 servers: App.Data.Canvas.PlacementServerOptionData[],
@@ -1445,6 +1459,16 @@ serviceName: string,
 status: App.Data.Canvas.NodeStatusData,
 sentence: string,
 href: string,
+};
+export type ServiceRuntimeFactsData = {
+restarts: number,
+restartText: string | null,
+lastExit: string | null,
+lastExitAt: string | null,
+lastExitWhere: string | null,
+advice: string | null,
+finding: App.Data.Deployments.RuntimeFindingData | null,
+recentCrashes: string | null,
 };
 export type ServiceSettingsData = {
 source: App.Data.Canvas.ServiceSourceData,
@@ -1466,6 +1490,7 @@ placement: App.Data.Canvas.ServicePlacementData | null,
 edges: App.Data.Canvas.EdgeServerData[],
 configFile: App.Data.ConfigAsCode.ManagedByFileData | null,
 dockerfileGeneration: App.Data.Dockerfiles.DockerfileGenerationPanelData | null,
+replicaWarnings: string[],
 };
 export type ServiceSourceData = {
 type: App.Enums.ServiceSourceType,
@@ -1659,6 +1684,10 @@ time: string,
 stream: string,
 text: string,
 }[],
+signal: number | null,
+byLaunchroom: boolean,
+failure: App.Enums.WorkloadFailureCode | null,
+message: string | null,
 };
 export type DeploymentCommit = {
 sha: string | null,
@@ -1795,6 +1824,8 @@ rollbackOfId: string | null,
 canRollback: boolean,
 commitAuthorAvatarUrl: string | null,
 stopped: App.Data.Deployments.ServiceStoppedData | null,
+rollbackReason: string | null,
+probationUntil: string | null,
 };
 export type EnvSnapshotEntryData = {
 name: string,
@@ -1807,11 +1838,13 @@ cause: string,
 fix: string,
 action: App.Enums.FailureFixAction | null,
 params: Record<string, string | number>,
+answer: string | null,
 };
 export type FailureFixData = {
 action: App.Enums.FailureFixAction,
 port: number | null,
 seconds: number | null,
+server: string | null,
 };
 export type LogLineData = {
 number: number,
@@ -1833,6 +1866,8 @@ lastError: string | null,
 checkedAt: string | null,
 portHint: App.Enums.PortHint | null,
 listening: number[],
+hint: App.Enums.ProbeHint | null,
+body: string | null,
 };
 export type PullProgressData = {
 stage: string,
@@ -1848,6 +1883,14 @@ export type ResolvedConfigEntryData = {
 group: string,
 key: string,
 value: string,
+};
+export type RuntimeFindingData = {
+key: string,
+title: string,
+cause: string,
+fix: string,
+line: string,
+at: string,
 };
 export type ServiceDeploymentCurrentData = {
 id: string,
@@ -2029,6 +2072,9 @@ error: string | null,
 errorAt: string | null,
 checkedAt: string | null,
 warning: string | null,
+failureKind: App.Enums.CertFailureKind | null,
+retryAfter: string | null,
+problem: string | null,
 };
 export type DnsCheckData = {
 status: App.Enums.Domains.DnsCheckStatus,
@@ -2342,6 +2388,10 @@ reportedAt: string | null,
 controlPlane: boolean,
 shared: boolean,
 publicIpv6: string | null,
+problemTitle: string | null,
+problemDetail: string | null,
+output: string | null,
+failingSince: string | null,
 };
 export type EdgeOverviewData = {
 edges: number,
@@ -2355,6 +2405,14 @@ export type IngressReportData = {
 state: string,
 routes: number,
 storage: App.Data.Ingress.CertStorageReportData | null,
+message: string | null,
+reason: App.Enums.IngressFailureReason | null,
+port: number | null,
+process: string | null,
+output: string[],
+failingSince: string | null,
+dashboardCertificate: App.Data.Instance.DashboardCertificateData | null,
+dashboardHost: string | null,
 };
 export type IngressSettingsData = {
 appsDomain: string | null,
@@ -2585,6 +2643,69 @@ unskip: string | null,
 export type WildcardCheckData = {
 domain: string,
 };
+namespace System {
+export type SystemCheckData = {
+id: string,
+title: string,
+status: App.Enums.Instance.SystemCheckStatus,
+summary: string,
+detail: string[],
+fix: string | null,
+};
+export type SystemEventData = {
+at: string,
+text: string,
+failed: boolean,
+};
+export type SystemFailedJobData = {
+job: string,
+count: number,
+lastFailedAt: string,
+};
+export type SystemHealthData = {
+checkedAt: string,
+checks: App.Data.Instance.System.SystemCheckData[],
+services: App.Data.Instance.System.SystemServiceData[] | null,
+servicesCheckedAt: string | null,
+ready: boolean | null,
+events: App.Data.Instance.System.SystemEventData[],
+workers: string | null,
+queues: App.Data.Instance.System.SystemQueueData[] | null,
+failedJobs: App.Data.Instance.System.SystemFailedJobData[] | null,
+schedulerBeatAt: string | null,
+staleLocks: string[],
+diskFreeMb: number | null,
+diskTotalMb: number | null,
+registryMb: number | null,
+databaseBytes: number | null,
+cacheBytes: number | null,
+backupStatus: string,
+backupLastSuccessAt: string | null,
+backupNextRunAt: string | null,
+certificateHost: string | null,
+certificateExpiresAt: string | null,
+version: string,
+serverVersion: string | null,
+databaseVersion: string | null,
+cacheVersion: string | null,
+horizonUrl: string | null,
+};
+export type SystemQueueData = {
+name: string,
+label: string,
+waiting: number,
+waitSeconds: number,
+workers: number,
+};
+export type SystemServiceData = {
+name: string,
+label: string,
+state: string,
+startedAt: string | null,
+restarts: number,
+oomKilled: boolean,
+};
+}
 }
 namespace Logs {
 export type EnvironmentLogRetentionData = {
@@ -2650,6 +2771,7 @@ service: string | null,
 export type LogTailStartedData = {
 following: number,
 renewAfterSeconds: number,
+notes: string[],
 };
 export type RuntimeLogRetentionData = {
 enabled: boolean,
@@ -3255,6 +3377,7 @@ rootDirectory: string | null,
 port: number | null,
 framework: string | null,
 processes: App.Data.Projects.ImportProcessData[],
+secrets: Record<string, string | null>,
 };
 export type ImportDatabaseData = {
 engine: App.Enums.DatabaseEngine,
@@ -3317,6 +3440,7 @@ export type SuggestedDatabaseData = {
 engine: App.Enums.DatabaseEngine,
 reason: string,
 apps: string[],
+fallback: boolean,
 };
 export type SuggestedProcessData = {
 name: string,
@@ -3490,6 +3614,7 @@ export type AppliedPreset = {
 name: string,
 version: number,
 decisions: App.Data.Protocol.V1.PresetDecision[],
+scope: string | null,
 };
 export type BackupResult = {
 snapshotId: string,
@@ -3542,6 +3667,12 @@ warnings: App.Data.Protocol.V1.BuildWarning[] | null,
 plan: Record<string, any> | null,
 phpExtensions: App.Data.Protocol.V1.PhpExtension[] | null,
 next: App.Data.Protocol.V1.NextBuildInfo | null,
+envAliases: App.Data.Protocol.V1.EnvAlias[] | null,
+requiredSecrets: App.Data.Protocol.V1.RequiredSecret[] | null,
+volumeSuggestions: App.Data.Protocol.V1.VolumeSuggestion[] | null,
+workspace: App.Data.Protocol.V1.WorkspaceInfo | null,
+phpDependencyExtensions: App.Data.Protocol.V1.PhpDependencyExtension[] | null,
+image: App.Data.Protocol.V1.ImageFacts | null,
 };
 export type BuildWarning = {
 code: string,
@@ -3561,6 +3692,16 @@ notBefore?: string | null,
 notAfter?: string | null,
 lastError?: string,
 lastErrorAt?: string | null,
+failureKind?: App.Enums.CertFailureKind | null,
+retryAfter?: string | null,
+};
+export type CleanupResult = {
+at: string,
+trigger: string,
+removedImages: number,
+removedContainers: number,
+reclaimedMb: number,
+error?: string,
 };
 export type ClientCertificate = {
 serverId: string,
@@ -3653,10 +3794,16 @@ registry: App.Data.Protocol.V1.RegistryInfo,
 pollIntervals: App.Data.Protocol.V1.PollIntervals,
 nudge: App.Data.Protocol.V1.NudgeConfig | null,
 };
+export type EnvAlias = {
+name: string,
+from: App.Enums.EnvAliasSource,
+};
 export type GeneratedSecret = {
 name: string,
 length: number,
 encoding: string,
+scope: string | null,
+shared: string | null,
 };
 export type HardwareFacts = {
 cpuModel?: string,
@@ -3678,6 +3825,8 @@ timeout: string,
 failureThreshold: number,
 path: string | null,
 expectStatus: string | null,
+host: string | null,
+restartAfter: string | null,
 };
 export type HostFacts = {
 hostname: string,
@@ -3703,6 +3852,14 @@ controlPlane?: Record<string, any> | null,
 runtime?: Record<string, any> | null,
 publicAddresses?: Record<string, any> | null,
 registry?: Record<string, any> | null,
+docker?: Record<string, any> | null,
+reconcile?: Record<string, any> | null,
+daemon?: Record<string, any> | null,
+lastRefusal?: Record<string, any> | null,
+};
+export type ImageFacts = {
+user: string | null,
+exposedPorts: number[] | null,
 };
 export type IngressSpec = {
 storage: {
@@ -3726,6 +3883,10 @@ message?: string,
 certificates?: App.Data.Protocol.V1.CertificateStatus[] | null,
 storage?: App.Data.Protocol.V1.CertStorageStatus | null,
 waf?: App.Data.Protocol.V1.WafStatus | null,
+reason?: App.Enums.IngressFailureReason | null,
+port?: number,
+process?: string,
+output?: App.Data.Protocol.V1.LogLine[] | null,
 };
 export type InspectedFile = {
 path: string,
@@ -3842,6 +4003,10 @@ export type NudgeConfig = {
 key: string,
 url: string | null,
 };
+export type PhpDependencyExtension = {
+name: string,
+for: string,
+};
 export type PhpExtension = {
 name: string,
 for: string,
@@ -3872,10 +4037,13 @@ consecutiveFailures: number,
 lastError?: string,
 lastCheckedAt?: string | null,
 attempts?: number,
+body?: string,
+hint?: App.Enums.ProbeHint | null,
 };
 export type ProcessSuggestion = {
 name: string,
 args: string[],
+stopTimeout: string | null,
 };
 export type PullProgress = {
 stage: string,
@@ -3908,6 +4076,11 @@ ingress?: App.Data.Protocol.V1.IngressStatus | null,
 metrics?: Record<string, any> | null,
 walArchives?: Record<string, any>[] | null,
 events?: App.Data.Protocol.V1.WorkloadEvent[] | null,
+controlPlane?: Record<string, any> | null,
+};
+export type RequiredSecret = {
+name: string,
+reason: string | null,
 };
 export type ResolvedPackage = {
 name: string,
@@ -4023,6 +4196,7 @@ ipv4: string,
 signingKey: string,
 }[] | null,
 controlPlaneUrl: string | null,
+watchdog: App.Data.Protocol.V1.WatchdogSpec | null,
 };
 export type TailscaleSpec = {
 enabled: boolean,
@@ -4087,6 +4261,7 @@ inspection: App.Data.Protocol.V1.RepoInspection | null,
 dataImport: App.Data.Protocol.V1.DataImportResult | null,
 dataExport: App.Data.Protocol.V1.DataExportResult | null,
 access: App.Data.Protocol.V1.AccessResult | null,
+cleanup: App.Data.Protocol.V1.CleanupResult | null,
 };
 export type VerifyResult = {
 passed: boolean,
@@ -4121,6 +4296,10 @@ id: string,
 name: string,
 service: string | null,
 };
+export type VolumeSuggestion = {
+path: string,
+reason: string,
+};
 export type WafStatus = {
 state: string,
 routes: number,
@@ -4128,6 +4307,20 @@ engine?: string,
 ruleSet?: string,
 droppedRecords?: number,
 message?: string,
+};
+export type WatchdogSpec = {
+role: unknown,
+fallbackKind: unknown | null,
+fallbackSecretSealed: string | null,
+fallbackSecretFingerprint: string | null,
+smtp: {
+host: string,
+port: number,
+from: string,
+to: string[],
+} | null,
+allowPrivateHosts: boolean,
+serverLabel: string | null,
 };
 export type WorkloadEvent = {
 seq: number,
@@ -4142,6 +4335,14 @@ restarts?: number,
 failures?: number,
 message?: string,
 output?: App.Data.Protocol.V1.LogLine[] | null,
+signal?: number,
+byLaunchroom?: boolean,
+code?: App.Enums.WorkloadFailureCode | null,
+};
+export type WorkloadFailure = {
+code: App.Enums.WorkloadFailureCode | null,
+at: string,
+message?: string,
 };
 export type WorkloadIssue = {
 kind: App.Enums.WorkloadIssueKind,
@@ -4176,6 +4377,11 @@ capabilities: string[] | null,
 mounts: {
 volume: string,
 target: string,
+readOnly?: boolean,
+initOwner?: {
+uid: number,
+gid: number,
+},
 }[] | null,
 restart: string,
 drainUntil: string | null,
@@ -4211,6 +4417,15 @@ health?: App.Data.Protocol.V1.ProbeStatus | null,
 pull?: App.Data.Protocol.V1.PullProgress | null,
 issue?: App.Data.Protocol.V1.WorkloadIssue | null,
 portHint?: App.Enums.PortHint | null,
+failure?: App.Data.Protocol.V1.WorkloadFailure | null,
+image?: App.Data.Protocol.V1.ImageFacts | null,
+};
+export type WorkspaceInfo = {
+packageName: string,
+manager: string,
+root: string | null,
+tool: string | null,
+dependsOn: string[] | null,
 };
 namespace Tasks {
 export type AccessSpec = {
@@ -4289,6 +4504,10 @@ startCommand: string | null,
 railpackEnv: Record<string, string> | null,
 phpExtensions: App.Data.Protocol.V1.PhpExtension[] | null,
 };
+export type CertRetrySpec = {
+hosts: string[],
+};
+export type CleanupSpec = object;
 export type DbExportSpec = {
 engine: string,
 transfer: App.Data.Protocol.V1.Tasks.TransferTarget,
@@ -4376,6 +4595,11 @@ keepWeekly: number | null,
 keepMonthly: number | null,
 keepWithinHours: number | null,
 };
+export type RunOnceMount = {
+volume: string,
+target: string,
+readOnly: boolean | null,
+};
 export type RunOnceProbe = {
 port: number,
 within: string,
@@ -4394,6 +4618,7 @@ args: string[] | null,
 maskEnv: string[] | null,
 probe: App.Data.Protocol.V1.Tasks.RunOnceProbe | null,
 env: App.Data.Protocol.V1.Sealed | null,
+mounts: App.Data.Protocol.V1.Tasks.RunOnceMount[] | null,
 };
 export type SelfUpdateSpec = {
 version: string,
@@ -4412,6 +4637,7 @@ rows: number | null,
 record: boolean | null,
 engine: string | null,
 key: App.Data.Protocol.V1.Sealed | null,
+allowChanges: boolean | null,
 };
 export type TaskSpec = object;
 export type TransferRef = {
@@ -4457,6 +4683,25 @@ owner: App.Data.Protocol.V1.Tasks.FileOwner | null,
 }
 }
 namespace Registry {
+export type RegistryCredentialData = {
+id: string,
+host: string,
+username: string,
+status: App.Enums.Registry.RegistryCredentialStatus,
+lastCheckedAt: string | null,
+lastError: string | null,
+createdAt: string | null,
+};
+export type RegistryCredentialInput = {
+host: string,
+username: string,
+password: string | null,
+};
+export type RegistryCredentialsPageData = {
+credentials: App.Data.Registry.RegistryCredentialData[],
+canManage: boolean,
+mirrorPrefix: string,
+};
 export type RegistryScope = {
 repository: string,
 actions: string[],
@@ -4551,6 +4796,7 @@ fileOwner: string | null,
 endedByOther: boolean,
 protocol: App.Enums.RemoteAccess.RemoteAccessProtocol | null,
 client: string | null,
+ending: boolean,
 };
 export type RemoteAccessPanelData = {
 kind: App.Enums.RemoteAccess.RemoteAccessKind,
@@ -5018,6 +5264,39 @@ name: App.Enums.Servers.RuntimeCapability,
 state: App.Enums.Servers.CapabilityState,
 explanation: string | null,
 };
+export type CleanupTaskData = {
+status: App.Enums.DaemonTaskStatus,
+requestedAt: string | null,
+finishedAt: string | null,
+removedImages: number | null,
+removedContainers: number | null,
+reclaimedMb: number | null,
+error: string | null,
+};
+export type ControlPlaneHealthData = {
+checkedAt: string,
+ready: boolean | null,
+notReadyReports: number,
+services: {
+name: string,
+state: string,
+startedAt: string | null,
+restarts: number,
+oomKilled: boolean,
+badSince: string | null,
+}[],
+restarts: {
+service: string,
+at: string,
+reason: string,
+}[],
+notices: {
+kind: string,
+at: string,
+sent: boolean,
+error: string | null,
+}[],
+};
 export type ControlPlaneLoadData = {
 serverId: string,
 serverName: string,
@@ -5037,6 +5316,13 @@ roles: string[],
 name: string | null,
 machine: string | null,
 };
+export type DaemonExitData = {
+kind: App.Enums.Servers.DaemonExitKind,
+at: string | null,
+reportedAt: string,
+panic: string | null,
+bootedAt: string | null,
+};
 export type DeviceData = {
 kind: App.Enums.DeviceKind,
 detected: App.Enums.DeviceKind,
@@ -5045,6 +5331,14 @@ model: string | null,
 provider: App.Enums.HostingProvider | null,
 providerName: string | null,
 virtualized: boolean,
+};
+export type DiskVolumeData = {
+id: string,
+label: string,
+detail: string | null,
+mountPath: string | null,
+sizeMb: number,
+retired: boolean,
 };
 export type DmiFactsData = {
 sysVendor: string | null,
@@ -5230,6 +5524,11 @@ snapshot: string | null,
 backupTakenAt: string | null,
 reason: string | null,
 };
+export type RequestRejectionData = {
+reason: App.Enums.Servers.RequestRejection,
+at: string,
+skewSeconds: number | null,
+};
 export type RetiredVolumeData = {
 id: string,
 label: string,
@@ -5271,6 +5570,7 @@ device: App.Data.Servers.DeviceData | null,
 location: App.Data.Servers.LocationData | null,
 specs: App.Data.Servers.ServerSpecsData | null,
 openAlerts: App.Data.Alerts.OpenAlertData[],
+refused: App.Data.Servers.ServerNoticeData | null,
 };
 export type ServerDetailData = {
 id: string,
@@ -5295,6 +5595,23 @@ location: App.Data.Servers.LocationData | null,
 specs: App.Data.Servers.ServerSpecsData | null,
 canUpdateAppearance: boolean,
 openAlerts: App.Data.Alerts.OpenAlertData[],
+notices: App.Data.Servers.ServerNoticeData[],
+};
+export type ServerDiskData = {
+totalMb: number | null,
+freeMb: number | null,
+inodesFreePercent: number | null,
+imagesMb: number | null,
+imagesReclaimableMb: number | null,
+buildCacheMb: number | null,
+walBacklogMb: number | null,
+registryMb: number | null,
+volumes: App.Data.Servers.DiskVolumeData[],
+measuredAt: string | null,
+lastCleanup: App.Data.Servers.Host.DiskCleanupData | null,
+cleanupTask: App.Data.Servers.CleanupTaskData | null,
+canFreeSpace: boolean,
+freeSpaceUnavailable: string | null,
 };
 export type ServerHealthData = {
 state: App.Enums.HealthCheckState,
@@ -5314,6 +5631,15 @@ ip: string | null,
 pathToControlPlane: App.Enums.Mesh.MeshPath | null,
 message: string | null,
 checkedAt: string | null,
+};
+export type ServerNoticeData = {
+key: string,
+state: App.Enums.HealthCheckState,
+title: string,
+detail: string,
+at: string | null,
+trace: string | null,
+anchor: string | null,
 };
 export type ServerPlacementData = {
 labels: Record<string, string>,
@@ -5401,6 +5727,22 @@ loginServer: string,
 authKey: string,
 };
 namespace Host {
+export type DaemonRefusalData = {
+at: string,
+status: number,
+clockSkewMs: number | null,
+message: string | null,
+};
+export type DaemonRunData = {
+startedAt: string,
+hostBootedAt: string | null,
+};
+export type DiskBreakdownData = {
+measuredAt: string,
+volumes: App.Data.Servers.Host.VolumeUsageData[],
+walBacklogMb: number | null,
+registryMb: number | null,
+};
 export type DiskCleanupData = {
 at: string,
 trigger: App.Enums.Servers.CleanupTrigger,
@@ -5412,6 +5754,13 @@ error: string | null,
 export type DiskUsageData = {
 totalMb: number,
 freeMb: number,
+inodesTotal: number | null,
+inodesFree: number | null,
+};
+export type DockerReachData = {
+reachable: boolean,
+checkedAt: string,
+error: string | null,
 };
 export type DockerUsageData = {
 imagesMb: number,
@@ -5430,6 +5779,7 @@ docker: App.Data.Servers.Host.DockerUsageData | null,
 buildCacheMb: number | null,
 clockSkewMs: number | null,
 cleanup: App.Data.Servers.Host.DiskCleanupData | null,
+disk: App.Data.Servers.Host.DiskBreakdownData | null,
 };
 export type HostStatusData = {
 cpus: number,
@@ -5440,6 +5790,10 @@ daemonVersion: string,
 dockerVersion: string | null,
 health: App.Data.Servers.Host.HostHealthData | null,
 registry: App.Data.Servers.Host.RegistryReachData | null,
+docker: App.Data.Servers.Host.DockerReachData | null,
+reconcile: App.Data.Servers.Host.ReconcileStatusData | null,
+daemon: App.Data.Servers.Host.DaemonRunData | null,
+lastRefusal: App.Data.Servers.Host.DaemonRefusalData | null,
 };
 export type InotifyLimitsData = {
 maxUserWatches: number,
@@ -5459,11 +5813,26 @@ export type NetworkCountData = {
 total: number,
 managed: number,
 };
+export type ReconcileErrorData = {
+code: string,
+target: string | null,
+message: string | null,
+};
+export type ReconcileStatusData = {
+lastPassAt: string,
+lastCompleteAt: string | null,
+errors: App.Data.Servers.Host.ReconcileErrorData[],
+};
 export type RegistryReachData = {
 reachable: boolean,
 checkedAt: string | null,
 latencyMs: number | null,
 error: string | null,
+};
+export type VolumeUsageData = {
+id: string,
+sizeMb: number,
+retired: boolean,
 };
 }
 }
@@ -5505,6 +5874,15 @@ parentServiceId: string | null,
 port: number | null,
 startCommand: string[] | null,
 };
+export type CronRunData = {
+startedAt: string | null,
+finishedAt: string | null,
+exitCode: number | null,
+oomKilled: boolean,
+running: boolean,
+failed: boolean,
+exitMeaning: string | null,
+};
 export type DatabaseSource = {
 engine: App.Enums.DatabaseEngine,
 version: string,
@@ -5518,6 +5896,10 @@ drain: App.Data.Forms.NumberRangeData,
 rolloutTimeout: App.Data.Forms.NumberRangeData,
 healthTimeout: App.Data.Forms.NumberRangeData,
 rolloutTimeoutDefault: number,
+stopTimeout: App.Data.Forms.NumberRangeData,
+stopTimeoutWeb: number,
+stopTimeoutProcess: number,
+restartAfterDefault: number,
 };
 export type DeploySettings = {
 port: number | null,
@@ -5532,6 +5914,9 @@ schedule: App.Data.Services.ScheduleSettings | null,
 files: App.Data.Services.ConfigFile[],
 rolloutTimeoutSeconds: number | null,
 healthTimeoutSeconds: number | null,
+stopTimeoutSeconds: number | null,
+stopSignal: string | null,
+overlapOnVolumes: boolean,
 };
 export type GitSource = {
 repositoryId: number,
@@ -5550,6 +5935,7 @@ startPeriodSeconds: number,
 intervalSeconds: number,
 timeoutSeconds: number,
 failureThreshold: number,
+restartAfterSeconds: number | null,
 };
 export type ImageSource = {
 reference: string,
@@ -5616,6 +6002,7 @@ record: boolean,
 idleMinutes: number,
 maxMinutes: number,
 sessions: App.Data.Sessions.SessionHistoryItemData[],
+recovery: App.Data.Sessions.RecoveryShellData | null,
 };
 export type DataTabData = {
 available: boolean,
@@ -5632,6 +6019,7 @@ workload: string | null,
 shell: string | null,
 cols: number,
 rows: number,
+allowChanges: boolean,
 };
 export type OpenedSessionData = {
 id: string,
@@ -5655,6 +6043,13 @@ truncated: boolean,
 rows: number | null,
 durationMs: number | null,
 createdAt: string,
+};
+export type RecoveryShellData = {
+available: boolean,
+unavailableReason: string | null,
+replicas: App.Data.Sessions.SessionReplicaData[],
+changesNeedStop: boolean,
+sessions: App.Data.Sessions.SessionHistoryItemData[],
 };
 export type SessionCommandData = {
 command: unknown,
@@ -6311,6 +6706,9 @@ used: boolean,
 export type SystemVariableData = {
 key: string,
 value: string,
+note: string | null,
+overridden: boolean,
+removedNextDeploy: boolean,
 };
 export type VariableInput = {
 key: string,
@@ -6378,9 +6776,10 @@ export type AnalyticsRange = '24h' | '7d' | '30d';
 export type AnalyticsView = 'traffic' | 'resources';
 export type ApiAbility = 'read' | 'deploy' | 'env:read' | 'env:write' | 'secrets:read' | 'domains:write' | 'data:transfer';
 export type ApiTokenClient = 'dashboard' | 'cli';
-export type AuditAction = 'instance.setup_token_created' | 'instance.owner_created' | 'instance.team_claimed' | 'instance.owner_two_factor_reset' | 'team.created' | 'team.member_invited' | 'team.invitation_revoked' | 'team.invitation_accepted' | 'team.member_role_changed' | 'team.member_removed' | 'instance.signing_key_created' | 'server.enrollment_created' | 'server.enrollment_canceled' | 'server.enrolled' | 'server.approved' | 'server.revoked' | 'server.volume_deletion_confirmed' | 'instance.mesh_enabled' | 'instance.mesh_own_tailscale_configured' | 'server.mesh_node_removed' | 'project.created' | 'project.imported' | 'project.deleted' | 'project.renamed' | 'project.secrets_policy_changed' | 'project.icon_changed' | 'environment.created' | 'environment.deployed' | 'environment.changes_discarded' | 'environment.updated' | 'environment.deleted' | 'environment.reverted' | 'environment.changes_promoted' | 'environment.auto_deploy_resumed' | 'deployment.promoted' | 'service.created' | 'service.removed' | 'service.renamed' | 'variable.created' | 'variable.updated' | 'variable.deleted' | 'variable.imported' | 'variable.secret_revealed' | 'connection.created' | 'connection.deleted' | 'domain.added' | 'domain.removed' | 'domain.www_redirect_changed' | 'instance.apps_domain_changed' | 'instance.dashboard_domain_started' | 'instance.dashboard_domain_cancelled' | 'instance.dashboard_domain_switched' | 'instance.dashboard_domain_reverted' | 'instance.dashboard_domain_reset' | 'deployment.rolled_back' | 'deployment.redeployed' | 'deployment.cancelled' | 'variable.raw_edited' | 'github.app_created' | 'github.app_disconnected' | 'github.installation_linked' | 'git.connection_created' | 'git.connection_authorized' | 'git.connection_disconnected' | 'git.connection_private_network_allowed' | 'git.host_keys_confirmed' | 'git.webhook_secret_revealed' | 'backup.destination_created' | 'backup.destination_updated' | 'backup.destination_deleted' | 'backup.destination_private_network_allowed' | 'backup.schedule_updated' | 'backup.started' | 'backup.restore_started' | 'data.import_started' | 'data.import_finished' | 'data.import_cancelled' | 'data.import_source_checked' | 'data.import_prepared' | 'data.export_started' | 'data.export_downloaded' | 'backup.restore_swapped' | 'backup.volume_updated' | 'backup.final_backup_skipped' | 'backup.point_in_time_updated' | 'backup.verification_started' | 'service.volume_added' | 'service.volume_changed' | 'service.volume_removed' | 'service.volume_attached' | 'service.volume_detached' | 'service.image_changed' | 'service.stopped' | 'service.started' | 'service.restarted' | 'server.replaced' | 'instance.recovery_finished' | 'backup.recovery_passphrase_set' | 'backup.recovery_kit_downloaded' | 'backup.recovery_kit_confirmed' | 'preview.settings_updated' | 'preview.strategy_changed' | 'preview.approved' | 'preview.destroyed' | 'preview.share_link_created' | 'preview.share_link_revoked' | 'preview.bypass_rotated' | 'instance.update_started' | 'instance.update_finished' | 'instance.fleet_update_started' | 'instance.fleet_update_finished' | 'instance.update_preferences_changed' | 'instance.dns_provider_changed' | 'server.shared_edge_changed' | 'domain.hsts_changed' | 'instance.registry_storage_configured' | 'instance.registry_storage_private_network_allowed' | 'instance.registry_storage_removed' | 'instance.registry_config_written' | 'server.settings_updated' | 'server.roles_updated' | 'server.appearance_updated' | 'server.replicas_rescheduled' | 'service.degraded' | 'session.console_started' | 'session.console_ended' | 'session.data_started' | 'session.data_ended' | 'database.statement_executed' | 'session.recording_viewed' | 'team.console_recording_changed' | 'team.member_permissions_changed' | 'api_token.created' | 'api_token.revoked' | 'api_token.cli_login_approved' | 'api_token.cli_login_denied' | 'variable.env_exported' | 'deployment.requested' | 'alerts.channel_created' | 'alerts.channel_updated' | 'alerts.channel_deleted' | 'audit.sink_created' | 'audit.sink_updated' | 'audit.sink_deleted' | 'alerts.rules_updated' | 'config_file.applied' | 'config_file.invalid' | 'config_file.exported' | 'config_file.settings_updated' | 'ai_provider.updated' | 'team.dockerfile_generation_changed' | 'dockerfile_generation.started' | 'dockerfile_generation.used' | 'dockerfile_generation.pull_request_opened' | 'instance.client_certificates_changed' | 'server.client_certificate_issued' | 'server.client_certificates_revoked' | 'server.client_certificate_reissue_allowed' | 'server.move_started' | 'server.move_item_finished' | 'server.move_item_retried' | 'server.move_cancelled' | 'server.move_completed' | 'instance.control_plane_move_started' | 'instance.control_plane_move_claimed' | 'instance.control_plane_move_approved' | 'instance.control_plane_move_cancelled' | 'instance.control_plane_handover_started' | 'instance.control_plane_handover_aborted' | 'instance.control_plane_handed_over' | 'instance.control_plane_taken_over' | 'instance.control_plane_move_finished' | 'access.ssh_started' | 'access.ssh_ended' | 'access.database_started' | 'access.database_ended' | 'access.volume_started' | 'access.volume_ended' | 'access.connected' | 'access.auth_failed' | 'access.locked' | 'waf.mode_changed' | 'waf.paranoia_changed' | 'waf.inspect_body_changed' | 'waf.exclusion_added' | 'waf.exclusion_removed' | 'security.finding_dismissed' | 'security.finding_reopened' | 'security.investigation_started' | 'instance.security_sources_changed' | 'account.email_changed' | 'account.password_changed';
+export type AuditAction = 'instance.setup_token_created' | 'instance.owner_created' | 'instance.team_claimed' | 'instance.owner_two_factor_reset' | 'team.created' | 'team.member_invited' | 'team.invitation_revoked' | 'team.invitation_accepted' | 'team.member_role_changed' | 'team.member_removed' | 'instance.signing_key_created' | 'server.enrollment_created' | 'server.enrollment_canceled' | 'server.enrolled' | 'server.approved' | 'server.revoked' | 'server.volume_deletion_confirmed' | 'instance.mesh_enabled' | 'instance.mesh_own_tailscale_configured' | 'server.mesh_node_removed' | 'project.created' | 'project.imported' | 'project.deleted' | 'project.renamed' | 'project.secrets_policy_changed' | 'project.icon_changed' | 'environment.created' | 'environment.deployed' | 'environment.changes_discarded' | 'environment.updated' | 'environment.deleted' | 'environment.reverted' | 'environment.changes_promoted' | 'environment.auto_deploy_resumed' | 'deployment.promoted' | 'service.created' | 'service.removed' | 'service.renamed' | 'variable.created' | 'variable.updated' | 'variable.deleted' | 'variable.imported' | 'variable.secret_revealed' | 'connection.created' | 'connection.deleted' | 'domain.added' | 'domain.removed' | 'domain.www_redirect_changed' | 'instance.apps_domain_changed' | 'instance.dashboard_domain_started' | 'instance.dashboard_domain_cancelled' | 'instance.dashboard_domain_switched' | 'instance.dashboard_domain_reverted' | 'instance.dashboard_domain_reset' | 'deployment.rolled_back' | 'deployment.redeployed' | 'deployment.cancelled' | 'variable.raw_edited' | 'github.app_created' | 'github.app_disconnected' | 'github.installation_linked' | 'git.connection_created' | 'git.connection_authorized' | 'git.connection_disconnected' | 'git.connection_private_network_allowed' | 'git.host_keys_confirmed' | 'git.webhook_secret_revealed' | 'backup.destination_created' | 'backup.destination_updated' | 'backup.destination_deleted' | 'backup.destination_private_network_allowed' | 'backup.schedule_updated' | 'backup.started' | 'backup.restore_started' | 'data.import_started' | 'data.import_finished' | 'data.import_cancelled' | 'data.import_source_checked' | 'data.import_prepared' | 'data.export_started' | 'data.export_downloaded' | 'backup.restore_swapped' | 'backup.volume_updated' | 'backup.final_backup_skipped' | 'backup.point_in_time_updated' | 'backup.verification_started' | 'service.volume_added' | 'service.volume_changed' | 'service.volume_removed' | 'service.volume_attached' | 'service.volume_detached' | 'service.image_changed' | 'service.stopped' | 'service.started' | 'service.restarted' | 'server.replaced' | 'instance.recovery_finished' | 'backup.recovery_passphrase_set' | 'backup.recovery_kit_downloaded' | 'backup.recovery_kit_confirmed' | 'preview.settings_updated' | 'preview.strategy_changed' | 'preview.approved' | 'preview.destroyed' | 'preview.share_link_created' | 'preview.share_link_revoked' | 'preview.bypass_rotated' | 'instance.update_started' | 'instance.update_finished' | 'instance.fleet_update_started' | 'instance.fleet_update_finished' | 'instance.update_preferences_changed' | 'instance.dns_provider_changed' | 'server.shared_edge_changed' | 'domain.hsts_changed' | 'instance.registry_storage_configured' | 'instance.registry_storage_private_network_allowed' | 'instance.registry_storage_removed' | 'instance.registry_config_written' | 'server.settings_updated' | 'server.roles_updated' | 'server.appearance_updated' | 'server.replicas_rescheduled' | 'service.degraded' | 'session.console_started' | 'session.console_ended' | 'session.data_started' | 'session.data_ended' | 'session.recovery_started' | 'session.recovery_ended' | 'database.statement_executed' | 'session.recording_viewed' | 'team.console_recording_changed' | 'team.member_permissions_changed' | 'api_token.created' | 'api_token.revoked' | 'api_token.cli_login_approved' | 'api_token.cli_login_denied' | 'variable.env_exported' | 'deployment.requested' | 'alerts.channel_created' | 'alerts.channel_updated' | 'alerts.channel_deleted' | 'audit.sink_created' | 'audit.sink_updated' | 'audit.sink_deleted' | 'alerts.rules_updated' | 'config_file.applied' | 'config_file.invalid' | 'config_file.exported' | 'config_file.settings_updated' | 'ai_provider.updated' | 'team.dockerfile_generation_changed' | 'dockerfile_generation.started' | 'dockerfile_generation.used' | 'dockerfile_generation.pull_request_opened' | 'instance.client_certificates_changed' | 'server.client_certificate_issued' | 'server.client_certificates_revoked' | 'server.client_certificate_reissue_allowed' | 'server.move_started' | 'server.move_item_finished' | 'server.move_item_retried' | 'server.move_cancelled' | 'server.move_completed' | 'instance.control_plane_move_started' | 'instance.control_plane_move_claimed' | 'instance.control_plane_move_approved' | 'instance.control_plane_move_cancelled' | 'instance.control_plane_handover_started' | 'instance.control_plane_handover_aborted' | 'instance.control_plane_handed_over' | 'instance.control_plane_taken_over' | 'instance.control_plane_move_finished' | 'access.ssh_started' | 'access.ssh_ended' | 'access.database_started' | 'access.database_ended' | 'access.volume_started' | 'access.volume_ended' | 'access.connected' | 'access.auth_failed' | 'access.locked' | 'waf.mode_changed' | 'waf.paranoia_changed' | 'waf.inspect_body_changed' | 'waf.exclusion_added' | 'waf.exclusion_removed' | 'security.finding_dismissed' | 'security.finding_reopened' | 'security.investigation_started' | 'instance.security_sources_changed' | 'account.email_changed' | 'account.password_changed' | 'account.sign_in_link_issued' | 'registry.credential_created' | 'registry.credential_updated' | 'registry.credential_deleted';
 export type BlueprintNoteKind = 'translated' | 'ignored' | 'refused' | 'warning';
 export type CanvasEdgeType = 'connection' | 'process' | 'inherited';
+export type CertFailureKind = 'rate_limited' | 'dns_mismatch' | 'caa' | 'timeout' | 'dns_provider' | 'other';
 export type CertStatus = 'issued' | 'pending' | 'failed';
 export type ChangeEffect = 'none' | 'route' | 'restart' | 'rebuild' | 'new' | 'remove';
 export type ChangeKind = 'added' | 'removed' | 'changed';
@@ -6388,11 +6787,11 @@ export type CliLoginStatus = 'pending' | 'approved' | 'denied' | 'consumed';
 export type ClientCertificateMode = 'off' | 'verify' | 'require';
 export type ConnectionMode = 'private' | 'public';
 export type ConnectionStyle = 'url' | 'laravel' | 'parts';
-export type DaemonFeature = 'linkProbe' | 'shipLogs' | 'pointInTime' | 'verifyRestore' | 'stopSpec' | 'consoleSessions' | 'dataSessions' | 'controlPlaneUrl' | 'gitProviders' | 'generatedDockerfile' | 'mongoClickhouse' | 'dnsProviders' | 'cronSchedule' | 'clientCertificates' | 'dataTransfer' | 'preparedVolumes' | 'requestAnalytics' | 'remoteAccessSsh' | 'remoteAccessDatabase' | 'remoteAccessVolume' | 'inventory' | 'containerInspection' | 'waf' | 'configFiles' | 'serviceStop' | 'phpExtensions' | 'sharedVolumes';
-export type DaemonNudge = 'state.changed' | 'task.available' | 'logs.requested';
-export type DaemonTaskPurpose = 'release' | 'seed' | 'sanitize' | 'dockerfile_check' | 'cp_update' | 'fleet_update' | 'console' | 'data' | 'access_ssh' | 'access_database' | 'access_volume' | 'log_tail';
+export type DaemonFeature = 'linkProbe' | 'shipLogs' | 'pointInTime' | 'verifyRestore' | 'stopSpec' | 'consoleSessions' | 'dataSessions' | 'controlPlaneUrl' | 'gitProviders' | 'generatedDockerfile' | 'mongoClickhouse' | 'dnsProviders' | 'cronSchedule' | 'clientCertificates' | 'dataTransfer' | 'preparedVolumes' | 'requestAnalytics' | 'remoteAccessSsh' | 'remoteAccessDatabase' | 'remoteAccessVolume' | 'inventory' | 'containerInspection' | 'waf' | 'configFiles' | 'serviceStop' | 'phpExtensions' | 'sharedVolumes' | 'probeHost' | 'livenessRestart' | 'volumeInitOwner' | 'releaseMounts' | 'recoverySessions' | 'watchdog' | 'cleanupTask' | 'certificateRetry';
+export type DaemonNudge = 'state.changed' | 'task.available' | 'logs.requested' | 'task.cancelled';
+export type DaemonTaskPurpose = 'release' | 'seed' | 'sanitize' | 'dockerfile_check' | 'cp_update' | 'fleet_update' | 'console' | 'data' | 'recovery' | 'access_ssh' | 'access_database' | 'access_volume' | 'log_tail';
 export type DaemonTaskStatus = 'pending' | 'leased' | 'succeeded' | 'failed' | 'cancelled';
-export type DaemonTaskType = 'build' | 'plan' | 'run_once' | 'backup' | 'restore' | 'backup_maintenance' | 'logs' | 'self_update' | 'backup_snapshots' | 'verify_restore' | 'session' | 'db_import' | 'volume_import' | 'db_export' | 'volume_export' | 'access' | 'inventory' | 'inspect_container';
+export type DaemonTaskType = 'build' | 'plan' | 'run_once' | 'backup' | 'restore' | 'backup_maintenance' | 'logs' | 'self_update' | 'backup_snapshots' | 'verify_restore' | 'session' | 'db_import' | 'volume_import' | 'db_export' | 'volume_export' | 'access' | 'inventory' | 'inspect_container' | 'cleanup' | 'cert_retry';
 export type DashboardDomainStatus = 'pending' | 'ready' | 'active' | 'cancelled' | 'reverted';
 export type DatabaseEngine = 'postgres' | 'mysql' | 'redis' | 'valkey' | 'mongodb' | 'clickhouse';
 export type DeploymentFailureClass = 'plan_error' | 'build_error' | 'build_timeout' | 'transient' | 'release_error' | 'runtime_error' | 'port_mismatch' | 'health_timeout' | 'config_error' | 'placement_error';
@@ -6405,21 +6804,23 @@ export type DeploymentTrigger = 'push' | 'pr' | 'tag' | 'manual' | 'rollback' | 
 export type DeviceKind = 'cloud' | 'dedicated' | 'tower' | 'minipc' | 'compact' | 'sbc' | 'nas' | 'laptop' | 'vm' | 'unknown';
 export type DnsProvider = 'cloudflare' | 'hetzner' | 'route53' | 'digitalocean' | 'porkbun' | 'desec' | 'gandi' | 'ovh' | 'netcup';
 export type DomainKind = 'generated' | 'custom' | 'deployment';
+export type EnvAliasSource = 'DOMAIN' | 'DOMAINS' | 'PUBLIC_URL' | 'PUBLIC_URLS' | 'PORT' | 'ALLOWED_HOSTS_LIST' | 'TRUSTED_PROXY_CIDRS';
 export type EnvironmentKind = 'production' | 'persistent' | 'preview';
-export type FailureFixAction = 'set_port' | 'raise_health_timeout' | 'add_variable' | 'generate_dockerfile';
+export type FailureFixAction = 'set_port' | 'raise_health_timeout' | 'add_variable' | 'generate_dockerfile' | 'use_tcp_healthcheck' | 'accept_4xx' | 'add_capabilities' | 'fix_volume_owner' | 'free_disk';
 export type FeatureDowngrade = 'drop_field' | 'drop_item' | 'render_without';
 export type HealthCheckState = 'ok' | 'warning' | 'critical' | 'unknown';
 export type HealthcheckType = 'http' | 'tcp' | 'none';
 export type HoldKind = 'restore' | 'import' | 'move';
 export type HostingProvider = 'hetzner' | 'digitalocean' | 'aws' | 'gcp' | 'azure' | 'linode' | 'vultr' | 'ovh' | 'scaleway' | 'oracle' | 'upcloud' | 'exoscale';
 export type IngressCredentialPurpose = 'dns_token' | 'storage_key' | 'storage_password';
+export type IngressFailureReason = 'port_in_use' | 'config_refused' | 'image' | 'not_running' | 'other';
 export type LogLineLevel = 'error' | 'warning' | 'info' | 'debug';
 export type LogLineSource = 'build' | 'runtime';
 export type LogRange = '15m' | '1h' | '24h' | '7d' | '30d';
 export type LogSourceKind = 'task' | 'deployment' | 'workload';
 export type LogStream = 'stdout' | 'stderr' | 'system';
 export type MetricRange = '1h' | '6h' | '24h' | '7d' | '30d' | '90d' | '1y';
-export type NodeStateField = 'system.linkProbe' | 'system.controlPlane' | 'routes[].clientAuth' | 'routes[].waf' | 'routes[].stopped' | 'volumes[]' | 'volumes[].service' | 'workloads[].shipLogs' | 'workloads[].files' | 'workloads[].schedule' | 'workloads[].stop' | 'workloads[].walArchive' | 'ingress.dns.provider';
+export type NodeStateField = 'system.linkProbe' | 'system.controlPlane' | 'routes[].clientAuth' | 'routes[].waf' | 'routes[].stopped' | 'volumes[]' | 'volumes[].service' | 'workloads[].shipLogs' | 'workloads[].files' | 'workloads[].schedule' | 'workloads[].stop' | 'workloads[].walArchive' | 'ingress.dns.provider' | 'system.watchdog' | 'workloads[].health.host' | 'workloads[].health.restartAfter' | 'workloads[].mounts[].initOwner';
 export type NodeStatusReason = 'removal_staged' | 'disabled' | 'stopped' | 'paused' | 'deploying' | 'queued' | 'deploy_failed' | 'last_deploy_failed' | 'not_deployed' | 'server_down' | 'degraded' | 'crashed' | 'unhealthy' | 'not_running' | 'starting' | 'live' | 'running' | 'no_services' | 'services_failed' | 'services_need_attention' | 'partly_running';
 export type Permission = 'team.manage' | 'servers.manage' | 'members.manage' | 'projects.manage' | 'deployments.create' | 'variables.write' | 'secrets.reveal' | 'containers.exec' | 'databases.query' | 'exposure.manage' | 'resources.view' | 'backups.manage' | 'alerts.manage';
 export type PlacementIssueKind = 'stateful_server_down' | 'unplaceable';
@@ -6427,6 +6828,7 @@ export type PlacementStrategy = 'spread' | 'pack';
 export type PlanPreviewStatus = 'ready' | 'pending' | 'failed' | 'unavailable';
 export type PortHint = 'loopback_only' | 'no_port' | 'wrong_port';
 export type PreviewStrategy = 'new_empty' | 'clone' | 'share';
+export type ProbeHint = 'host_not_allowed';
 export type ProbeState = 'starting' | 'passing' | 'failing';
 export type ProjectIconMode = 'automatic' | 'uploaded' | 'none';
 export type ProjectSettingsSection = 'general' | 'environments' | 'previews' | 'config-file' | 'logs' | 'danger';
@@ -6456,8 +6858,9 @@ export type VariableType = 'config' | 'secret';
 export type VolumeRetirementStatus = 'retained' | 'requested' | 'deleted';
 export type WorkloadCapability = 'CHOWN' | 'DAC_OVERRIDE' | 'FOWNER' | 'NET_BIND_SERVICE' | 'SETGID' | 'SETUID';
 export type WorkloadEventKind = 'created' | 'create_failed' | 'started' | 'exited' | 'restarted' | 'health_passing' | 'health_failing' | 'stopped' | 'removed';
-export type WorkloadEventReason = 'drained' | 'not_desired' | 'spec_changed' | 'duplicate' | 'port_not_bound';
-export type WorkloadIssueKind = 'crash_loop' | 'loopback_only' | 'wrong_port';
+export type WorkloadEventReason = 'drained' | 'not_desired' | 'spec_changed' | 'duplicate' | 'port_not_bound' | 'health';
+export type WorkloadFailureCode = 'command_not_found' | 'not_executable' | 'wrong_platform' | 'mount_failed' | 'invalid_user' | 'image_not_found' | 'unauthorized' | 'rate_limited' | 'network' | 'no_space' | 'other';
+export type WorkloadIssueKind = 'crash_loop' | 'loopback_only' | 'wrong_port' | 'unresponsive';
 export type WorkloadPhase = 'pending' | 'pulling' | 'starting' | 'running' | 'healthy' | 'unhealthy' | 'draining' | 'exited' | 'failed' | 'removed';
 export type WorkloadRole = 'serving' | 'draining';
 namespace Alerts {
@@ -6465,7 +6868,7 @@ export type AlertChannelKind = 'email' | 'slack' | 'discord' | 'webhook';
 export type AlertDeliveryEvent = 'fired' | 'repeated' | 'resolved' | 'test';
 export type AlertDeliveryStatus = 'pending' | 'sent' | 'failed';
 export type AlertKind = 'unhealthy' | 'restarting';
-export type AlertRule = 'deploy_failed' | 'service_unhealthy' | 'error_rate_high' | 'server_offline' | 'cpu_high' | 'memory_high' | 'disk_full' | 'certificate_expiring' | 'backup_failed' | 'vulnerability' | 'waf_unavailable';
+export type AlertRule = 'deploy_failed' | 'service_unhealthy' | 'error_rate_high' | 'server_offline' | 'cpu_high' | 'memory_high' | 'disk_full' | 'certificate_expiring' | 'backup_failed' | 'vulnerability' | 'waf_unavailable' | 'ingress_down' | 'certificate_failed' | 'service_crashed' | 'cron_failed' | 'control_plane_degraded' | 'queue_backlog';
 export type AlertSeverity = 'warning' | 'critical';
 export type AlertStatus = 'firing' | 'resolved';
 }
@@ -6494,7 +6897,7 @@ export type VolumeConsistency = 'live' | 'pause';
 export type WalArchiveState = 'active' | 'waiting' | 'failing';
 }
 namespace Builds {
-export type BuildHintCode = 'railpack-cannot-plan' | 'buildkit-not-ready' | 'buildkit-crash-loop' | 'buildkit-oom' | 'buildkit-userns-restricted' | 'pnpm-outdated-lockfile' | 'npm-ci-lockfile' | 'yarn-frozen-lockfile' | 'node-gyp-toolchain' | 'missing-module' | 'php-extension' | 'django-improperly-configured' | 'python-module-not-found' | 'out-of-memory' | 'no-start-command' | 'registry-rate-limit' | 'vite-env-undefined';
+export type BuildHintCode = 'railpack-cannot-plan' | 'buildkit-not-ready' | 'buildkit-crash-loop' | 'buildkit-oom' | 'buildkit-userns-restricted' | 'pnpm-outdated-lockfile' | 'npm-ci-lockfile' | 'yarn-frozen-lockfile' | 'node-gyp-toolchain' | 'missing-module' | 'php-extension' | 'django-improperly-configured' | 'python-module-not-found' | 'out-of-memory' | 'no-start-command' | 'registry-rate-limit' | 'vite-env-undefined' | 'disk-full' | 'build-dns' | 'build-database' | 'build-idle';
 export type BuilderReason = 'explicit' | 'dockerfile_detected' | 'preset' | 'railpack';
 export type ChosenBuilder = 'dockerfile' | 'railpack';
 }
@@ -6534,6 +6937,7 @@ export type WebhookPostFailure = 'unsafe_url' | 'response_too_large' | 'unreacha
 namespace Instance {
 export type OnboardingStep = 'server' | 'github' | 'domain' | 'project' | 'backups';
 export type OnboardingStepStatus = 'done' | 'pending' | 'skipped';
+export type SystemCheckStatus = 'ok' | 'warn' | 'fail' | 'skip';
 }
 namespace Mesh {
 export type MeshClientState = 'starting' | 'needs_login' | 'connected' | 'error';
@@ -6551,6 +6955,10 @@ export type ServerMoveStatus = 'running' | 'ready' | 'cancelling' | 'completed' 
 namespace Previews {
 export type ForkPolicy = 'off' | 'approval';
 export type PreviewStatus = 'skipped' | 'awaiting_approval' | 'queued' | 'preparing' | 'running' | 'failed' | 'closed' | 'expired';
+}
+namespace Registry {
+export type RegistryCopyStatus = 'pending' | 'copying' | 'succeeded' | 'failed';
+export type RegistryCredentialStatus = 'unverified' | 'ok' | 'failed';
 }
 namespace RemoteAccess {
 export type RemoteAccessEndReason = 'ended' | 'idle' | 'deadline' | 'locked' | 'refused' | 'error';
@@ -6574,17 +6982,19 @@ export type WafMode = 'off' | 'log' | 'block';
 namespace Servers {
 export type CapabilityReason = 'full_socket' | 'vm' | 'rootless' | 'no_rootlesskit_api' | 'ports_pending' | 'ports_refused' | 'turned_off' | 'error' | 'docker_desktop' | 'userns_profile' | 'userns_blocked' | 'no_swap' | 'build_limits';
 export type CapabilityState = 'full' | 'degraded' | 'unavailable';
-export type CleanupTrigger = 'schedule' | 'disk_pressure';
+export type CleanupTrigger = 'schedule' | 'disk_pressure' | 'manual';
+export type DaemonExitKind = 'crash' | 'stalled' | 'reboot' | 'unexpected';
 export type DockerEngine = 'docker-engine' | 'docker-desktop' | 'orbstack' | 'colima';
 export type DockerMode = 'rootful' | 'rootless';
 export type HostOs = 'linux' | 'darwin';
+export type RequestRejection = 'clock_skew' | 'revoked' | 'certificate' | 'certificate_required';
 export type RoleHintTone = 'info' | 'warning';
 export type RuntimeCapability = 'dockerAccess' | 'edgePorts' | 'clientAddresses' | 'firewall' | 'mesh' | 'portDiscovery' | 'workloads' | 'builds';
 export type Virtualization = 'kvm' | 'qemu' | 'vmware' | 'virtualbox' | 'xen' | 'hyperv' | 'parallels' | 'apple' | 'bhyve' | 'container' | 'other';
 }
 namespace Sessions {
 export type DatabaseQueryStatus = 'sent' | 'ok' | 'error' | 'refused';
-export type InteractiveSessionKind = 'console' | 'data';
+export type InteractiveSessionKind = 'console' | 'data' | 'recovery';
 export type SessionEndReason = 'closed' | 'exited' | 'idle' | 'deadline' | 'disconnected' | 'ended' | 'never_connected' | 'refused' | 'error';
 export type StartFailure = 'no_shell' | 'shell_missing' | 'shell_start_failed' | 'kind_disabled' | 'guard_refused' | 'policy_refused' | 'not_running' | 'relay_unreachable' | 'session_key';
 }

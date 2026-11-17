@@ -65,6 +65,7 @@ test('route families classify by path', function (string $path, RouteFamily $fam
     ['auth/preview', RouteFamily::Edge],
     ['registry/token', RouteFamily::Edge],
     ['up', RouteFamily::Probe],
+    ['up/ready', RouteFamily::Probe],
     ['.well-known/launchroom/dashboard', RouteFamily::Probe],
     ['install/server.sh', RouteFamily::Installer],
     ['api/v1/me', RouteFamily::Api],

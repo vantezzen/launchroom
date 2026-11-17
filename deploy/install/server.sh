@@ -541,6 +541,32 @@ host_timezone() {
 		printf '%s' "$tz"
 	fi
 }
+
+# check_host_health DIR: warns (never stops) when the disk that will hold
+# DIR is nearly full, or when the clock isn't synchronised: launchroom's
+# servers sign every request with a timestamp, so a clock that drifts by
+# minutes cuts a server off. Never during an update.
+check_host_health() {
+	[ "${LR_BUNDLE_VERIFIED:-}" != 1 ] || return 0
+	target="$1"
+	while [ ! -d "$target" ] && [ "$target" != / ] && [ "$target" != . ]; do target="$(dirname "$target")"; done
+	free_kb="$(df -Pk "$HOST_ROOT$target" 2>/dev/null | awk 'NR == 2 { print $4 }')"
+	case "$free_kb" in
+	"" | *[!0-9]*) ;;
+	*)
+		if [ "$free_kb" -lt 5242880 ]; then
+			warn "only $((free_kb / 1024)) MB of disk space is free here. launchroom needs room for its database, images and builds: 10 GB or more is comfortable."
+		fi
+		;;
+	esac
+	synced=""
+	if command -v timedatectl >/dev/null 2>&1; then
+		synced="$(timedatectl show -p NTPSynchronized --value 2>/dev/null || true)"
+	fi
+	if [ "$synced" = no ]; then
+		warn "this server's clock isn't synchronised. Servers sign every request with the time, so a clock that drifts cuts them off. Turn it on with: sudo timedatectl set-ntp true"
+	fi
+}
 # <<< lib/host.sh
 
 check_prerequisites() {
@@ -815,12 +841,16 @@ setup_rootless() {
 	# MANAGED FILE (replaced by every run): hands RootlessKit's API to the guard.
 	cat >"$DIR/compose.rootless.yml" <<'LAUNCHROOM_ROOTLESS_EOF'
 # Rootless Docker (server.sh --rootless, docs/11 §3.2, D49). MANAGED FILE.
+# Rootless Docker can't lower a container's OOM score below 0.
 services:
   dockerd-guard:
+    oom_score_adj: 0
     environment:
       LR_GUARD_ROOTLESSKIT_API: /run/rootlesskit/api.sock
     volumes:
       - ${LR_ROOTLESSKIT_API:?}:/run/rootlesskit/api.sock
+  launchroomd:
+    oom_score_adj: 0
 LAUNCHROOM_ROOTLESS_EOF
 	say "rootless Docker: socket $socket, edge ports through $api"
 }
@@ -841,18 +871,64 @@ migrate_legacy_dir() {
 	fi
 }
 
+# check_existing: finds every launchroomd on this Docker by its label
+# (launchroom.role=launchroomd), whatever folder it was installed from; the
+# control plane's own launchroomd (compose project launchroom) counts too.
+# Decides before anything is written: another folder's launchroomd, or one
+# connected to another launchroom, stops the install with nothing changed.
+# This folder's own install connected to this launchroom sets ENROLLED=1
+# (update and restart only).
+ENROLLED=0
+check_existing() {
+	abs="$(cd "$(dirname "$DIR")" 2>/dev/null && pwd)/$(basename "$DIR")"
+	found="$(docker ps -a --filter label=launchroom.role=launchroomd \
+		--format '{{.Label "com.docker.compose.project"}}|{{.Label "com.docker.compose.project.working_dir"}}' 2>/dev/null | sort -u)" || found=""
+	while IFS='|' read -r project wd; do
+		[ -n "$project$wd" ] || continue
+		[ "$project|$wd" != "launchroomd|$abs" ] || continue
+		data="$wd/data"
+		pinned="$(env_value "$wd/.env" LR_CP_KEY)"
+		if [ "$project" = launchroom ]; then
+			data="$wd/data/daemon"
+			pinned="$(head -n 1 "$data/cp-key" 2>/dev/null || true)"
+		fi
+		url="$(enrolled_url "$data/enrollment.json")"
+		if [ -z "$pinned" ]; then
+			die "launchroomd already runs on this server (installed from ${wd:-another folder}). A server runs one launchroomd; nothing was changed."
+		fi
+		if [ "$pinned" = "$LR_CP_KEY" ]; then
+			die "this server is already connected to this launchroom${url:+ ($url)}, from ${wd:-another folder}. Adding it to another team comes in a later update. Nothing was changed."
+		fi
+		die "this server is already connected to another launchroom${url:+ at $url}. To connect it here, move its apps away and remove the server in that dashboard, uninstall launchroomd (${wd:-its folder}), then run this command again. Nothing was changed."
+	done <<LAUNCHROOM_EXISTING_EOF
+$found
+LAUNCHROOM_EXISTING_EOF
+	[ -e "$DIR/data/enrollment.json" ] || return 0
+	current="$(env_value "$DIR/.env" LR_CP_KEY)"
+	if [ -n "$current" ] && [ "$current" != "$LR_CP_KEY" ]; then
+		url="$(enrolled_url "$DIR/data/enrollment.json")"
+		die "this server is already connected to another launchroom${url:+ at $url}. To connect it here, move its apps away and remove the server in that dashboard, uninstall launchroomd ($DIR), then run this command again. Nothing was changed."
+	fi
+	ENROLLED=1
+}
+
+env_value() { sed -n "s/^$2=//p" "$1" 2>/dev/null | tail -n 1; }
+enrolled_url() { sed -n 's/.*"controlPlaneUrl"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' "$1" 2>/dev/null | head -n 1; }
+
 main() {
 	parse_args "$@"
 	check_prerequisites
 	[ "$OS" != Linux ] || check_inotify
 	[ "$OS" != Linux ] || check_buildkit_apparmor
 	[ "$OS" != Linux ] || check_swap
+	[ "$OS" != Linux ] || check_host_health "$DIR"
 	unfilled "$LR_CONTROL_PLANE_URL" && die "set LR_CONTROL_PLANE_URL (the dashboard URL)."
 	unfilled "$LR_CP_KEY" && die "set LR_CP_KEY (shown next to the join command in the dashboard)."
 	unfilled "$LR_DAEMON_IMAGE" && die "set LR_DAEMON_IMAGE."
 	case "$LR_CP_KEY" in ed25519:*) ;; *) die "LR_CP_KEY must look like ed25519:<base64>." ;; esac
 
 	migrate_legacy_dir
+	check_existing
 	umask 077
 	mkdir -p "$DIR/data"
 	fetch_bundle
@@ -874,7 +950,10 @@ main() {
 		setup_rootless
 	fi
 
-	if [ -e "$DIR/data/enrollment.json" ]; then
+	if [ "$ENROLLED" = 1 ]; then
+		if [ -n "${LR_JOIN_TOKEN:-}" ] && [ "${LR_BUNDLE_VERIFIED:-}" != 1 ]; then
+			say "this server is already connected to this launchroom, so the join token was not used. Adding it to another team comes in a later update."
+		fi
 		say "this server is already enrolled; updating and restarting launchroomd only."
 		dc up -d --remove-orphans
 		exit 0

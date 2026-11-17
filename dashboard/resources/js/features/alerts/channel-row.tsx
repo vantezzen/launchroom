@@ -68,11 +68,17 @@ function Delivery({ channel }: { channel: Channel }) {
 export function ChannelRow({
     channel,
     highlight = false,
+    fallback,
 }: {
     channel: Channel;
     /** Just added: the test button is the next step. */
     highlight?: boolean;
+    /** Instance owners: "Also use it when launchroom itself is down" (fallback channel). */
+    fallback?: { canSet: boolean; emailAvailable: boolean };
 }) {
+    const canFallback =
+        (fallback?.canSet ?? false) &&
+        (channel.kind !== 'email' || (fallback?.emailAvailable ?? false));
     const [confirming, setConfirming] = useState(false);
     const [testing, setTesting] = useState(false);
     const target =
@@ -94,6 +100,13 @@ export function ChannelRow({
                         </span>
                     )}
                     <Delivery channel={channel} />
+                    {channel.fallback && (
+                        <span className="type-small text-muted-foreground">
+                            Also used by your servers when the dashboard is down
+                            {channel.allowPrivateHosts &&
+                                ', private address allowed'}
+                        </span>
+                    )}
                 </span>
             }
             align="start"
@@ -163,6 +176,38 @@ export function ChannelRow({
                                         New signing secret
                                     </DropdownMenuItem>
                                 )}
+                                {(canFallback || channel.fallback) &&
+                                    fallback?.canSet && (
+                                        <DropdownMenuItem
+                                            onSelect={() =>
+                                                patch({
+                                                    fallback: !channel.fallback,
+                                                    allowPrivateHosts: false,
+                                                })
+                                            }
+                                        >
+                                            {channel.fallback
+                                                ? 'Don’t use when the dashboard is down'
+                                                : 'Also use when the dashboard is down'}
+                                        </DropdownMenuItem>
+                                    )}
+                                {channel.fallback &&
+                                    fallback?.canSet &&
+                                    channel.kind !== 'email' && (
+                                        <DropdownMenuItem
+                                            onSelect={() =>
+                                                patch({
+                                                    fallback: true,
+                                                    allowPrivateHosts:
+                                                        !channel.allowPrivateHosts,
+                                                })
+                                            }
+                                        >
+                                            {channel.allowPrivateHosts
+                                                ? 'Refuse private addresses'
+                                                : 'Allow a private address'}
+                                        </DropdownMenuItem>
+                                    )}
                                 <DropdownMenuSeparator />
                                 <DropdownMenuItem
                                     className="text-status-error focus:text-status-error"

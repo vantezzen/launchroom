@@ -69,6 +69,10 @@ type ManagerOptions struct {
 	WafLogAddress string
 	// WafDropped returns the firewall records lost since start (IngressStatus.waf.droppedRecords).
 	WafDropped func() int64
+	// ProcRoot is the host's /proc (default "/proc"; launchroomd shares the
+	// host's PID and network namespaces), read to name the program holding
+	// a port Caddy can't bind.
+	ProcRoot string
 }
 
 // Manager runs the system Caddy container and keeps its config in sync.
@@ -124,6 +128,15 @@ type Manager struct {
 	// is the last such error (docs/22 §6.6).
 	unreachableSince time.Time
 	unreachableErr   string
+
+	// failure classifies the last state other than applied (reason, port,
+	// process, Caddy's output); nil once a config is applied.
+	failure *failure
+	// appliedCfg is the config Caddy runs (the last good one; a refused
+	// config leaves it serving). cert_retry reloads it.
+	appliedCfg []byte
+	// certRetryAt is when a cert_retry last reloaded Caddy.
+	certRetryAt time.Time
 }
 
 // Loading a config is tried loadAttempts times within one pass while Caddy
@@ -236,8 +249,23 @@ func NewManager(o ManagerOptions) *Manager {
 func (m *Manager) status(st state.IngressState, routes int, appliedAt *time.Time, msg string) *state.IngressStatus {
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	return &state.IngressStatus{State: st, Routes: routes, AppliedAt: appliedAt, Message: state.Clip(msg, state.MaxStatusLen),
+	s := &state.IngressStatus{State: st, Routes: routes, AppliedAt: appliedAt, Message: state.Clip(msg, state.MaxStatusLen),
 		Certificates: slices.Clone(m.certs), Storage: cloneStorage(m.storage), Waf: m.wafStatusLocked()}
+	if f := m.failure; f != nil && st != state.IngressApplied {
+		s.Reason, s.Process, s.Output = f.reason, f.process, slices.Clone(f.output)
+		if f.port > 0 {
+			p := state.Port(f.port)
+			s.Port = &p
+		}
+	}
+	return s
+}
+
+// setFailure records why the ingress isn't applied (nil: it is).
+func (m *Manager) setFailure(f *failure) {
+	m.mu.Lock()
+	m.failure = f
+	m.mu.Unlock()
 }
 
 // Features are the web firewall while the running, pinned Caddy carries
@@ -336,18 +364,22 @@ func (m *Manager) sync(ctx context.Context, sys state.SystemContainer, routes []
 		m.mu.Lock()
 		m.appliedKey, m.containerID, m.certs, m.storage = "", "", nil, nil
 		m.wafSupport, m.wafRoutes, m.wafErr, m.wafFailed, m.wafWanted = WafSupport{}, 0, "", "", 0
-		m.unreachableSince, m.unreachableErr = time.Time{}, ""
+		m.unreachableSince, m.unreachableErr, m.failure, m.appliedCfg = time.Time{}, "", nil, nil
 		m.mu.Unlock()
 		return nil
 	}
-	fail := func(format string, args ...any) *state.IngressStatus {
+	failWith := func(f *failure, format string, args ...any) *state.IngressStatus {
 		msg := fmt.Sprintf(format, args...)
 		m.o.Log.Warn("ingress not applied", "reason", msg)
+		m.setFailure(f)
 		return m.status(state.IngressFailed, len(routes), nil, msg)
+	}
+	fail := func(format string, args ...any) *state.IngressStatus {
+		return failWith(&failure{reason: state.IngressOtherFailure}, format, args...)
 	}
 	image, err := m.image(ctx, sys.Image)
 	if err != nil {
-		return fail("%v", err)
+		return failWith(&failure{reason: state.IngressImage}, "%v", err)
 	}
 	var spec *state.IngressSpec
 	if m.o.Spec != nil {
@@ -367,7 +399,11 @@ func (m *Manager) sync(ctx context.Context, sys state.SystemContainer, routes []
 
 	c, err := m.ensureContainer(ctx, image)
 	if err != nil {
-		return fail("system caddy: %v", err)
+		reason := state.IngressOtherFailure
+		if strings.Contains(strings.ToLower(err.Error()), "pull") {
+			reason = state.IngressImage
+		}
+		return failWith(&failure{reason: reason}, "system caddy: %v", err)
 	}
 	files := plan.fingerprint()
 	fallback := cfg
@@ -391,7 +427,7 @@ func (m *Manager) sync(ctx context.Context, sys state.SystemContainer, routes []
 	}
 	if m.appliedKey == key {
 		applied, n := m.appliedAt, m.routes
-		m.unreachableSince, m.unreachableErr = time.Time{}, ""
+		m.unreachableSince, m.unreachableErr, m.failure = time.Time{}, "", nil
 		m.mu.Unlock()
 		return m.status(state.IngressApplied, n, ptr(applied), "")
 	}
@@ -402,7 +438,7 @@ func (m *Manager) sync(ctx context.Context, sys state.SystemContainer, routes []
 
 	unreachable := func(err error) *state.IngressStatus {
 		m.seedResume(ctx, c.ID, plan.files, fallback)
-		return m.unreachable(len(routes), err)
+		return m.unreachable(ctx, len(routes), err)
 	}
 	if err := m.waitReady(ctx); err != nil {
 		return unreachable(err)
@@ -422,7 +458,7 @@ func (m *Manager) sync(ctx context.Context, sys state.SystemContainer, routes []
 			return unreachable(err)
 		}
 		if wafKey == "" {
-			return fail("load config: %v", err)
+			return failWith(m.configRefused(ctx, c.ID, err), "load config: %v%s", err, m.keepsServing())
 		}
 		// Caddy refused the config with the firewall: serve the same routes
 		// without it (availability wins, docs/22 §6.6) and don't try this
@@ -438,7 +474,7 @@ func (m *Manager) sync(ctx context.Context, sys state.SystemContainer, routes []
 			if !IsConfigRefusal(err) {
 				return unreachable(err)
 			}
-			return fail("load config: %v", err)
+			return failWith(m.configRefused(ctx, c.ID, err), "load config: %v%s", err, m.keepsServing())
 		}
 	}
 	if m.o.CacheDir != "" {
@@ -452,7 +488,7 @@ func (m *Manager) sync(ctx context.Context, sys state.SystemContainer, routes []
 	m.mu.Lock()
 	m.appliedKey, m.appliedFiles, m.appliedAt, m.routes = key, files, now, len(routes)
 	m.wafRoutes, m.wafErr = wafRoutes, wafErr
-	m.unreachableSince, m.unreachableErr = time.Time{}, ""
+	m.unreachableSince, m.unreachableErr, m.failure, m.appliedCfg = time.Time{}, "", nil, cfg
 	m.mu.Unlock()
 	m.o.Log.Info("ingress config applied", "routes", len(routes))
 	select { // certificate statuses for the new route table
@@ -485,15 +521,34 @@ func (m *Manager) loadRetrying(ctx context.Context, load func(context.Context, [
 // unreachable records that Caddy's admin API couldn't be reached and
 // reports the ingress as pending: nothing is marked as refused, so the next
 // pass loads the same config, firewall included (docs/22 §6.6).
-func (m *Manager) unreachable(routes int, err error) *state.IngressStatus {
+func (m *Manager) unreachable(ctx context.Context, routes int, err error) *state.IngressStatus {
 	m.mu.Lock()
 	if m.unreachableSince.IsZero() {
 		m.unreachableSince = m.o.Now()
 	}
 	m.unreachableErr = err.Error()
+	since := m.unreachableSince
 	m.mu.Unlock()
 	m.o.Log.Warn("caddy wasn't reachable; the config is loaded again on the next pass", "err", err)
+	// After a minute, say why: a port another program holds, a Caddy that
+	// keeps exiting (its last lines). Before that it is a normal restart.
+	var f *failure
+	if m.o.Now().Sub(since) >= diagnoseAfter {
+		f = m.diagnose(ctx)
+	}
+	m.setFailure(f)
 	return m.status(state.IngressPending, routes, nil, "Caddy wasn't reachable yet; retrying: "+err.Error())
+}
+
+// keepsServing is the note on a refused config: Caddy keeps the previous
+// one (an admin API load is all or nothing).
+func (m *Manager) keepsServing() string {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if m.appliedCfg == nil {
+		return ""
+	}
+	return "; Caddy keeps serving the previous routes"
 }
 
 // seedResume writes cfg, with the secret files it reads, where "caddy run

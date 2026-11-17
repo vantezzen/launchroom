@@ -31,6 +31,7 @@ use App\Support\Changes\SpecDiff;
 use App\Support\Git\GitHubAvatar;
 use App\Support\Git\WatchPaths;
 use App\Support\Variables\ResolvedEnvironment;
+use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;
 
 /**
@@ -212,9 +213,9 @@ final readonly class DeployPreview
             return;
         }
 
-        $changed = $this->changedServices($spec, $preview->changed_files);
-        $baseCommits = $this->baseCommits($environment);
         $instances = ServiceInstance::query()->where('environment_id', $environment->id)->with(['service', 'activeDeployment'])->get()->keyBy('public_id');
+        $changed = $this->changedServices($spec, $preview->changed_files, $instances);
+        $baseCommits = $this->baseCommits($environment);
         $shas = [];
         // The PR author's login is a GitHub login only on GitHub; other
         // providers' webhooks carry no avatar for it.
@@ -254,16 +255,19 @@ final readonly class DeployPreview
      * variables reference them.
      *
      * @param  list<string>|null  $files
+     * @param  Collection<string, ServiceInstance>  $instances  the preview's instances by public id (their last build's workspace)
      * @return array<string, true>
      */
-    private function changedServices(EnvironmentSpec $spec, ?array $files): array
+    private function changedServices(EnvironmentSpec $spec, ?array $files, Collection $instances): array
     {
         $changed = [];
 
         foreach ($spec->services as $id => $service) {
             $source = $service->source();
+            $instance = $instances->get($service->instanceId);
+            $workspace = $instance instanceof ServiceInstance ? ($instance->plan->summary ?? $instance->activeDeployment?->plan?->summary)?->workspace : null;
 
-            if ($service->kind->isBuilt() && (! $source instanceof GitSource || WatchPaths::matches($service->build->watchPaths, $files))) {
+            if ($service->kind->isBuilt() && (! $source instanceof GitSource || WatchPaths::matches(WatchPaths::effective($service->build->watchPaths, $source->rootDirectory, $workspace), $files))) {
                 $changed[$id] = true;
             }
         }
