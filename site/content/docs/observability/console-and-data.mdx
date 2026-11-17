@@ -78,6 +78,17 @@ The status line under the terminal shows the shell, the user and how long the se
 
 **Recent sessions** lists who opened a console on this service, on which replica, for how long and why it ended. Owners and admins see everyone's sessions and can end open ones.
 
+### Recovery shell
+
+When a replica's container won't stay up (it exited, failed, keeps crashing or keeps failing its health check), there is nothing running to open a console in. The Console tab then offers **Open a recovery shell**: a copy of the container with the same image, variables and volumes that doesn't start your app. Use it to look at files, check variables or run a command by hand.
+
+- Volumes are read-only. Turn on **Allow changes to volumes** to write to them. The audit log records that you did.
+- While the container of a service with data still runs between restarts, changes stay off. Stop the service first to allow them.
+- The copy has no port and gets no traffic. Other services can't reach it by the service's name.
+- launchroom removes the copy when the session ends.
+
+Recovery shells are offered for replicas of the live version. A first deploy that never went live has none. The server has to allow consoles: `LR_INTERACTIVE_SESSIONS` `on` or `console` (below).
+
 ### Recording
 
 Console sessions are **not recorded** by default. A team owner can turn on **Record console sessions** under **Settings → Members**. Recorded sessions keep only what the terminal showed (never keystrokes), with secret values masked, up to 1 MiB per session. The tab says "This session is recorded" before you connect. Reading a recording needs Console access, and each read is audited.
@@ -154,8 +165,8 @@ Each server has its own setting for whether it accepts sessions. Set `LR_INTERAC
 
 | Value | Allows |
 |---|---|
-| `on` (default) | Console and Data |
-| `console` | Console only |
+| `on` (default) | Console, recovery shells and Data |
+| `console` | Console and recovery shells |
 | `data` | Data tab only |
 | `off` | Nothing. The server ignores session requests |
 

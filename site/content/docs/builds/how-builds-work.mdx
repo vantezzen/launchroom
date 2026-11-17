@@ -36,18 +36,26 @@ To keep the build settings with your code, the **Keep it with your code** card d
 
 ## Framework presets
 
-Presets are versioned and compose with Railpack instead of replacing it.
+Presets are versioned and compose with Railpack instead of replacing it. Each one sets what the framework needs to run behind launchroom: variables, proxy trust, secrets, the release command, worker processes, the health path and volume suggestions. The [framework guides](/docs/builds/frameworks) list everything per framework.
 
 | Preset | What it does |
 |---|---|
-| **Next.js** | Sets `HOSTNAME=0.0.0.0`, `PORT` and turns telemetry off. Generates a `NEXT_SERVER_ACTIONS_ENCRYPTION_KEY` per service. On Next.js 16.2 and later, builds through the launchroom deployment adapter (below). Warns about the ISR cache when you run more than one replica. |
-| **Laravel** | Moves migrations into the release command `php artisan migrate --force`, runs `optimize` at container start instead of build so secrets don't land in `bootstrap/cache`, suggests queue (or Horizon), scheduler and Reverb processes, uses `/up` as the health path, and creates `APP_KEY` as a secret variable when the app has none ([generated values](/docs/projects/variables#generated-values)). |
-| **Django** | Starts with gunicorn (uvicorn or daphne for ASGI) from your settings, runs `collectstatic` when `STATIC_ROOT` is set, makes `migrate --noinput` the release command, suggests Celery worker and beat processes, and creates `SECRET_KEY` when your settings read it from the environment. |
-| **FastAPI, Flask, Litestar** | Finds the app object (`main.py`, `app.py`, `app/main.py`, …) and sets the start command, using `fastapi run` when `fastapi[standard]` is installed. |
-| **Static SPAs** (Vite, Create React App, Angular, static Astro, Next.js export) | Builds, then serves the output folder with Caddy on port 8080. |
-| **Node servers** (Express, Fastify, Hono, Nest) | Warns about a hard-coded `listen(3000)` or a missing start script. |
+| **[Next.js](/docs/builds/frameworks/nextjs)** | Sets `HOSTNAME=0.0.0.0` and turns telemetry off. From Next.js 15.4, builds through the launchroom deployment adapter (below). Generates `NEXT_SERVER_ACTIONS_ENCRYPTION_KEY` once per service. Sets up Auth.js when it is installed. |
+| **[Nuxt, SvelteKit, Astro, React Router, Remix, TanStack Start, Angular SSR, Gatsby](/docs/builds/frameworks/javascript)** | Starts the server each framework builds, checks the adapter, and puts the health check under the app's base path. |
+| **[Node servers](/docs/builds/frameworks/javascript#node-servers)** (Express, Fastify, Hono, Koa, Nest) | Marks requests that came in over HTTPS as secure, starts Nest's compiled app, and warns about a hard-coded `listen(3000)` or a missing start script. |
+| **[Laravel](/docs/builds/frameworks/laravel)** | Runs migrations as the release command, caches config at container start, generates `APP_KEY`, sets `APP_URL`, passes on the visitor's IP, suggests queue (or Horizon), scheduler and Reverb processes, and reads the health path from `bootstrap/app.php`. |
+| **[Symfony, plain PHP](/docs/builds/frameworks/php)** | Runs Doctrine migrations as the release command, generates `APP_SECRET`, trusts launchroom's proxy, passes on the visitor's IP, and serves `public/` when that is where `index.php` is. |
+| **[Django](/docs/builds/frameworks/django)** | Starts with gunicorn (uvicorn or daphne for ASGI), runs `collectstatic` and `migrate`, generates `SECRET_KEY`, allows the environment's domains in `ALLOWED_HOSTS` and `CSRF_TRUSTED_ORIGINS`, and suggests Celery processes. |
+| **[FastAPI, Flask, Litestar](/docs/builds/frameworks/django#fastapi-flask-and-litestar)** | Finds the app object and sets the start command. Trusts launchroom's proxy. |
+| **[Rails](/docs/builds/frameworks/rails)** | Runs in production mode, generates `SECRET_KEY_BASE`, runs `db:prepare` as the release command, asks for `RAILS_MASTER_KEY`, uses `/up` and suggests Sidekiq, GoodJob or Solid Queue. |
+| **[Phoenix](/docs/builds/frameworks/phoenix)** | Sets `PHX_SERVER` and `PHX_HOST`, generates `SECRET_KEY_BASE` and runs the release module's migrations. |
+| **[Java, Spring Boot](/docs/builds/frameworks/other-languages#java-and-spring-boot)** | Sizes the heap to the memory limit, trusts launchroom's proxy and uses the Actuator health path. |
+| **[.NET, Rust Rocket, Deno](/docs/builds/frameworks/other-languages)** | Trusts launchroom's proxy (.NET), listens on the service's port (Rocket) or defaults to port 8000 (Deno). |
+| **Static sites** (Vite, Create React App, Angular, static Astro, Next.js export) | Builds, then serves the output folder with Caddy on port 8080, with cache headers for hashed assets and real 404 pages for multi-page sites. |
 
-Railpack covers the rest, including Go, Bun, Deno, Ruby and other Node, Python and PHP apps. Rails 7.1 and later ship a production Dockerfile, which launchroom uses.
+Railpack covers the rest, including Go and Bun. With your own Dockerfile, launchroom still applies the runtime part of the matching preset. See [Dockerfiles](/docs/builds/frameworks/dockerfiles).
+
+Each preset decision shows as a chip under **Settings → Build → Preset decisions**. Hover a chip to read what it does. Select **×** on a chip and save to build without it; the next deploy rebuilds. **+** restores it.
 
 ### PHP database drivers
 
@@ -60,35 +68,53 @@ A PHP app only gets the database drivers its `composer.json` asks for. An app wr
 | Redis, Valkey | `redis` |
 | MongoDB | `mongodb` |
 
+launchroom also reads `composer.lock` and adds the extensions your dependencies need, for example `intl` for Filament or `zip` for spreadsheet packages. Laravel always gets `pcntl`, so queue workers can finish the current job when they stop. When the lockfile needs a newer PHP than `composer.json` allows, the build uses that PHP version and says why, for example "Uses PHP 8.4: composer.lock needs it (symfony/clock)".
+
 Your repository stays as it is. The build log and the detected panel show what was added, for example "Adds PHP extensions: pdo_pgsql (for postgres)". Connecting a new database therefore rebuilds the app, and the staged changes say why: "adds the PostgreSQL driver (pdo_pgsql)". A worker or cron runs its app's image, so its connections count for the app.
 
 If the app builds from your own Dockerfile, install the extensions there (for example with `install-php-extensions pdo_pgsql`). launchroom shows a warning naming the ones it would need.
 
-### HTTPS and logs for PHP apps
+### HTTPS, visitor IP and logs for PHP apps
 
-Railpack serves PHP apps with FrankenPHP. launchroom adjusts its configuration a little for every PHP app it builds with Railpack (Laravel, Symfony or plain PHP):
+Railpack serves PHP apps with FrankenPHP. launchroom adjusts its configuration for every PHP app it builds with Railpack (Laravel, Symfony or plain PHP):
 
-- **PHP knows the request came over HTTPS.** launchroom terminates HTTPS in front of the app, so the app itself only sees plain HTTP. launchroom sets `$_SERVER['HTTPS']` to `on` for requests that came in over HTTPS, so `asset()`, `url()` and redirects produce `https://` links without a `TrustProxies` setup.
+- **PHP knows the request came over HTTPS.** launchroom terminates HTTPS in front of the app, so the app itself only sees plain HTTP. launchroom sets `$_SERVER['HTTPS']` to `on` for requests that came in over HTTPS, so `asset()`, `url()` and redirects produce `https://` links.
+- **PHP sees the visitor's address.** FrankenPHP trusts `X-Forwarded-For` from launchroom's proxy and sets `REMOTE_ADDR` to the visitor's IP, so rate limits, logs and `request()->ip()` work without `trustProxies` in your code. This is the **Pass on the visitor's IP address** chip.
 - **Logs stay readable.** FrankenPHP logs at info level instead of writing a debug line for every request.
 
-The build log says "Adjusted the PHP server for launchroom". If your repository has its own `Caddyfile`, launchroom leaves it as it is. To get the same behaviour there, set `env HTTPS` in `php_server` from the `X-Forwarded-Proto` header, which launchroom always sets itself and never takes from the client.
-
-Behind launchroom, `REMOTE_ADDR` is the address of launchroom's proxy. The visitor's address is in `X-Forwarded-For`, which launchroom also sets itself. Laravel reads it once you trust the proxy, for example with `$middleware->trustProxies(at: '*')` in `bootstrap/app.php`.
+The build log says "Adjusted the PHP server for launchroom". If your repository has its own `Caddyfile`, launchroom leaves it as it is. To get the same behaviour there, set `env HTTPS` in `php_server` from the `X-Forwarded-Proto` header, and add `trusted_proxies static private_ranges 100.64.0.0/10` to the global `servers` options. launchroom always sets both headers itself and never takes them from the client.
 
 ### The Next.js adapter
 
-On Next.js 16.2 and later, the Next.js preset injects the `@vantezzen/launchroom-next-adapter` deployment adapter without changing your repository. It builds Next's standalone output, ties static assets to the deployment, and starts the app with `node .next/standalone/server.js`. The image contains only the standalone output and the Node toolchain. In launchroom's tests this made it about a third smaller than `next start`. The build panel shows what the adapter found: routes, middleware, image optimization and ISR routes. If your `next.config` sets its own `adapterPath`, yours wins. Remove the decision chip to build with `next start` instead.
+From Next.js 15.4, the Next.js preset injects the `@vantezzen/launchroom-next-adapter` deployment adapter without changing your repository. launchroom goes by the version in your lockfile, else the range in `package.json`. The adapter builds Next's standalone output, ties static assets to the deployment, and starts the app with `node .next/standalone/server.js`. The image contains only the standalone output and the Node toolchain. In launchroom's tests this made it about a third smaller than `next start`. The build panel shows what the adapter found: routes, middleware, image optimization and ISR routes. If your `next.config` sets its own `adapterPath`, yours wins. Remove the **launchroom deployment adapter** chip to build with `next start` instead.
+
+Next.js 14 to 15.3 get `NEXT_DEPLOYMENT_ID` at build time, so a browser tab from the previous version keeps loading its own assets. With `output: 'standalone'`, launchroom copies the static assets into the standalone folder.
+
+### Monorepos
+
+When the root directory sits inside a JavaScript workspace (`pnpm-workspace.yaml`, or `workspaces` in `package.json`), launchroom builds from the workspace root so workspace packages resolve. It runs a build filtered to the app and its dependencies, and starts the app from its folder:
+
+| Tool | Build command |
+|---|---|
+| Turborepo | `turbo run build --filter=<app>...` |
+| Nx | `nx run <app>:build` |
+| pnpm | `pnpm --filter <app>... run build` |
+| yarn | `yarn workspace <app> run build` |
+| npm | `npm run build --workspace=<app> --if-present` |
+| Bun | `bun run --filter <app> build` |
+
+An app with its own lockfile, or with a non-Node manifest such as `composer.json` or `pyproject.toml`, builds on its own as before. A Dockerfile in a workspace app builds from the workspace root when it runs `turbo prune` or refers to the app's folder. See [monorepos](/docs/builds/git-providers#monorepos-and-root-directories) for watch paths.
 
 ## Build settings
 
 | Setting | Where | Notes |
 |---|---|---|
-| Root directory | Settings → Source | Where the app lives in the repository. Builds use it as the app directory. See [monorepos](/docs/builds/git-providers#monorepos-and-root-directories). |
+| Root directory | Settings → Source | Where the app lives in the repository. Inside a JavaScript workspace, the build runs from the workspace root. See [monorepos](/docs/builds/git-providers#monorepos-and-root-directories). |
 | Install, build commands | Settings → Build → Commands | Override only what differs from the detected values. |
 | Start command, port | Settings → Deploy | Changes restart the service without a rebuild. |
 | Release command | Settings → Deploy | Runs once per deploy before traffic switches, such as migrations. |
 | Dockerfile path | Settings → Build | Shown when the builder is Dockerfile. Defaults to `Dockerfile` in the root directory. |
-| Watch paths | Settings → Build → When to build | Only pushes that touch these paths deploy. Comma-separated globs. |
+| Watch paths | Settings → Build → When to build | Only pushes that touch these paths deploy. Comma-separated globs. Apps in a workspace have defaults. |
 | Railpack version | Settings → Build | Pinned per service, so a Railpack update never changes a build you didn't ask to change. |
 
 Changes to build settings are staged like every other change and apply on the next deploy.
@@ -137,23 +163,37 @@ A deployment moves through these steps, each shown with its own log:
 5. **Health check**: launchroomd checks every new replica.
 6. **Switch traffic**: the edge servers route to the new replicas and the old ones drain.
 
-A newer push replaces queued deployments of the same service and cancels a build that is still running for an older commit. A failed deployment shows the reason, for example a lockfile out of date, a port mismatch or a health check timeout. Your site keeps serving the previous version.
+A newer push replaces queued deployments of the same service and cancels a build that is still running for an older commit. A failed deployment shows the reason in words, for example a lockfile out of date, a start command that doesn't exist in the image, an image built for another processor or a health check timeout. Where launchroom can fix the cause, the failure card has a button for it. Your site keeps serving the previous version. See [build troubleshooting](/docs/troubleshooting/builds) and [health checks](/docs/troubleshooting/health-checks).
+
+A start command that doesn't exist or isn't executable, an image for another processor, a missing image or one the server may not read fails the deployment at once, without waiting for the health check timeout.
+
+When a service has no port set and the app listens on exactly one port, launchroom sets that port and deploys again. The deployment says "Your app listens on 8000, so launchroom set web's port to 8000 and deployed again." A port you set is never changed.
+
+If the build declares a secret it needs from you, such as `RAILS_MASTER_KEY`, and the service doesn't have it, the deployment stops after the build and names the variable to add.
 
 ## Health checks
 
 launchroomd checks each new replica from outside the container, so your image doesn't need `curl`. Choose the check in Settings → Deploy → Health check:
 
-- **HTTP**: `GET` on the path, any 2xx or 3xx answer counts. The default path is `/`, or `/up` for Laravel.
+- **HTTP**: `GET` on the path. On the default path `/`, any answer below 500 counts, so an app without a home page still passes. A path you set, or one a preset sets (such as `/up` for Laravel and Rails or `/actuator/health` for Spring Boot), expects a 2xx or 3xx answer.
 - **TCP**: the port accepts a connection.
 - **None**: for workers and cron jobs, "running without exiting" counts as healthy.
 
-You can configure the time to start, check interval, answer timeout and the number of failures before a replica is unhealthy. A Dockerfile `HEALTHCHECK` counts as an extra signal. Traffic only switches after the new replicas pass. If they don't, the deployment fails and the old version keeps serving.
+The HTTP check asks for the service's domain (the first custom domain, else the generated one) with `X-Forwarded-Proto: https`, the way a visitor's request arrives. An app that only allows its own domains, such as Django with `ALLOWED_HOSTS` or Rails with `config.hosts`, answers it normally. If the app refuses its own domain, the check fails and the deployment explains which setting to change.
+
+You can configure the time to start, check interval, answer timeout and the number of failures before a replica is unhealthy. A Dockerfile `HEALTHCHECK` is not used: launchroom only goes by its own check. Traffic only switches after the new replicas pass. If they don't, the deployment fails and the old version keeps serving.
+
+**Restart when stuck** (Settings → Deploy → Health check) restarts a running replica whose check passed once and then keeps failing for 5 minutes, at most 3 times an hour. After that, launchroom leaves it alone until the check passes again. Change the time from 1 to 60 minutes, or switch it off. Databases are never restarted for this.
+
+When no replica of a service passes its check, the edge still sends traffic to the replicas that are running instead of answering with an error page for everyone.
 
 ## Rolling updates
 
 A service with several replicas updates one replica at a time: start a new replica, wait until it is healthy, add it to the routes, drain an old one, and repeat. Old replicas keep answering for the drain time (10 seconds by default, Settings → Deploy → Rollout) before they stop. A single replica starts its new version next to the old one and switches when healthy.
 
-Services with volumes, such as databases, can't run two copies on one data directory. They stop and then start, with a short downtime that the deploy shows in advance. See [scaling](/docs/projects/scaling).
+A service that keeps data in a volume, and every database, stops the old version before the new one starts, because two copies can't safely share one data directory. Deploys of these services have a short downtime. For an app that handles two copies on its data, switch on **Two copies during a deploy** under Settings → Deploy → Rollout. See [scaling](/docs/projects/scaling).
+
+A stopping replica gets `SIGTERM` and time to finish its work before it is killed: 10 seconds for web services, 30 seconds for workers and cron jobs, or what the framework needs (60 seconds for Laravel queue workers, Horizon and Celery, 30 seconds for Sidekiq, GoodJob and Solid Queue). Change it under Settings → Deploy → Rollout → **Stop timeout**, up to 5 minutes.
 
 ## Rollback
 
@@ -165,6 +205,17 @@ Rolling back points the service at an earlier deployment's image and configurati
 - Rollbacks don't revert database migrations, and they don't run the release command again.
 - The registry keeps the last 10 images per service. You can't roll back to a deployment whose image is gone, and its button disappears.
 
+### Automatic rollback
+
+For 10 minutes after a new version of a production app or image service goes live, launchroom watches it. The deployment says "Watching for problems until 14:32". If it keeps crashing, or every replica is down for 2 minutes, launchroom rolls back once to the previous version:
+
+- The deployment list marks it **Rolled back automatically**, with the reason.
+- Automatic deploys pause, as after any production rollback.
+- Database migrations of the failed version are not reverted, and the reason says so.
+- It happens at most once an hour per service.
+
+Previews, staging environments, databases, image services with a volume, workers and cron jobs are never rolled back automatically.
+
 ## Cleanup and build cache
 
 Every server cleans up once a day, and sooner when its disk passes 85 %:
@@ -173,11 +224,14 @@ Every server cleans up once a day, and sooner when its disk passes 85 %:
 - Build cache on build servers: entries older than 7 days are pruned. 10 GB of cache is kept.
 - Leftover one-off containers from interrupted tasks are removed.
 
+A build that runs out of disk runs the same cleanup at once. When it freed space, the deployment is retried once. A failed deployment that ran out of disk also offers **Free space** on its failure card.
+
 Volumes are never pruned. Cleanup never touches anything outside launchroom's own labels and registry.
 
 ## Next steps
 
 <Cards>
+  <Card title="Framework guides" href="/docs/builds/frameworks" description="What launchroom sets up for each framework." />
   <Card title="Git providers" href="/docs/builds/git-providers" description="Connect GitHub, GitLab, Gitea, Forgejo or any git server." />
   <Card title="Variables" href="/docs/projects/variables" description="References, secrets and build-time variables." />
   <Card title="Build troubleshooting" href="/docs/troubleshooting/builds" description="What failed builds mean and how to fix them." />

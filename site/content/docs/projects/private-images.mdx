@@ -1,0 +1,64 @@
+---
+title: Private images
+description: Deploy images from private registries. launchroom signs in, copies the image into its own registry for your team, and your servers run that copy.
+---
+
+An image service can run an image from a private registry, such as a private package on GitHub, GitLab's registry or a private Docker Hub repository. Add the registry's sign-in details once per team. launchroom then copies each image into its own registry before it deploys, and your servers never get the credentials.
+
+## Add a registry
+
+<Steps>
+<Step>
+### Open Settings → Private registries
+
+The page lists the registries your team has sign-in details for. Owners and admins of a team can add and change them. Every member sees the list.
+</Step>
+<Step>
+### Add the registry
+
+Click **Add registry** and fill in:
+
+- **Registry**: the address as it appears in image names, for example `ghcr.io`, `registry.gitlab.com` or `docker.io`. No `https://`, no port.
+- **Username**: the account to sign in with.
+- **Password or access token**: use a token that can only read images (on GitHub, a token with `read:packages`).
+</Step>
+<Step>
+### Check it
+
+Click **Check** on the row. It shows **Signed in** when the registry accepts the details, or **Sign-in failed**.
+</Step>
+</Steps>
+
+Then create an image service with the image's name as usual, for example `ghcr.io/acme/api:1.4`. Nothing else changes.
+
+To change a token, edit the row and enter the new one. Leaving the field empty keeps the stored one. **Remove** deletes the sign-in details: images launchroom already copied keep running, and new deploys of images from that registry fail until you add it again.
+
+## What happens on deploy
+
+1. launchroom sees that the image's registry is one of your team's private registries.
+2. The dashboard signs in to it, pins the image to its digest and copies it, with every platform it has, into launchroom's own registry under your team. The deployment waits for the copy.
+3. Your servers pull that copy with a token that is only valid for your team's images and only for images their configuration runs.
+
+A tag is looked up again when you deploy it more than 10 minutes after the last copy, so a moved tag is picked up. An image pinned by digest is copied once. If a copy fails, the deployment fails with the registry's reason, for example that it refused the sign-in or the image doesn't exist. Deploying again after a minute retries.
+
+## What stays private
+
+- The sign-in details are stored encrypted in the dashboard and are never shown again. They never reach a server, a build or a log.
+- Other teams on the same launchroom can't pull your copies: launchroom's registry only gives a server access to its own team's images.
+- Images from registries without sign-in details keep going through launchroom's shared public mirror, as before.
+
+## Limits
+
+- **One set of sign-in details per registry and team.** With details for `docker.io` or `ghcr.io`, every image your team deploys from that registry goes through the private copy, public images included. That takes copy time and space in launchroom's registry.
+- **Registries on your private network are refused.** The dashboard only connects to public addresses.
+- **20 GiB per image.** A larger image fails to copy.
+- **Copies are cleaned up with the rest of the registry.** An image no server has pulled for 30 days is removed and copied again on the next deploy.
+
+## Troubleshooting
+
+When a server can't download an image and no sign-in details exist for its registry, the deployment says "The image is private or doesn't exist". Check the name and tag, then add the registry here. When Docker Hub's download limit is reached ("The registry's download limit was reached"), adding Docker Hub sign-in details makes downloads count against your account.
+
+<Cards>
+  <Card title="Canvas and services" href="/docs/projects/canvas-and-services" description="Create an image service." />
+  <Card title="Health check problems" href="/docs/troubleshooting/health-checks#the-image-or-start-command-is-wrong" description="What each image failure means." />
+</Cards>

@@ -76,12 +76,24 @@ A value that consists of only a generator creates a random secret once, when the
 The length is between 8 and 1024. Generated values are stored as secrets and never change on later deploys. Every
 environment, including each preview and every copied environment, gets its own value.
 
-Some frameworks can't start without a secret key. When a Laravel app has no `APP_KEY`, or a Django app reads
-`SECRET_KEY` from the environment and has none, launchroom creates it on the next deploy as a secret variable with a
-generated value, one per environment. Queue workers and schedulers get a reference to their app's key. It is an
-ordinary variable: reveal, rotate or delete it like any other. A key you set yourself always wins. If you delete the
-generated one, the next deploy creates a new one, so if you manage the key outside launchroom, remove the "Generate
-APP_KEY" decision under **Settings → Build & deploy**.
+Some frameworks can't start without a secret key. When the service doesn't have it, launchroom creates it on the next deploy as a secret variable with a generated value:
+
+| Framework | Variable |
+|---|---|
+| Laravel | `APP_KEY` |
+| Django | `SECRET_KEY`, or the variable your settings read it from |
+| Rails, Phoenix | `SECRET_KEY_BASE` |
+| Symfony | `APP_SECRET` |
+| Auth.js, NextAuth | `AUTH_SECRET`, or `NEXTAUTH_SECRET` for NextAuth 4 |
+| Next.js | `NEXT_SERVER_ACTIONS_ENCRYPTION_KEY` |
+
+Each environment gets its own value, except `NEXT_SERVER_ACTIONS_ENCRYPTION_KEY`: it is used while building, so launchroom creates it once per service and copies it to the service's other environments. Promoting a build then keeps server actions working. Fork previews get their own. It is created after the build that asks for it and used from the next build on.
+
+Queue workers and schedulers get a reference to their app's key. A generated key is an ordinary variable: reveal, rotate or delete it like any other. A key you set yourself always wins. If you delete the generated one, the next deploy creates a new one, so if you manage the key outside launchroom, remove its "Generate …" chip under **Settings → Build → Preset decisions**. See the [framework guides](/docs/builds/frameworks).
+
+### Secrets only you have
+
+Some secrets can't be generated, such as `RAILS_MASTER_KEY`, which decrypts a Rails app's credentials. When the build finds one missing, the import asks you to paste it, and **Settings → Build** lists it under **Needed before the first deploy** with **Add as a secret**. A deployment without it stops after the build and names the variable.
 
 ## Targeting
 
@@ -118,8 +130,8 @@ launchroom decides for each variable whether the build sees it, so changing a ru
 - **Build and runtime**, automatically, for values frameworks bake into the bundle (`NEXT_PUBLIC_*`, `VITE_*`,
   `PUBLIC_*`, `REACT_APP_*`, `EXPO_PUBLIC_*`, `GATSBY_*`) and build tooling (`SENTRY_AUTH_TOKEN`, `SENTRY_ORG`,
   `SENTRY_PROJECT`, `NODE_OPTIONS`, `NPM_TOKEN`, `NPM_CONFIG_*`, `COMPOSER_AUTH`, `PIP_INDEX_URL`, `UV_INDEX_URL`,
-  `BUNDLE_*`), and authentication keys read during Next.js builds (`AUTH_SECRET`, `NEXTAUTH_SECRET`).
-- **Runtime only** for everything else, including `NUXT_PUBLIC_*` (Nuxt reads it at runtime).
+  `BUNDLE_*`), and `NEXT_SERVER_ACTIONS_ENCRYPTION_KEY`.
+- **Runtime only** for everything else, including `NUXT_PUBLIC_*` (Nuxt reads it at runtime) and `AUTH_SECRET` and `NEXTAUTH_SECRET`. If your build reads one of them, choose **Build and runtime** for it.
 
 Each row labels its availability: **Runtime only**, **Build only**, or **Build + runtime**. Set this explicitly in the variable editor's **Available at** field. If your build imports code that needs a secret, choose **Build and runtime**; its value is still sent as a BuildKit secret. Missing-variable build errors link back to the variable editor with this availability selected.
 
@@ -130,16 +142,39 @@ Build values reach the build as BuildKit secrets, never as image layers. See
 
 ## Variables launchroom sets
 
-The Variables page lists the system variables, read-only:
+The Variables page lists the system variables, read-only. A variable you set with the same key replaces it, and the page says so.
 
 | Variable | Value |
 |---|---|
 | `PORT` | The port the service listens on |
-| `HOST`, `HOSTNAME` | `0.0.0.0` (not set for databases) |
 | `PRIVATE_HOST`, `PRIVATE_URL` | The service's slug and private address |
 | `DOMAIN`, `PUBLIC_URL` | The first custom domain, else the generated one |
+| `DOMAINS`, `PUBLIC_URLS` | Every domain of the service, comma-separated, the primary one first: custom domains, then generated ones |
 | `LAUNCHROOM`, `LAUNCHROOM_PROJECT_ID`, `LAUNCHROOM_ENVIRONMENT`, `LAUNCHROOM_ENVIRONMENT_ID`, `LAUNCHROOM_ENVIRONMENT_KIND`, `LAUNCHROOM_SERVICE`, `LAUNCHROOM_SERVICE_ID` | Where the service runs |
 | `LAUNCHROOM_DEPLOYMENT_ID`, `LAUNCHROOM_GIT_COMMIT_SHA` | The current deployment and commit (can't be referenced) |
+
+Workers and cron jobs get their app's `DOMAIN`, `PUBLIC_URL`, `DOMAINS` and `PUBLIC_URLS`.
+
+A few more depend on the framework:
+
+- `HOST` and `HOSTNAME` are `0.0.0.0` for JavaScript servers (Node, Nuxt, SvelteKit, Astro, React Router, TanStack Start, Angular SSR, Gatsby). Next.js gets `HOSTNAME` from its preset. Other services don't get them: if your server reads `HOST` to choose its address, set `HOST=0.0.0.0` yourself.
+- `WEB_CONCURRENCY` for Python and Ruby web services built with Railpack: two worker processes per CPU, at most one per 256 MB of memory, between 1 and 16. gunicorn, uvicorn and Puma read it.
+
+### Variables that follow your domains
+
+Frameworks read their address from their own variables. The preset names them, and launchroom fills them in for each environment and preview from its domains:
+
+| Framework | Variables |
+|---|---|
+| Laravel | `APP_URL` from `PUBLIC_URL` |
+| Symfony | `DEFAULT_URI` from `PUBLIC_URL`; `SYMFONY_TRUSTED_PROXIES`, `TRUSTED_PROXIES` |
+| Django | The variables your settings read `ALLOWED_HOSTS` and `CSRF_TRUSTED_ORIGINS` from, such as `DJANGO_ALLOWED_HOSTS` |
+| Django, FastAPI, Flask, Litestar | `FORWARDED_ALLOW_IPS` |
+| Phoenix | `PHX_HOST` from `DOMAIN` |
+| NextAuth 4 | `NEXTAUTH_URL` from `PUBLIC_URL` |
+| Rocket | `ROCKET_PORT` from `PORT` |
+
+Allowed-hosts lists hold the service's domains, its slug and `localhost`. Trusted proxies are the addresses launchroom's proxy connects from. Workers and cron jobs get the same values as their app. A service without a domain gets none of the domain-based values. A variable you set with the same key always wins, and **Settings → Build** lists these under "Set for each environment from its address".
 
 ## Encryption
 

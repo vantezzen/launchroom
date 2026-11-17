@@ -9,13 +9,19 @@ After a build, launchroom starts the new version next to the old one and switche
 
 launchroomd, the program launchroom runs on each server, checks every new replica from outside its container, so your image needs no curl or wget.
 
-- **HTTP** (the default for web services): a `GET` on the health path, `/` unless you set one (the Laravel preset uses `/up`). Any 2xx or 3xx answer counts as healthy.
+- **HTTP** (the default for web services): a `GET` on the health path, `/` unless you set one or a framework preset knows a better one (Laravel and Rails `/up`, Spring Boot's actuator). The check asks for the service's domain, as a visitor would (`Host` is the primary domain, `X-Forwarded-Proto: https`). On the default path `/`, any answer below 500 counts as healthy. A path you or a preset set needs a 2xx or 3xx answer.
 - **TCP**: a connection to the port is enough. Databases and other non-HTTP services use this.
 - **None**: workers and cron jobs have no probe. A worker counts as healthy once it has run for a while without exiting.
 
 The settings live in the service's **Settings → Deploy → Health check**: Path, **Time to start** (default 30 seconds), **Check every** (5 seconds), **Answer within** (3 seconds) and **Unhealthy after** (3 failed checks). A deployment fails with `health_timeout` when the new replica isn't healthy within the **Health check timeout** (Settings → Deploy → Rollout). By default that is the time to start, plus the checks, plus a minute, at least 90 seconds.
 
-A failed health check never touches the live version. If something goes wrong after the new version became healthy, launchroom keeps the new one rather than tearing down the only healthy copy.
+A failed health check never touches the live version. In production, launchroom watches a new version of an app or image for 10 minutes after it goes live. If it keeps crashing or every replica is down for 2 minutes, launchroom rolls back once to the previous version and pauses auto-deploy. The deployment list marks it **Rolled back automatically** with the reason. Database migrations are not reverted, and the reason says so. This never happens for databases, previews, workers or cron jobs, and at most once an hour per service.
+
+## When the check fails later
+
+A running replica whose check passed once and then keeps failing for 5 minutes is restarted, at most 3 times an hour. After that, launchroom leaves it alone until the check passes again and the service shows the check as failing. Change the time or turn it off under **Settings → Deploy → Health check → Restart when stuck**. Databases are never restarted for this.
+
+While no replica of a service passes its check, the edge still sends traffic to the replicas that are running, so visitors get your app's answer instead of an error page. Stopped replicas never get traffic.
 
 ## What the deployment log shows
 
@@ -30,7 +36,7 @@ Health check passed: GET / on :8000 (replica 1, server-2)
 
 The container's own output from its first line is in the same step, also when the environment keeps no runtime logs.
 Exits, restarts, failed health checks and containers launchroom stopped show up the same way, for example
-`Container exited with code 1 (replica 1, server-2)`, `Out of memory: the container was killed (…)`,
+`Container exited with code 1 (replica 1, server-2)`, `Container exited with code 137: it ran out of memory`,
 `Container restarted (attempt 4, …)` or `Container stopped by launchroom (replaced by deployment dpl_…, …)`. The
 service's **Logs** tab shows these lines too.
 
@@ -50,7 +56,7 @@ The step fails instead of waiting forever:
   **Image registry** health check and its private network connection on the server's page, then deploy again.
 - **"server-2 refused the new desired state"**: the server's launchroom version doesn't accept what the dashboard sent.
   Update the server (Settings → Updates).
-- **"server-2 couldn't run the container: …"**: the server couldn't create or start it; the reason follows.
+- **"server-2 couldn't run the container: …"**: the server couldn't create or start it; the reason follows. See [The image or start command is wrong](#the-image-or-start-command-is-wrong).
 - The **Start timeout** ran out (default 10 minutes, Settings → Deploy → Rollout): the message names the step it was in,
   for example "server-2 was still downloading the image after 10 minutes (412 MB of 690 MB)". For a large image on a
   slow connection, raise the timeout.
@@ -71,7 +77,29 @@ Large images on a slow connection take longer the first time. Later deploys of t
 
 **Cause.** launchroomd checks which ports the process opened. The service is configured for one port, the app listens on another, so the health check never got an answer. Common with Vite dev servers, a hard-coded `listen(3000)` or a Dockerfile `EXPOSE` that doesn't match the app.
 
+When you never set a port and the app listens on exactly one, launchroom sets that port for you and deploys again. The deployment says "Your app listens on 8000, so launchroom set web's port to 8000 and deployed again." A port you set yourself is never changed.
+
 **Fix.** Click **Use port 5173 and redeploy** on the card, or start the app on the configured port. launchroom passes the configured port to the app in the `PORT` variable. Most frameworks read it. The best fix is to use `PORT` in your start command or code instead of a fixed number.
+
+## Your app refuses its own domain
+
+**Cause.** The health check asked for the service's domain and the app answered with a "host not allowed" page (HTTP 400, 403 or 421). Visitors would get the same page. Django's `ALLOWED_HOSTS`, Rails' `config.hosts`, Symfony and Laravel trusted hosts, and Vite's allowed hosts all do this.
+
+For detected frameworks launchroom already sets the allowed hosts: Django gets them through the `ALLOWED_HOSTS` variable your settings read, or through launchroom's settings wrapper when the list is written into `settings.py`. So this usually means a preset chip was turned off, or the list is built in a way launchroom can't extend.
+
+**Fix.** Add the domain to the app's allowed hosts, or read them from the variable launchroom sets (Settings → Variables lists it under System). Turning the framework's chip back on under Settings → Build also works. Then deploy again. The card quotes what the app answered under **The app answered:**.
+
+## Health check failed: your app answers with HTTP 404
+
+**Cause.** The app runs, but the health path has no page that answers with 2xx or 3xx. This happens when a path you or a preset set doesn't exist. The default path `/` accepts a 404, so an app without a home page doesn't hit this.
+
+**Fix.** Point the health check at a page that exists (such as `/health` or `/up`) under Settings → Deploy → Health check, or click **Accept 4xx and redeploy**. An answer of 500 or higher means the page errors. The app's output under the card shows why.
+
+## Health check failed: your app doesn't answer HTTP on its port
+
+**Cause.** Something accepts connections on the port, but it doesn't answer like a web server. Databases, queues and other services speak their own protocol.
+
+**Fix.** Click **Check over TCP and redeploy**. A TCP check only tests that the port accepts connections. Services imported from a Compose file without a health check, on a port that isn't a usual web port, get a TCP check from the start.
 
 ## The container never became healthy: it listens on 127.0.0.1
 
@@ -86,9 +114,9 @@ The card says the app "listens on 127.0.0.1:3000, which nothing outside its cont
 
 **Cause.** The app binds to localhost inside its container. Health checks and traffic come from outside the container, so they can't reach it.
 
-launchroom already sets `HOST=0.0.0.0` and `HOSTNAME=0.0.0.0` for every service except databases (Next.js standalone servers read `HOSTNAME`, most other frameworks `HOST`). When an app still binds to `127.0.0.1`, something overrides that: a variable you set yourself, a hard-coded address in the code or config, or a start command with `--host 127.0.0.1` or `--host localhost`.
+launchroom sets `HOST=0.0.0.0` and `HOSTNAME=0.0.0.0` only for the JavaScript server presets that need it (Node servers, Nuxt, SvelteKit, Astro, React Router, TanStack Start, Angular SSR, Gatsby); Next.js gets `HOSTNAME` from its preset. Other services no longer get `HOST`, so an app that relied on it to bind now binds to its own default. When an app binds to `127.0.0.1`, the cause is that default, a variable you set yourself, a hard-coded address in the code or config, or a start command with `--host 127.0.0.1` or `--host localhost`.
 
-**Fix.** Remove the override, or bind to `0.0.0.0` explicitly on the command line (`--host 0.0.0.0`, `--bind 0.0.0.0:$PORT` for gunicorn). If a variable of yours sets `HOST` or `HOSTNAME`, check its value in the service's **Settings → Variables**.
+**Fix.** Bind to `0.0.0.0` on the command line (`--host 0.0.0.0`, `--bind 0.0.0.0:$PORT` for gunicorn), or add the variable the app reads with the card's button (for example `HOST=0.0.0.0`). If a variable of yours sets `HOST` or `HOSTNAME`, check its value in the service's **Settings → Variables**.
 
 ## Health check failed: nothing answered on port 3000
 
@@ -119,17 +147,46 @@ The class is `runtime_error`, and the canvas may show the service as **Crashed**
 When the container exits again after Docker restarted it three times, the deployment fails right away with "The
 container keeps crashing" and the last lines it printed, instead of waiting for the health check timeout.
 
-**Cause.** The container stopped while starting. The last lines it printed usually say why: a missing variable, a database that isn't reachable, a syntax error, a missing file in the image. If the app exits with code 137, it ran out of memory instead (the card then says "Your app ran out of memory").
+**Cause.** The container stopped while starting. The last lines it printed usually say why: a missing variable, a database that isn't reachable, a syntax error, a missing file in the image. launchroom shows the lines of the run that crashed, and says what the exit code means:
+
+| Exit | What the card says |
+|---|---|
+| 137 and the server saw an out-of-memory kill | "Your app ran out of memory". Raise the memory limit under Settings → Scaling |
+| 137 after launchroom stopped it | It didn't finish within its stop timeout. Raise **Stop timeout** in Settings → Deploy if it needs longer to shut down |
+| 137 otherwise | "Your app was killed". launchroom couldn't confirm it ran out of memory. Check the server's memory |
+| 127 | The start command wasn't found |
+| 126 | The start command couldn't be run (not executable) |
+| 139 | It crashed (segmentation fault) |
+| 143 | It was asked to stop (SIGTERM) |
 
 **Fix.** Open the deployment's **Runtime logs** and read the last lines before the exit. Typical fixes:
 
 - "The variable … is missing": click **Add NAME** and set it for this environment.
 - A connection error to a database: check the variable the app uses (`DATABASE_URL` and similar) and that the database service is running on the canvas.
 - Out of memory: raise the memory limit under Settings → Scaling.
+- "Your app needs to switch users": the image starts as root and then switches to its own user (nginx, gosu and su-exec do this). Click **Allow it to switch users and redeploy**. launchroom adds only the permissions for changing users and file owners. Images whose user is root get these from the start once launchroom has seen the image.
+- "Your app can't write to /data": a new volume belongs to root and the app runs as another user. When the image's user is a number, click **Give new volumes to user 1000 and redeploy**. This applies to new, empty volumes.
+
+When the container won't stay up long enough to look inside, open a recovery shell from the service's **Console** tab. See [Console and data](/docs/observability/console-and-data).
 
 ### A running service crash-loops
 
-When a service that was live starts crashing later, the canvas shows **Crashed** or **Unhealthy** on its node. Docker restarts crashed containers automatically, and the edge routes traffic only to replicas that pass their health check. Look at the service's **Logs** tab for the lines before each restart, and at the server's **Health** section: a server that is out of memory kills processes, which looks like random crashes.
+When a service that was live starts crashing later, the service panel says how often it restarted since this version went live and why it last exited, for example "Exited with code 137: it ran out of memory." Docker restarts crashed containers automatically. Look at the service's **Logs** tab for the lines before each restart, and at the server's **Health** section: a server that is out of memory kills processes, which looks like random crashes. Turn on the **A running service crashes** alert to get a message when it happens.
+
+## The image or start command is wrong
+
+These fail the deployment at once, without waiting for the health check:
+
+| Card title | What to do |
+|---|---|
+| The start command doesn't exist in the image | Check the start command in Settings → Deploy, and that the program is installed in the image |
+| The start command can't be run | Make the file executable (`chmod +x` in the Dockerfile), or start it through its interpreter, for example `sh start.sh` |
+| The image is built for a different processor | The image is for linux/amd64 and the server runs linux/arm64 (or the other way round). Use a multi-platform tag, or let launchroom build the app on a server of that architecture |
+| The image doesn't exist | Check the image name and tag |
+| The image is private or doesn't exist | Check the name. If it is private, add the registry under Settings → Private registries, see [Private images](/docs/projects/private-images) |
+| The registry's download limit was reached | Docker Hub limits downloads without sign-in. Deploy again later, or add Docker Hub sign-in details under Settings → Private registries |
+| server-2 couldn't reach the registry | Check the server's internet connection and name resolution, then deploy again |
+| server-2's disk is full | Click **Free space on server-2**: launchroom removes unused images, old build cache and stopped containers. Then deploy again |
 
 ## Release command failed
 

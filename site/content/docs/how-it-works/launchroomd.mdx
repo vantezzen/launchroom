@@ -55,7 +55,14 @@ images, volumes and networks on the same machine.
 
 It also:
 
-- **health-checks** your services from outside their containers, over HTTP or TCP, before they get traffic.
+- **health-checks** your services from outside their containers, over HTTP or TCP, before they get traffic. HTTP
+  checks ask for the service's domain, as a visitor would. A replica whose check keeps failing for 5 minutes is
+  restarted, at most 3 times an hour.
+- **watches every container exit** as it happens: the exit code, whether the kernel killed it for memory, and the last
+  100 lines of that run, before Docker starts it again. Exits while launchroomd itself was down are reported once it
+  is back.
+- names start and download failures: a start command that doesn't exist, an image for another processor, a private
+  or missing image, a full disk.
 - **detects the port** your app listens on and tells you when it differs from the configured one.
 - decides from its local route table whether Caddy may get a certificate for a custom domain. Custom domains work while
   the dashboard is down.
@@ -63,6 +70,24 @@ It also:
   to Docker's configuration.
 - runs **tasks**: builds, one-off commands such as migrations, backups and restores, log fetches, and console or data
   sessions you open in the dashboard.
+
+## It reports what it sees
+
+Every report to the dashboard says whether Docker answers, whether the last reconcile pass finished and what failed,
+how the disk is used (volumes by size, images, build cache, free file entries), whether the web server serves and
+which program holds its port if not, and why a certificate couldn't be issued. When the dashboard refused a request,
+launchroomd reports why with its next accepted report, for example a clock that is off. launchroomd never changes the
+machine's clock.
+
+## It watches itself
+
+launchroomd checks that its own loops make progress. When one is stuck, it writes what each part was doing to
+`data/crash.log` and exits, and Docker starts it again. The next report says it got stuck, crashed or found the machine
+rebooted, with the crash report for admins. `docker compose run --rm launchroomd healthcheck` exits with 0 while it
+makes progress, and Docker runs the same check every 30 seconds.
+
+On the main server, launchroomd also checks the dashboard and its services and restarts the ones that hang, and it can
+send a notification when the dashboard is down. See [When the dashboard is down](/docs/operations/when-the-dashboard-is-down).
 
 ## System containers
 
@@ -90,7 +115,8 @@ dashboard can't use a server as a way into the host:
 - Images only by digest, from launchroom's registry.
 - No privileged containers, no host network, PID or IPC namespaces, no devices.
 - Capabilities dropped. A small allow-list is available: change file owners, listen on ports below 1024, switch user
-  and group, and file permission overrides.
+  and group, and file permission overrides. Images that start as root get this list so they can switch to their own
+  user.
 - No bind mounts of host paths, only launchroom's own named volumes. A service can only mount its own volumes.
 - CPU, memory and process limits, `no-new-privileges` and rotated logs on every container.
 - The firewall rules are in place before any app, build or one-off container starts. Otherwise nothing starts.
@@ -136,6 +162,8 @@ launchroomd/
 └── data/
     ├── keys/        launchroomd's own signing and encryption keys (0600)
     ├── enrollment.json, state.json   its identity and the last desired state
+    ├── heartbeat, crash.log          its own watchdog (see above)
+    ├── lifecycle.json                the last container starts and exits it saw
     ├── trust.json   the pinned release identity
     └── caddy/       the last proxy config and a copy of certificates (edges)
 ```

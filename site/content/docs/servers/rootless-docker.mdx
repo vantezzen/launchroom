@@ -78,6 +78,9 @@ When anything isn't full, a note under the list explains what it means for this 
   most apps. Check the measured numbers on the **Network** tab.
 - **Resource limits** need cgroup v2 with delegation. Without it, rootless Docker silently drops CPU, memory and process
   limits, and the installer warns.
+- **Memory priority**: on regular Docker, launchroomd and its guard ask the kernel to stop other processes first when
+  memory runs out. Rootless Docker can't raise a container's priority above the default, so they run at the default,
+  and the doctor (`docker compose run --rm launchroomd doctor`) says so.
 - **Podman is not supported**, including its Docker-compatible API. launchroom is not tested against it, and several
   things it relies on behave differently there. The installer does not treat Podman as rootless Docker.
 

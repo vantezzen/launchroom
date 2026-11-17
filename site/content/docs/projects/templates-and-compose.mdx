@@ -112,7 +112,9 @@ need and refuses anything that would give a container access to the server. It n
 | `depends_on` | Connections on the canvas (databases deploy first) |
 | Named or anonymous volumes | Volumes of that service |
 | Bind mounts of project folders (`./data:/data`) | A volume, with the **Convert to volumes** switch (on by default) |
-| `healthcheck` | An HTTP check when the test calls `curl` or `wget` against `localhost`, otherwise a TCP check on the port |
+| `healthcheck` | An HTTP check when the test calls `curl` or `wget` against `localhost`, otherwise a TCP check on the port. A private image service without one, on a port that isn't usually HTTP (80, 3000, 4000, 5000, 8000, 8008, 8080, 8081, 8088, 8888), gets a TCP check |
+| `stop_grace_period` | The stop timeout, up to 5 minutes |
+| `stop_signal` | The stop signal, `SIGTERM` or `SIGINT`. Other signals are ignored with a note |
 | `command`, `entrypoint` | Start command and entrypoint, as lists of arguments |
 | `deploy.replicas`, `scale` | Replicas (up to 64; databases run one) |
 | `deploy.resources.limits`, `cpus`, `mem_limit` | CPU and memory per replica |

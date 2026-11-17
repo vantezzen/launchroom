@@ -1,1 +1,1 @@
-{ "title": "Builds", "pages": ["how-builds-work", "git-providers", "generated-dockerfile"] }
+{ "title": "Builds", "pages": ["how-builds-work", "frameworks", "git-providers", "generated-dockerfile"] }

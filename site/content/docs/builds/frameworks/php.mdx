@@ -1,0 +1,47 @@
+---
+title: Symfony and PHP
+description: How launchroom builds and runs Symfony and PHP apps without a framework preset.
+---
+
+Railpack serves PHP apps with FrankenPHP on port 8080. Every PHP app built with Railpack gets these, whatever the framework:
+
+- **HTTPS**: PHP sees requests that came in over HTTPS as HTTPS (`$_SERVER['HTTPS']`).
+- **Pass on the visitor's IP address**: `REMOTE_ADDR` is the visitor's address, not launchroom's proxy.
+- **PHP extensions**: the drivers for connected databases and the extensions your `composer.lock` needs. See [PHP database drivers](/docs/builds/how-builds-work#php-database-drivers).
+- **Readable logs**: FrankenPHP logs at info level.
+
+Laravel has its [own guide](/docs/builds/frameworks/laravel).
+
+## Symfony
+
+| Decision | What it does |
+|---|---|
+| Run migrations once per deploy | With `doctrine/doctrine-migrations-bundle`, `php bin/console doctrine:migrations:migrate --no-interaction --allow-no-migration` runs as the release command instead of at every container start. |
+| Generate APP_SECRET | When the service has none, launchroom creates `APP_SECRET` as a secret variable per environment, kept across deploys. |
+| Set DEFAULT_URI to the service's address | URLs built outside a request (commands, Messenger, mail) use the environment's domain. |
+| Trust launchroom's proxy | `SYMFONY_TRUSTED_PROXIES` and `TRUSTED_PROXIES` name the addresses requests arrive from, so Symfony knows the request was HTTPS. |
+| Pass on the visitor's IP address | See above. |
+
+## Plain PHP
+
+PHP apps without a framework preset (Slim, custom code):
+
+- **Serve the public folder**: when `public/index.php` exists and the root has no `index.php`, only `public/` is served. `vendor/`, `composer.json` and your config stay private.
+- **Pass on the visitor's IP address**.
+
+## What you might still do
+
+- If your Symfony version doesn't read `SYMFONY_TRUSTED_PROXIES`, set `trusted_proxies: '%env(TRUSTED_PROXIES)%'` in `config/packages/framework.yaml`.
+- With your own `Caddyfile` in the repository, launchroom leaves it as it is. See [HTTPS, visitor IP and logs for PHP apps](/docs/builds/how-builds-work#https-visitor-ip-and-logs-for-php-apps) for the lines to add.
+- With your own Dockerfile, install the extensions and set up proxy trust there. See [Dockerfiles](/docs/builds/frameworks/dockerfiles#php).
+
+## Turn a decision off
+
+Open **Settings → Build → Preset decisions**, select **×** on the chip and save. Your own `APP_SECRET`, `DEFAULT_URI` or `TRUSTED_PROXIES` variable always wins over the preset's.
+
+## Next steps
+
+<Cards>
+  <Card title="Laravel" href="/docs/builds/frameworks/laravel" description="Migrations, workers and uploads." />
+  <Card title="How builds work" href="/docs/builds/how-builds-work" description="Builders, presets, rollouts and rollback." />
+</Cards>

@@ -1,0 +1,52 @@
+---
+title: Framework guides
+description: What launchroom sets up for each framework, what you might still do, and how to turn a single decision off.
+---
+
+launchroom detects the framework when it plans a build and applies a preset for it. The preset sets what the framework needs behind launchroom's edge, so a stock app deploys without changing its code or adding variables.
+
+| Framework | Guide |
+|---|---|
+| Next.js | [Next.js](/docs/builds/frameworks/nextjs) |
+| Nuxt, SvelteKit, Astro, React Router, Remix, TanStack Start, Angular SSR, Gatsby, Express, Fastify, Hono, Koa, Nest | [JavaScript frameworks](/docs/builds/frameworks/javascript) |
+| Laravel | [Laravel](/docs/builds/frameworks/laravel) |
+| Symfony, plain PHP | [Symfony and PHP](/docs/builds/frameworks/php) |
+| Django, FastAPI, Flask, Litestar | [Django and Python](/docs/builds/frameworks/django) |
+| Rails | [Rails](/docs/builds/frameworks/rails) |
+| Phoenix | [Phoenix](/docs/builds/frameworks/phoenix) |
+| Java, Spring Boot, .NET, Rust Rocket, Deno, Go | [Other languages](/docs/builds/frameworks/other-languages) |
+| Your own Dockerfile | [Dockerfiles](/docs/builds/frameworks/dockerfiles) |
+
+## What a preset can set up
+
+- **Variables**, such as `RAILS_ENV=production` or `PHX_SERVER=true`.
+- **Variables that follow your domains**, such as `APP_URL` or `ALLOWED_HOSTS`. Each environment and preview gets its own address. See [variables launchroom sets](/docs/projects/variables#variables-launchroom-sets).
+- **Proxy trust**, so the app knows a request came in over HTTPS and sees the visitor's IP address.
+- **Secrets** the framework can't start without, generated once per environment and kept across deploys.
+- **Secrets only you have**, such as `RAILS_MASTER_KEY`, listed under **Needed before the first deploy**.
+- **Migrations** as the release command, which runs once per deploy before traffic moves.
+- **Worker processes** to add with one click, with time to finish running jobs when they stop.
+- **The health check path**, such as `/up` or `/actuator/health`.
+- **Volume suggestions** for folders that should outlive a deploy, under **Keep files across deploys**.
+
+Your own variables and settings always win over what a preset sets.
+
+## See what was applied
+
+Open the service's **Settings → Build**. The **Preset decisions** card lists each decision as a chip, for example "Run migrations once per deploy". Hover a chip to read what it does. The build log names the preset too, for example "Applied preset laravel".
+
+## Turn a decision off
+
+1. Open **Settings → Build → Preset decisions**.
+2. Select **×** on the chip. It shows crossed out.
+3. Save. The change is staged and the next deploy rebuilds without it.
+
+Select **+** on a crossed-out chip to restore it.
+
+## Next steps
+
+<Cards>
+  <Card title="How builds work" href="/docs/builds/how-builds-work" description="Builders, presets, rollouts and rollback." />
+  <Card title="Variables" href="/docs/projects/variables" description="Generated values and variables that follow domains." />
+  <Card title="Build troubleshooting" href="/docs/troubleshooting/builds" description="What failed builds mean and how to fix them." />
+</Cards>

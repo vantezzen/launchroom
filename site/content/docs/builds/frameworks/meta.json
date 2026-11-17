@@ -1,0 +1,4 @@
+{
+  "title": "Framework guides",
+  "pages": ["index", "nextjs", "javascript", "laravel", "php", "django", "rails", "phoenix", "other-languages", "dockerfiles"]
+}

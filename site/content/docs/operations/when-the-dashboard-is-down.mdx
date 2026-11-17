@@ -1,0 +1,132 @@
+---
+title: When the dashboard is down
+description: What keeps working, what launchroom repairs by itself, and how to find and fix the problem on the server with ./launchroom doctor.
+---
+
+Your apps keep running. Each server keeps the last configuration it received, and HTTPS keeps working. What stops until the dashboard is back: deploys, changes, alerts and backups of the control plane.
+
+## What launchroom does by itself
+
+launchroomd on the main server checks the dashboard every 30 seconds:
+
+- It restarts the dashboard, the background workers, the realtime server, the scheduler or the image registry when one is unhealthy, has crashed, or the dashboard stops answering. It waits for 3 failed checks in a row and restarts each service at most 3 times an hour.
+- It never restarts the database or the cache. Those need you, see [Common causes](#common-causes).
+- A dashboard that answers but reports its database as down is not restarted.
+
+To change this, set `LR_WATCHDOG` in the `.env` of the main server's launchroom folder, then run `docker compose up -d launchroomd`:
+
+| Value | Effect |
+|---|---|
+| `on` (default) | Checks, restarts and notifications |
+| `notify` | Checks and notifications, no restarts |
+| `off` | Nothing |
+
+The restarts only work while the control plane's Docker Compose project is named `launchroom`, as the installer sets it up.
+
+## Get a message when the dashboard is down
+
+Alerts are sent by the dashboard, so they stop when it does. One notification channel can also be sent by your servers:
+
+1. Open **Settings → Notifications** as an instance owner.
+2. On a webhook, Slack or Discord channel of the main server's team, open the ⋯ menu and choose **Also use when the dashboard is down**. An email channel works when the dashboard sends mail through SMTP with a password.
+3. If the channel's address is on your private network, also choose **Allow a private address**. Private addresses are refused otherwise.
+
+The channel row then says "Also used by your servers when the dashboard is down". One channel per instance can have this.
+
+Two servers send it: the main server after 5 minutes without a working dashboard, and one other server after 10 minutes without contact. That way you hear about it even when the whole main server is gone. The message repeats every 6 hours while the dashboard stays down, and a last message says when it is back. The messages name only the dashboard's address and the server. The sign-in details for the channel are encrypted for those two servers and sent only over HTTPS (or SMTP with TLS).
+
+Once the dashboard is back, **Settings → System** shows what happened: which services were restarted and why, and which messages were sent or failed. See [After the dashboard is back](#after-the-dashboard-is-back).
+
+## Find the problem
+
+On the server that runs launchroom, in the folder you installed it into:
+
+```sh title="On the control-plane server, in the launchroom folder"
+./launchroom doctor
+```
+
+It checks Docker, the disk, memory, every launchroom service, the database, the cache, the image registry, the dashboard's address and certificate, and any unfinished update. Each problem comes with the command that fixes it, for example `./launchroom doctor --fix start:valkey`. A fix says what it will change and runs only after you type `yes`. Fixes never delete your data.
+
+## Common causes
+
+- **The disk is full.** `./launchroom doctor --fix free-disk` removes launchroom's own leftovers. If that isn't enough, delete files you don't need or grow the disk.
+- **A service stopped.** `--fix start:<service>` starts it again.
+- **A service hangs.** `--fix restart:<service>` restarts the dashboard, horizon, reverb, scheduler, zot or headscale. The database and the cache are never restarted this way.
+- **The cache can't load its file after a full disk or a hard stop.** `--fix repair-valkey-aof` copies the file aside, repairs it and starts the cache.
+- **Background jobs are stuck.** `--fix restart-workers` lets the workers finish and start again. `--fix clear-schedule-locks` clears scheduled tasks that are marked as running but aren't.
+- **An update failed and going back failed too.** `--fix update-rollback` finishes going back to the version you had.
+- **Locked out.** `./launchroom reset-password you@example.com` prints a one-time sign-in link.
+
+## Other servers
+
+In launchroomd's folder on that server:
+
+```sh title="On another server, in the launchroomd folder"
+docker compose run --rm launchroomd doctor
+```
+
+It shows whether the server reaches the dashboard, whether its clock is right, and checks its disk, memory and crashing containers. The only fix there is `--fix free-disk`.
+
+## Ask for help
+
+```sh
+./launchroom doctor --bundle
+```
+
+This writes a support file to `data/doctor/` with the doctor's report, container states and the last log lines of launchroom's own services. Logs of your apps are never included. Passwords, keys and `.env` are left out and secrets in logs are replaced, but look through it before you share it.
+
+## After the dashboard is back
+
+**Settings → System** (instance owners) shows how launchroom itself is doing on the main server:
+
+- each service, and which ones launchroom restarted and why
+- background jobs: waiting work, failed jobs of the last day, the scheduler
+- disk, database, cache and registry sizes
+- the control-plane backup and the dashboard's certificate
+- every doctor check that needs a look, with the `./launchroom doctor --fix …` command
+
+The alerts **launchroom itself has trouble** and **Background work falls behind** cover the same problems while the dashboard is up. See [Alerts](/docs/observability/alerts).
+
+## Commands
+
+All commands run in the launchroom folder on the control-plane server.
+
+### ./launchroom doctor
+
+```sh
+./launchroom doctor [--fix ID[:target]] [--bundle] [--json]
+```
+
+| Option | Effect |
+|---|---|
+| `--fix ID[:target]` | Apply one fix after you type `yes`, then check again |
+| `--bundle` | Also write a support file to `data/doctor/` |
+| `--json` | Print the report as JSON |
+
+The doctor exits with 1 when a check failed. Before it starts, the helper checks that Docker runs and that `.env` is readable, and warns when the disk is almost full.
+
+| Fix | What it does |
+|---|---|
+| `start:<service>` | Starts a stopped launchroom service from `compose.yml` and `.env` |
+| `restart:<service>` | Restarts the dashboard, horizon, reverb, scheduler, zot or headscale. Never postgres or valkey |
+| `clear-schedule-locks` | Clears the scheduler's locks of tasks that no longer run |
+| `restart-workers` | Lets the background workers finish their jobs and start again |
+| `update-rollback` | Finishes a rollback that failed half-way |
+| `repair-valkey-aof` | Copies the cache's file to `data/valkey/`, repairs it and starts the cache |
+| `free-disk` | Removes launchroom's own leftovers. Keeps the database dump while a failed rollback still needs it |
+
+The doctor runs in a one-off container with access to the host's Docker and a read-only view of the host's files, so it needs root or membership in the `docker` group, like the installer.
+
+### ./launchroom update
+
+Pulls the images pinned in `.env` again and restarts launchroom. It backs up the managed files and the database first and goes back to them if the update fails. To move to a new release, run the installer again with `--dir` pointing at this folder, which does the same. See [Updates](/docs/operations/updates#update-manually).
+
+### ./launchroom reset-password EMAIL
+
+```sh
+./launchroom reset-password you@example.com
+```
+
+Prints a link to choose a new password for that account. The link works once and expires after 60 minutes, and a newer link replaces an older one. Creating it signs the account out of "remember me" sessions. Two-factor authentication still applies when you sign in. The link is the only secret it prints, and the audit log records that it was created.
+
+Use it when the dashboard can't send email. Without a mail setup, **Forgot password?** on the sign-in page points here too.

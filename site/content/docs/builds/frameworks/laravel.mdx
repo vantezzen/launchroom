@@ -1,0 +1,65 @@
+---
+title: Laravel
+description: How launchroom builds and runs Laravel apps, from migrations and APP_KEY to queue workers, proxies and uploads.
+---
+
+launchroom applies the Laravel preset to every app with an `artisan` file and `laravel/framework`. Railpack serves it with FrankenPHP on port 8080.
+
+## What launchroom sets up
+
+| Decision | What it does |
+|---|---|
+| Run migrations once per deploy | `php artisan migrate --force` runs as the release command, once per deploy before traffic moves, instead of at every container start. |
+| Cache config at container start | Config, route, view and event caching moves from the build to the start, so build secrets never land in `bootstrap/cache`. |
+| Keep the cache store on restarts | The start script no longer runs `optimize:clear`, which flushed locks, rate limits and queue restart signals on every start. If `php artisan optimize` fails, the app starts uncached and logs the error. |
+| Pass on the visitor's IP address | PHP sees the visitor's address in `REMOTE_ADDR`, so `request()->ip()`, rate limits and logs work without `trustProxies`. |
+| Install the pcntl extension | Queue workers and Horizon finish the current job when they stop. |
+| Generate APP_KEY | When the service has no `APP_KEY`, launchroom creates one as a secret variable per environment, kept across deploys. |
+| Set APP_URL to the service's address | `APP_URL` follows each environment's domain, so links in mail, queued jobs and `Storage::url()` are right, also in previews. |
+| Production log level and secure cookies | `LOG_LEVEL=info` and `SESSION_SECURE_COOKIE=true`. |
+| Health check on /up | The health route from `withRouting(health: …)` in `bootstrap/app.php`. Without one (Laravel 10), the check uses `/`, where any answer below 500 counts. |
+
+Also:
+
+- **HTTPS**: PHP sees requests that came in over HTTPS as HTTPS, so `asset()`, `url()` and redirects produce `https://` links.
+- **PHP extensions**: the drivers for the databases you connect (`pdo_pgsql`, `pdo_mysql`, `redis`, `mongodb`) and the extensions your `composer.lock` needs, such as `intl` for Filament. See [PHP database drivers](/docs/builds/how-builds-work#php-database-drivers).
+- **PHP version**: when `composer.lock` needs a newer PHP than `composer.json` allows, the build uses that version and says why.
+
+### Processes to add
+
+When you import the repository, launchroom offers these processes as workers next to the app. Untick the ones you don't want:
+
+- **Queue worker process**: `php artisan queue:work --tries=3`, or **Horizon worker process** (`php artisan horizon`) when Horizon is installed. Both get 60 seconds to finish running jobs when they stop.
+- **Scheduler process**: `php artisan schedule:work`.
+- **Reverb WebSocket process**: `php artisan reverb:start`, when Reverb is installed.
+
+Workers run the app's image and get its `APP_URL`, `DOMAIN` and database connections.
+
+### Databases and files
+
+- **SQLite**: a Laravel app without `DB_CONNECTION` uses SQLite, whose file is reset on every deploy. When you import such an app, launchroom preselects a PostgreSQL database. Untick it to keep SQLite. The plan warns as long as no database is configured.
+- **Uploads**: when your code stores uploads on a local disk (`Storage::disk('public')`, `->store()`, Livewire or Filament uploads), **Keep files across deploys** offers a volume at `/app/storage/app`. A service with a volume runs as one replica.
+- **Sessions**: when sessions are stored in files, the plan warns. Settings → Scaling warns before you add a second replica with file sessions, a file cache or a worker running `schedule:work`.
+
+## What you might still do
+
+- **Maintenance mode with several replicas**: `php artisan down` only affects the replica it runs in. Set `MAINTENANCE_DRIVER=cache` with a shared cache store.
+- **A health check that includes the database**: Laravel's `/up` answers 200 even when the database is down. Listen to the `DiagnosingHealth` event to include it.
+- **Uploads on several replicas**: use an S3-compatible disk instead of a volume.
+- **Sessions and cache**: set `SESSION_DRIVER` and `CACHE_STORE` to `database` or `redis` before scaling out.
+
+## Turn a decision off
+
+Open **Settings → Build → Preset decisions**, select **×** on the chip and save. For example:
+
+- Remove **Run migrations once per deploy** to run migrations yourself.
+- Remove **Set APP_URL to the service's address**, or set your own `APP_URL` variable, which always wins.
+- Remove **Generate APP_KEY** if you manage the key outside launchroom. Otherwise a deleted key is created again on the next deploy.
+
+## Next steps
+
+<Cards>
+  <Card title="Symfony and PHP" href="/docs/builds/frameworks/php" description="Other PHP apps." />
+  <Card title="Variables" href="/docs/projects/variables" description="Generated values and variables that follow domains." />
+  <Card title="Scaling" href="/docs/projects/scaling" description="Replicas and what they need." />
+</Cards>

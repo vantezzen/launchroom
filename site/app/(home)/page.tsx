@@ -15,7 +15,9 @@ import {
     ServerView,
     StaysYoursVisual,
 } from '@/components/marketing/showcase';
-import { githubUrl, installCommand, licenseUrl } from '@/lib/shared';
+import { WalkthroughButton, WalkthroughDialog, WalkthroughDock } from '@/components/marketing/walkthrough';
+import { YouTubeVideo } from '@/components/youtube-video';
+import { githubUrl, installCommand, licenseUrl, tutorialVideo } from '@/lib/shared';
 
 const included = [
     'Zero-downtime releases',
@@ -91,7 +93,8 @@ export default function HomePage() {
                             Read the docs
                         </ButtonLink>
                     </div>
-                    <p className="mt-6 text-[13px] text-muted-foreground">
+                    <WalkthroughButton className="mt-6" />
+                    <p className="mt-4 text-[13px] text-muted-foreground">
                         Runs on your server · Free, MIT licensed · No account needed
                     </p>
                 </Container>
@@ -352,6 +355,18 @@ export default function HomePage() {
                 </div>
             </Section>
 
+            <Section id="walkthrough" labelledBy="walkthrough-title">
+                <SectionHeading
+                    id="walkthrough-title"
+                    label="Walkthrough"
+                    title="All of launchroom in 20 minutes."
+                    align="center"
+                >
+                    From the install command to a running app, then through every part of the dashboard.
+                </SectionHeading>
+                <YouTubeVideo {...tutorialVideo} className="mx-auto mt-12 max-w-[1080px]" />
+            </Section>
+
             <section aria-labelledby="cta-title" className="py-24 sm:py-32">
                 <Container className="flex flex-col items-center text-center">
                     <h2 id="cta-title" className="type-section max-w-[20ch] text-balance">
@@ -370,6 +385,8 @@ export default function HomePage() {
                     </div>
                 </Container>
             </section>
+            <WalkthroughDock />
+            <WalkthroughDialog />
         </>
     );
 }

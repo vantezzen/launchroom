@@ -30,6 +30,14 @@ export const demoVideo: { src: string; poster?: string; title: string } | null =
     ? { src: demoVideoUrl, title: 'A server at home joins launchroom and takes its first build' }
     : null;
 
+/** The full walkthrough on YouTube: the landing page and the docs start page show it. */
+export const tutorialVideo = {
+    id: '73LkaA3ZYMk',
+    title: 'launchroom walkthrough',
+    poster: '/video/tutorial.jpg',
+    length: '20 min',
+};
+
 const getContentUrl = createGetUrl(docsContentRoute);
 
 export function getPageMarkdownUrl(page: { slugs: string[]; locale?: string }) {

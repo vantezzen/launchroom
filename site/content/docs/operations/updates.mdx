@@ -41,7 +41,7 @@ If you haven't set up a control-plane backup destination, the update dialog asks
 
 Every update can roll back:
 
-- On the control plane, launchroom restores the previous configuration and the pre-update database dump and starts the old version again. Changes made in the dashboard during the update window are undone.
+- On the control plane, launchroom restores the previous configuration and the pre-update database dump and starts the old version again. Changes made in the dashboard during the update window are undone. Before it goes back, it saves the last log lines and state of the services that failed to `data/daemon/update/tasks/<task>/diagnostics/`. A database migration that failed is named in the log as `migration-failed`.
 - On a server, the previous launchroomd configuration is restored and the old version restarted.
 
 The Updates page then shows an amber card with what happened, step by step, and what to do:
@@ -50,7 +50,8 @@ The Updates page then shows an amber card with what happened, step by step, and 
 |---|---|
 | Rolled back | Nothing to fix. You're on the previous version. **Try again** when you're ready, or wait for the next release |
 | Backup failed | Nothing changed. Check Settings → Backups, then try again |
-| Failed | Run `./launchroom status` on the control-plane server and keep the pre-update backup at hand. See [Troubleshooting](/docs/troubleshooting/install) |
+| Failed | Run `./launchroom doctor` on the control-plane server and keep the pre-update backup at hand. See [When the dashboard is down](/docs/operations/when-the-dashboard-is-down) |
+| The rollback didn't finish | In the launchroom folder on the main server, run `./launchroom doctor`. It offers `--fix update-rollback`, which finishes going back to the previous version. Then try the update again |
 
 If a server's update fails, the rollout stops and the Servers section explains which server went back to its previous version, with **Try again**.
 
@@ -111,9 +112,7 @@ Pass `-s -- --dir /path/to/launchroom` if you installed into another folder, and
 
 On the control plane, `./launchroom update` re-pulls the images already pinned in `.env` and restarts. It doesn't move to a new release.
 
-<Callout type="warn" title="No backup or rollback by hand">
-The manual path doesn't take a pre-update backup and doesn't roll back. Take a backup first (`./launchroom backup`) and prefer the guided flow when you can.
-</Callout>
+Both go through the same update helper as the guided flow: they back up the managed files and the database first, check that there is room for the database dump, and go back to the previous version by themselves if the update fails. They don't copy the backup off-site, so take a control-plane backup (`./launchroom backup`) first when you can. If going back fails too, `./launchroom doctor --fix update-rollback` finishes it.
 
 After updating the control plane by hand, update your servers from Settings → Updates.
 

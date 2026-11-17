@@ -12,7 +12,7 @@ Every line a running service writes, plus its rollout and health checks, is coll
 launchroom collects two kinds of lines:
 
 - **Build and deploy logs**: everything a deployment prints, including the build, release commands, the rollout and health checks. They are stored with the deployment and kept as long as the deployment exists. Open a deployment to read its log step by step. Build output stays there; the rollout and health check lines also show in the explorer.
-- **Runtime logs**: what your services write to stdout and stderr while they run. By default they are shown live and kept for a day. Turn on [retention](#keep-runtime-logs) for an environment to store every line for longer.
+- **Runtime logs**: what your services write to stdout and stderr while they run. Production keeps them for a day by default, other environments show them live. Change [retention](#keep-runtime-logs) per environment to store every line for longer.
 
 Secret values are masked before lines are stored. If a variable marked secret shows up in a build or deploy log, you see a placeholder instead of the value. Logs are always shown as text, never rendered as HTML.
 
@@ -65,7 +65,11 @@ Live following works inside one environment only.
 
 ## Follow live
 
-Press **Live** to stream new lines as they are written. launchroom starts a short-lived tail on every running replica of the environment's live deployments and keeps it running while the page is open. Tails are renewed every few minutes and stop when you leave. New lines appear within about two seconds.
+Press **Live** to stream new lines as they are written. launchroom starts a short-lived tail on every replica of the environment's live deployments and keeps it running while the page is open. Tails are renewed every few minutes and stop when you leave. New lines appear within about two seconds.
+
+A tail follows its replica across restarts. When the container exits, a line such as "The container exited with code 1." appears, then "The container started again (restart 2)." when Docker starts it again. A replica that has exited shows its last lines and continues when it starts. A replica without a tail is listed under **Live** with the reason, for example that its server is offline or that it never started.
+
+Even without retention, the last 100 lines of a container launchroom stopped or replaced go into its deployment's log, and the lines of a crashed run go with its exit.
 
 You can follow logs from a terminal too:
 
@@ -77,7 +81,7 @@ See the [CLI reference](/docs/reference/cli) for `--service`, `--since` and `--s
 
 ## Keep runtime logs
 
-Without retention, runtime lines are visible while you follow them and kept for a day. To store everything your services write and search it later, turn on retention per environment:
+Production environments keep runtime logs for 1 day, up to 256 MB, from the start. Other environments don't keep them: runtime lines are visible while you follow them. To store more, or to keep logs of another environment, change retention per environment:
 
 <Steps>
 <Step>
@@ -104,9 +108,13 @@ Pick how long to keep lines and how much space they may use, then **Save**.
 
 The change applies right away to running services, without a restart. Each server ships the logs of that environment's replicas continuously and resumes where it left off after an interruption. The card footer shows how much is stored and since when. Turning retention off stops shipping. Lines already kept then age out.
 
-<Callout type="info" title="Retention is opt-in">
-Runtime logs can contain personal data your app prints. launchroom stores them only when you turn on retention for an environment, with a limit you choose.
+<Callout type="info" title="Personal data in logs">
+Runtime logs can contain personal data your app prints. launchroom stores them for production by default, for one day and up to 256 MB. Turn **Keep runtime logs** off for an environment to store nothing.
 </Callout>
+
+## Problems found in the logs
+
+launchroom reads the runtime logs of live apps for problems it knows: a framework that refuses its domain (Django `DisallowedHost`, Rails blocked hosts), form posts refused as cross-site, LiveView sockets that can't connect, and gunicorn worker timeouts. The first one it finds shows in the service panel as **Seen in the logs** and under **Needs you**, with what to do. It goes away when a newer version goes live. This works on lines launchroom stores, so it needs runtime logs kept for that environment.
 
 ## Logs on the server
 

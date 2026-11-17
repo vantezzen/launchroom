@@ -149,6 +149,7 @@ It checks for:
 - ports 80 and 443 are free
 - the kernel's inotify limits (offers to raise them when they are low)
 - whether AppArmor restricts user namespaces (offers to load launchroom's build profile)
+- free disk space and whether the clock is synchronised (warns, never stops)
 </Step>
 <Step>
 ### Downloads and verifies the release
@@ -237,12 +238,14 @@ Run these from inside the install folder.
 | Command | What it does |
 |---|---|
 | `./launchroom status` | The dashboard address, every container's state and whether this server's launchroomd is connected. |
+| `./launchroom doctor` | Check Docker, the disk, every service, the database, the cache, the registry and the dashboard's address, and say how to fix what's wrong. See [When the dashboard is down](/docs/operations/when-the-dashboard-is-down). |
 | `./launchroom logs [service]` | Follow the logs of all services, or one (`dashboard`, `horizon`, `launchroomd`, …). |
-| `./launchroom update` | Pull the images pinned in `.env` again, restart and migrate. A new release comes from re-running the installer. |
+| `./launchroom update` | Pull the images pinned in `.env` again, restart and migrate, with a backup first and a rollback if it fails. A new release comes from re-running the installer. |
 | `./launchroom backup` | Take a control-plane backup now. |
 | `./launchroom restore` | Restore the control plane from a backup. |
 | `./launchroom registry show` / `apply` | Show the registry config with credentials hidden, or write it and restart the registry. |
 | `./launchroom setup-token` | A new one-time setup link. |
+| `./launchroom reset-password EMAIL` | Print a one-time link to set a new password, for when the dashboard can't send email. |
 | `./launchroom reset-owner-2fa EMAIL` | Remove an instance owner's two-factor authentication after a typed confirmation. They set it up again at the next sign-in. |
 | `./launchroom dashboard-domain-reset` | Go back to the install address when the dashboard's own domain locks you out. |
 | `./launchroom uninstall` | Remove launchroom from this server. |

@@ -1,0 +1,54 @@
+---
+title: Other languages
+description: Java and Spring Boot, .NET, Rust with Rocket, Deno and Go on launchroom.
+---
+
+Railpack builds these apps. launchroom adds a preset where the runtime needs settings to work behind launchroom's edge.
+
+## Java and Spring Boot
+
+Every Java app built with Railpack (Maven or Gradle):
+
+| Decision | What it does |
+|---|---|
+| Size the heap to the memory limit | `JAVA_TOOL_OPTIONS=-XX:MaxRAMPercentage=75 -XX:+ExitOnOutOfMemoryError`. The JVM uses up to 75 % of the service's memory instead of 25 %, and exits on an out-of-memory error so the container restarts instead of staying broken. |
+
+Spring Boot apps also get:
+
+| Decision | What it does |
+|---|---|
+| Trust launchroom's proxy | `SERVER_FORWARD_HEADERS_STRATEGY=native`, so redirects and generated links use `https` and your domain. |
+| Health check on `/actuator/health` | With Spring Boot Actuator, the health check uses its endpoint, including `server.servlet.context-path` and the Actuator base path. Not when Actuator runs on its own `management.server.port`. |
+
+Spring Boot usually needs 768 MB of memory or more. Set it under Settings → Scaling.
+
+## .NET
+
+| Decision | What it does |
+|---|---|
+| Trust launchroom's proxy | `ASPNETCORE_FORWARDEDHEADERS_ENABLED=true`, so `Request.Scheme` is `https` and redirects and sign-in callbacks use your domain. |
+
+## Rust with Rocket
+
+| Decision | What it does |
+|---|---|
+| Listen on the service's port | `ROCKET_PORT` follows the service's port and `ROCKET_ADDRESS` is `0.0.0.0`. |
+
+## Deno and Go
+
+Deno apps default to port 8000. Go apps build with Railpack without a preset.
+
+## Ports
+
+When a service has no port set and the app listens on exactly one port, launchroom sets that port and deploys again. The deployment says so. This covers servers with a fixed port, such as a Go app on `:8080`. A port you set is never changed.
+
+## Turn a decision off
+
+Open **Settings → Build → Preset decisions**, select **×** on the chip and save. A variable you set, such as your own `JAVA_TOOL_OPTIONS`, always wins over the preset's.
+
+## Next steps
+
+<Cards>
+  <Card title="Dockerfiles" href="/docs/builds/frameworks/dockerfiles" description="What launchroom applies to your own Dockerfile." />
+  <Card title="How builds work" href="/docs/builds/how-builds-work" description="Builders, presets, rollouts and rollback." />
+</Cards>

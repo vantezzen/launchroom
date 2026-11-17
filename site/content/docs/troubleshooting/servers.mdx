@@ -27,6 +27,14 @@ This page helps you find which one and fix it.
 
   On the control-plane server, use `./launchroom status` and `./launchroom logs launchroomd` in the `launchroom` folder.
 
+- On the server, the doctor checks the disk, memory, the connection to the dashboard and the clock, and says what to fix:
+
+  ```sh title="On an added server, in the launchroomd folder"
+  docker compose run --rm launchroomd doctor
+  ```
+
+  On the control-plane server, run `./launchroom doctor` instead. See [When the dashboard is down](/docs/operations/when-the-dashboard-is-down).
+
 ## The server never comes online after the install command
 
 The **Add a server** page waits with "Waiting for your server…", usually 20 to 40 seconds after you run the command. If nothing happens, the installer itself stops after 3 minutes with "launchroomd did not enroll within 3 minutes" and prints the log command above.
@@ -50,13 +58,43 @@ Check these in order:
 
 **Cause.** The dashboard hasn't heard from launchroomd for more than 75 seconds. After 5 minutes the status becomes **Offline**. The apps on the server keep running the whole time. Only changes and reports stop. After about 90 seconds launchroom moves stateless replicas to other servers that may run them.
 
+When the dashboard refused the server's requests, the server page names the reason:
+
+| Reason on the server page | What to do |
+|---|---|
+| Its clock is 94 seconds behind the dashboard | Turn on time sync on that machine (`sudo timedatectl set-ntp true`). It reconnects by itself |
+| Its key was revoked | The server was removed or replaced. Add the machine as a new server |
+| Its client certificate was refused, or it has no client certificate | Allow it a new certificate in Settings → Instance security → Server certificates |
+| Its launchroom version was too old for this dashboard | Update the server, or run the server's install command again |
+| It was waiting for approval or had been replaced | Approve it on the Servers page. A replaced server needs to be added again |
+
 **Fix.** Work through these:
 
-- **Machine and Docker.** Check `docker compose ps` in the install folder. Both `launchroomd` and `dockerd-guard` should be running.
+- **Machine and Docker.** Check `docker compose ps` in the install folder. Both `launchroomd` and `dockerd-guard` should be running and healthy. `docker compose run --rm launchroomd healthcheck` exits with 0 while launchroomd's main loops make progress.
 - **launchroomd's log.** Repeated connection errors point at the network. `401` answers point at the clock or a revoked key.
 - **A moved dashboard.** Servers follow a new dashboard domain automatically once they can verify it, and fall back to the address they were installed with. If that old address no longer reaches the dashboard either, re-run the server's install command with the new address.
 - **Client certificates set to Require.** Servers without a valid certificate can't reach the dashboard. Settings → Certificates & audit lists each server's readiness. See [Client certificates](/docs/teams-and-security/client-certificates).
 - **A sleeping laptop or desktop.** This is expected. It comes back **Online** when it wakes.
+
+## The server is online but can't run apps
+
+The server page shows one of these at the top:
+
+- **"server-2 can't reach Docker"**: launchroom can't start, stop or check apps there. The running ones keep running. Check that Docker runs on the machine (`sudo systemctl status docker`).
+- **"server-2 is online but can't run apps"**: launchroom can't change containers right now, so new versions and restarts wait. The line quotes the error.
+- **"Apps on server-2 are held until its firewall works"**: launchroom starts apps only once their networks are isolated from each other. See [The firewall table](#the-firewall-table).
+- **"server-2's disk is full"**: see [Disk](#disk).
+
+## launchroom restarted on a server
+
+The server page and Activity say when launchroom on a server stopped unexpectedly. Your apps keep running in all these cases:
+
+- **Restarted after a crash**: it crashed and started again. Admins can open the crash report. Include it in a bug report.
+- **Got stuck and restarted itself**: a part of launchroomd stopped making progress, so it exited and Docker started it again.
+- **server-2 restarted**: the machine itself booted.
+- **Stopped unexpectedly**: killed, out of memory or a power loss, with no crash report.
+
+Exits of your apps while launchroomd was down are reported once it is back.
 
 ## Clock out of sync
 
@@ -77,7 +115,7 @@ Each check in the **Health** section explains itself. The most common ones:
 
 | Check | What it means | What to do |
 |---|---|---|
-| **Disk** | Less than 20% free is a warning, less than 10% critical. Builds and pulls fail on a full disk. | launchroom removes unused images daily and when the disk is 85% full. It never deletes volumes, databases or anything it didn't create. Remove other data, or grow the disk. |
+| **Disk** | Less than 20% free is a warning, less than 10% critical. Builds and pulls fail on a full disk. | See [Disk](#disk) below. |
 | **Memory** | Less than 15% available is a warning. | Services may be killed for lack of memory. Lower memory limits, move services to another server or add memory. |
 | **Load** | Sustained load of 2 per CPU or more. | Builds and requests get slow. Move builds to another server with the Build role. |
 | **File watch limits** | inotify limits below 65,536 watches or 256 instances. | Raise `fs.inotify.max_user_watches` and `fs.inotify.max_user_instances` in a file under `/etc/sysctl.d/`. The installers offer to do this. |
@@ -95,6 +133,14 @@ fs.inotify.max_user_instances = 512
 Apply it with `sudo sysctl -w fs.inotify.max_user_watches=524288 fs.inotify.max_user_instances=512`, or run the
 installer again with `--raise-inotify`, which writes the same file. Keep a value that is already higher. See
 [Low inotify limits](/docs/troubleshooting/install#low-inotify-limits).
+
+## Disk
+
+The **Disk** section on a server's Overview shows what takes the space: volumes by size, images, build cache and backup data that waits to be uploaded. It warns when fewer than 10% of file entries (inodes) are free, which also stops writes on a disk with free space.
+
+launchroom removes unused images and old build cache daily and as soon as the disk is 85% full, or 85% of its file entries are used. **Free space now** runs the same cleanup at once and says what it removed. A build that runs out of disk triggers it too and is retried once. A cleanup never deletes volumes, databases or anything launchroom didn't create.
+
+Volumes of services you removed stay for 7 days and are marked in the list. If the disk is still full, delete data inside your apps, remove other files on the machine, or grow the disk.
 
 ## Rootless Docker hosts
 

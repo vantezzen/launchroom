@@ -1,0 +1,87 @@
+---
+title: JavaScript frameworks
+description: Nuxt, SvelteKit, Astro, React Router, Remix, TanStack Start, Angular SSR, Gatsby and Node servers on launchroom.
+---
+
+Every JavaScript app that runs a server gets a preset. Apps that build to static files (Vite, Create React App, static Astro, Angular without server rendering) are served as [static sites](#static-sites). Next.js has its [own guide](/docs/builds/frameworks/nextjs).
+
+## Shared by every JavaScript server
+
+- **Listen address**: `HOST` and `HOSTNAME` are `0.0.0.0`, so the server answers from outside the container.
+- **Requests over HTTPS look like HTTPS** (Express, Fastify, Hono, Koa, Nest, Astro, React Router, Remix, TanStack Start, Angular SSR): launchroom loads a small module through `NODE_OPTIONS=--import=/opt/launchroom/node/forwarded.mjs`. It marks a request as secure when it reached launchroom over HTTPS, so cookies, redirects and origin checks use `https`. It is not added for Bun or Node versions before 18.18. A `NODE_OPTIONS` variable you set replaces it.
+- **Auth.js**: with `next-auth` or an `@auth/*` package, `AUTH_TRUST_HOST=true` and a generated `AUTH_SECRET`, as for [Next.js](/docs/builds/frameworks/nextjs#with-authjs-or-nextauth).
+- **Health check under the base path**: when the app sets a base path, the health check uses it instead of `/`.
+
+## Nuxt
+
+- **Start the Nitro server**: `node .output/server/index.mjs`.
+- The health check follows `app.baseURL`.
+- The plan warns when `nuxt.config` sets a Nitro preset that doesn't build a Node server.
+
+Nuxt and its h3 server read `X-Forwarded-Proto` themselves, so they don't need the HTTPS module.
+
+## SvelteKit
+
+- **Start the adapter-node server**: with `@sveltejs/adapter-node`, `node build` (or the `out` folder you configured). With `adapter-auto`, Railpack builds with adapter-node.
+- **Visitor IP from the edge**: `ADDRESS_HEADER=X-Forwarded-For` and `XFF_DEPTH=1`, so `getClientAddress()` returns the visitor's IP.
+- The health check follows `kit.paths.base`.
+- The plan warns about `adapter-static` (no server) and adapters for other hosts. Switch to `@sveltejs/adapter-node`.
+
+## Astro
+
+An Astro site without a server adapter builds to static files. With `@astrojs/node` in standalone mode:
+
+- **Start the Astro server**: `node ./dist/server/entry.mjs`.
+- The health check follows `base`.
+- The plan warns about middleware mode, where `entry.mjs` is a handler for your own server, and about adapters for other hosts.
+
+## React Router and Remix
+
+React Router 7 in framework mode and Remix keep your `start` script. Without one, launchroom starts `react-router-serve` (or `remix-serve`) with `./build/server/index.js` when it is installed, and warns otherwise. The health check follows `basename`.
+
+## TanStack Start
+
+launchroom keeps the start command Railpack detects and adds the HTTPS module.
+
+## Angular with server rendering
+
+When `angular.json` builds with server rendering (`@angular/ssr`), launchroom builds a server instead of a static site and starts `node <output>/server/server.mjs`.
+
+## Gatsby
+
+**Serve the production build**: `gatsby serve` on the service's port. A Gatsby starter's `start` script runs the development server, so launchroom replaces it.
+
+## Node servers
+
+Express, Fastify, Hono, Koa and Nest apps, and any other app with a `package.json`:
+
+- **Listen on $PORT**: launchroom sets `PORT=3000`. Your server must listen on `process.env.PORT`. The plan warns when the code calls `listen(3000)` without reading it.
+- **Start the compiled app** (Nest): runs `start:prod` instead of `nest start`, which compiles at every start.
+- The plan warns when `package.json` has no `start` script or `main`.
+
+## Static sites
+
+Vite, Create React App, Angular and static Astro or Next.js exports build to files that Caddy serves on port 8080:
+
+- Hashed assets (`/assets/`, `/_astro/`, `/_next/static/`, `/static/js|css|media/`) are cached for a year. Everything else is revalidated on each visit.
+- Single-page apps fall back to `index.html`. Multi-page sites (Astro, Next.js export, Gatsby) answer unknown paths with their `404.html` and a 404 status.
+- A Vite `base` such as `/app/` is served under that path.
+
+Set `RAILPACK_NO_SPA=1` as a build variable to turn off the static-site handling, or `RAILPACK_SPA_OUTPUT_DIR` to change the output folder.
+
+## What you might still do
+
+- Read `process.env.PORT` in your own server.
+- Use the Node adapter of your framework if you built for another host.
+- For a monorepo, pick the app's folder as the root directory. launchroom builds from the workspace root. See [monorepos](/docs/builds/how-builds-work#monorepos).
+
+## Turn a decision off
+
+Open **Settings → Build → Preset decisions**, select **×** on the chip and save. For example, remove **Requests over HTTPS look like HTTPS** if your app sets up proxy trust itself.
+
+## Next steps
+
+<Cards>
+  <Card title="Next.js" href="/docs/builds/frameworks/nextjs" description="The adapter, server actions and Auth.js." />
+  <Card title="How builds work" href="/docs/builds/how-builds-work" description="Builders, presets, rollouts and rollback." />
+</Cards>

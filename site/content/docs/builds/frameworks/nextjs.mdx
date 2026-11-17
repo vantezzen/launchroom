@@ -1,0 +1,54 @@
+---
+title: Next.js
+description: How launchroom builds and runs Next.js apps, including the deployment adapter, the server actions key and Auth.js.
+---
+
+launchroom applies the Next.js preset to every app with `next` in its dependencies, except a static export (`output: 'export'`), which is served as a [static site](/docs/builds/how-builds-work#framework-presets).
+
+## What launchroom sets up
+
+| Decision | What it does |
+|---|---|
+| Listen on all interfaces | `HOSTNAME=0.0.0.0`, so the server answers from outside the container. |
+| Disable Next.js telemetry | `NEXT_TELEMETRY_DISABLED=1` at build and runtime. |
+| launchroom deployment adapter | From Next.js 15.4: builds the standalone output with `@vantezzen/launchroom-next-adapter` and starts `node .next/standalone/server.js`. The image holds only what the server needs. |
+| Deployment id | Next.js 14 to 15.3: `NEXT_DEPLOYMENT_ID` is the deployment at build, so a browser tab from the previous version keeps loading its own assets. |
+| Standalone output | Next.js 14 to 15.3 with `output: 'standalone'`: copies `public/` and `.next/static` into the standalone folder and starts its `server.js`. |
+| Generate a server actions key | `NEXT_SERVER_ACTIONS_ENCRYPTION_KEY`, generated once for the service and shared by its environments. Server actions keep working after a redeploy and when you promote a build. Fork previews get their own. |
+| Health check under the base path | When `next.config` sets `basePath`, the health check uses it instead of `/`. |
+
+launchroom picks the adapter by the Next.js version in your lockfile, else by the range in `package.json`.
+
+### With Auth.js or NextAuth
+
+When `next-auth` or an `@auth/*` package is installed:
+
+- **Auth.js trusts the forwarded host**: `AUTH_TRUST_HOST=true`, so sign-in works on every domain and preview.
+- **Generate AUTH_SECRET** (or `NEXTAUTH_SECRET` for NextAuth 4): one per environment, as a secret variable.
+- **NEXTAUTH_URL follows the domain** (NextAuth 4 only): `NEXTAUTH_URL` is the environment's public URL.
+
+`AUTH_SECRET` and `NEXTAUTH_SECRET` are runtime variables. If your build reads one, set its **Available at** to **Build and runtime** in the variable editor.
+
+### HTTPS, proxies and server actions
+
+Next.js reads `X-Forwarded-Proto` and `X-Forwarded-Host` itself, which launchroom's edge always sets. Server actions called from client code work behind the web firewall in Block mode: the firewall parses their arguments as JSON and inspects them like any API request.
+
+## What you might still do
+
+- **More than one replica**: ISR and `revalidateTag` keep their cache per replica. Settings → Scaling warns about this when you set more than one replica. Configure a shared cache handler, for example with Redis, or stay on one replica.
+- **The server actions key and new environments**: the key is created after a build declares it and used from the next build on. The first build of a new environment runs with a key Next.js generates itself.
+- **Next.js 14 with standalone output**: add `sharp` to your dependencies for image optimization. The plan warns when it is missing.
+- **Next.js 14 to 15.3 without standalone output**: the plan suggests `output: 'standalone'` for a smaller image. Next.js 15.4 and later get it automatically.
+- **Your own adapter**: if `next.config` sets `adapterPath`, yours wins and launchroom's is not used.
+
+## Turn a decision off
+
+Open **Settings → Build → Preset decisions**, select **×** on the chip and save. For example, remove **launchroom deployment adapter** to build and start with `next start`. A `NEXT_SERVER_ACTIONS_ENCRYPTION_KEY` you set as a build variable replaces the generated one, and the chip doesn't appear.
+
+## Next steps
+
+<Cards>
+  <Card title="How builds work" href="/docs/builds/how-builds-work#the-nextjs-adapter" description="The adapter in detail." />
+  <Card title="Web firewall" href="/docs/security/web-firewall" description="What the firewall inspects." />
+  <Card title="Scaling" href="/docs/projects/scaling" description="Replicas and what they need." />
+</Cards>

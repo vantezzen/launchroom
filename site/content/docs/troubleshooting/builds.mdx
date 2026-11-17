@@ -93,7 +93,8 @@ launchroom's build container.
 ## A native module or PHP extension is missing
 
 - **"A native module could not be compiled"** (`gyp ERR!` in the log): a dependency builds native code and the build image has no compiler. Click **Add RAILPACK_BUILD_APT_PACKAGES** to add `python3 make g++` at build time, or switch to a package with prebuilt binaries.
-- **"The PHP extension … is missing"**: a Composer package requires an extension that isn't installed. Add it to `composer.json` as `"ext-<name>": "*"`, or use the card's button, which sets `RAILPACK_PHP_EXTENSIONS`.
+- **"The PHP extension … is missing"**: a Composer package requires an extension that isn't installed. launchroom reads `composer.lock` and installs the extensions your dependencies declare (the build log says "Adds PHP extensions your dependencies need: …"), so this mostly happens for an extension a package uses without declaring it. Add it to `composer.json` as `"ext-<name>": "*"`, or use the card's button, which sets `RAILPACK_PHP_EXTENSIONS`.
+- **`composer install` refuses the PHP version**: launchroom also takes the PHP version from `composer.lock` when the locked packages need a newer one than `composer.json` allows, and says so in the build log ("Uses PHP 8.4: composer.lock needs it …"). If the log warns that it couldn't raise the version, set `require.php` in `composer.json` to the version you need.
 
 ## Root directory does not exist in the repository
 
@@ -101,7 +102,7 @@ The card says **Configuration error** and the message names the folder.
 
 **Cause.** The service's root directory doesn't exist at the commit being built. This happens after moving an app inside a monorepo, renaming a folder or deploying a branch where it doesn't exist yet.
 
-**Fix.** Update **Root directory** under Settings → Source (no leading slash, for example `apps/web`). In a monorepo the root directory points at the app. The build still sees the whole repository, so workspace packages resolve. A Dockerfile path is resolved inside the root directory too.
+**Fix.** Update **Root directory** under Settings → Source (no leading slash, for example `apps/web`). In a monorepo the root directory points at the app. When the app belongs to a pnpm, npm, Yarn or Bun workspace, launchroom builds from the workspace root with a filtered build (Turborepo and Nx included), so packages in `packages/` resolve. An app with its own lockfile builds on its own. A Dockerfile path is resolved inside the root directory.
 
 ## A variable is missing at build time
 
@@ -156,13 +157,39 @@ The **Build** step fails before any build output, with a message from the git se
 
 See [Git providers](/docs/builds/git-providers) for how each connection authenticates.
 
+## The server ran out of disk during the build
+
+The card title reads "server-2 ran out of disk during the build".
+
+**Cause.** There was no space left for the build's files and image layers. launchroom then removes old build cache and unused images on that server right away, and the card says how much it freed.
+
+**Fix.** When space was freed, the build is retried once by itself. Otherwise click **Free space on server-2** and deploy again once it is done. If the disk fills up again, the server needs a bigger disk or fewer images, see [Servers](/docs/troubleshooting/servers#disk).
+
+## The build couldn't look up a host name
+
+**Cause.** The build needed to download something, but the server couldn't resolve the name. Builds use the server's own name resolution.
+
+**Fix.** Check the server's DNS settings (`/etc/resolv.conf`) and that it reaches the internet, then deploy again. If the name comes from your code or lockfile, check it for a typo.
+
+## The build tried to reach your database
+
+**Cause.** The framework renders a page while it builds (Next.js prerendering, for example), and that page queries the database. Builds run apart from your services, so the database isn't reachable then. The card names the page.
+
+**Fix.** Render the page when it is requested instead (in Next.js `export const dynamic = 'force-dynamic'`, or `await connection()`), or skip the query when the database isn't there.
+
+## The build printed nothing for 20 minutes
+
+**Cause.** A build step showed no progress for 20 minutes, so launchroom stopped it. Usually the step waits for input or for a download that never answers.
+
+**Fix.** Read the last lines of the build log. A command that asks a question needs a flag such as `--yes` or `CI=true`.
+
 ## Registry or network trouble
 
 The class is `transient`. Pushing the image to launchroom's registry, pulling a base image or downloading a toolchain failed.
 
 **Cause.** Usually temporary: an upstream registry error, a rate limit or a short network outage. launchroom retries a transient failure once automatically. When it keeps happening, the cause is usually on your side:
 
-- The control-plane server's disk is full. The registry stores images there; check the server's **Health** section.
+- The control-plane server's disk is full. The registry stores images there; check the server's **Health** section, or run `./launchroom doctor` on it.
 - A build server at home pushes over the private network. If its network status isn't **Connected**, the push can't reach the registry. See [Private network problems](/docs/troubleshooting/mesh).
 
 **Fix.** Redeploy. If it fails the same way twice, look at the last lines of the Build step and at the server health of both the build server and the control-plane server.

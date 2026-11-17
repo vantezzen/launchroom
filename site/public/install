@@ -56,7 +56,9 @@
 # Re-running is safe: .env (secrets) and data/ are kept, compose.yml (with
 # daemon-compose.yml), the helper script and image pins are replaced, the
 # stack is brought up to date, and the local launchroomd is only enrolled if
-# it is not already.
+# it is not already. On an existing install the update runs through
+# launchroomd's update supervisor (docs/11 §4.4): it backs up the managed
+# files and the database first and goes back to them if anything fails.
 #
 # Nothing is written outside the install folder, with four exceptions the
 # installer asks about first (or that a flag allows):
@@ -580,6 +582,32 @@ host_timezone() {
 		printf '%s' "$tz"
 	fi
 }
+
+# check_host_health DIR: warns (never stops) when the disk that will hold
+# DIR is nearly full, or when the clock isn't synchronised: launchroom's
+# servers sign every request with a timestamp, so a clock that drifts by
+# minutes cuts a server off. Never during an update.
+check_host_health() {
+	[ "${LR_BUNDLE_VERIFIED:-}" != 1 ] || return 0
+	target="$1"
+	while [ ! -d "$target" ] && [ "$target" != / ] && [ "$target" != . ]; do target="$(dirname "$target")"; done
+	free_kb="$(df -Pk "$HOST_ROOT$target" 2>/dev/null | awk 'NR == 2 { print $4 }')"
+	case "$free_kb" in
+	"" | *[!0-9]*) ;;
+	*)
+		if [ "$free_kb" -lt 5242880 ]; then
+			warn "only $((free_kb / 1024)) MB of disk space is free here. launchroom needs room for its database, images and builds: 10 GB or more is comfortable."
+		fi
+		;;
+	esac
+	synced=""
+	if command -v timedatectl >/dev/null 2>&1; then
+		synced="$(timedatectl show -p NTPSynchronized --value 2>/dev/null || true)"
+	fi
+	if [ "$synced" = no ]; then
+		warn "this server's clock isn't synchronised. Servers sign every request with the time, so a clock that drifts cuts them off. Turn it on with: sudo timedatectl set-ntp true"
+	fi
+}
 # <<< lib/host.sh
 
 check_prerequisites() {
@@ -642,7 +670,11 @@ fetch_bundle() {
 	if [ -n "$BUNDLE" ]; then
 		[ -f "$BUNDLE/control-plane/compose.yml" ] || die "$BUNDLE is not a launchroom bundle (expected control-plane/compose.yml)"
 		BUNDLE="$(cd "$BUNDLE" && pwd)"
-		if [ "${LR_BUNDLE_VERIFIED:-}" = 1 ]; then
+		if [ "${LR_INSTALL_SUPERVISED:-}" = 1 ]; then
+			# Handed over by this installer itself (supervised_update), which
+			# checked the bundle before.
+			say "updating from the bundle the installer checked ($BUNDLE)"
+		elif [ "${LR_BUNDLE_VERIFIED:-}" = 1 ]; then
 			# Started by launchroomd's update supervisor, which verified this
 			# bundle against the pinned release identity (docs/11 §4).
 			say "using the release bundle verified by launchroomd ($BUNDLE)"
@@ -761,7 +793,7 @@ prepare_folder() {
 	# services); LR_PUBLIC_IPS in .env then names the addresses. Kept on a
 	# re-run without the flag. Updates pass the flag for the installer only
 	# (LR_BUNDLE_VERIFIED=1) and change nothing here.
-	if [ "$DETECT_IP" = 0 ] && [ "${LR_BUNDLE_VERIFIED:-}" != 1 ]; then
+	if [ "$DETECT_IP" = 0 ] && { [ "${LR_BUNDLE_VERIFIED:-}" != 1 ] || [ "${LR_INSTALL_SUPERVISED:-}" = 1 ]; }; then
 		env_set LR_PUBLIC_IP_DETECT off
 	fi
 
@@ -931,7 +963,8 @@ start_databases() {
 	# chunks, docs/14 §12.1) belong to the dashboard image's user.
 	dc run --rm --no-deps --user 0 --entrypoint sh dashboard -c \
 		"chown -R $DASHBOARD_UID:$DASHBOARD_UID /data/keys /data/backups /data/transfers && chmod 0700 /data/keys /data/backups /data/transfers &&
-		chown $DASHBOARD_UID:$DASHBOARD_UID /data/zot/config.json && chmod 0600 /data/zot/config.json" >/dev/null
+		chown $DASHBOARD_UID:$DASHBOARD_UID /data/zot/config.json &&
+		chmod 0600 /data/zot/config.json" >/dev/null
 }
 
 # docs/14 §5.2: restore the database, the key files and the .env secrets
@@ -1148,7 +1181,45 @@ finish() {
 	fi
 	echo
 	echo "  Back up $DIR/.env and $DIR/data/keys/ now: they decrypt every secret."
-	echo "  Helper: $DIR/launchroom status | logs | update | backup | uninstall"
+	echo "  Helper: $DIR/launchroom status | doctor | logs | update | backup | uninstall"
+}
+
+# supervised_update: on an existing install, hands the update to
+# launchroomd's update supervisor (`launchroomd update-local`, docs/11 §4.4),
+# which backs up the managed files and dumps the database, runs this
+# bundle's installer (with LR_INSTALL_SUPERVISED=1, so it doesn't hand over
+# again) and goes back to the previous files and database if it fails. It
+# runs from the install's current (known-good) launchroomd image with the
+# Docker socket and the folder, like an update from the dashboard. Returns 1
+# (and the installer goes on by itself) for a fresh install, a restore, a
+# move, a run started by a supervisor, or a launchroomd too old for it.
+supervised_update() {
+	[ "$RESTORE" = 0 ] && [ "$MOVE" = 0 ] || return 1
+	[ "${LR_BUNDLE_VERIFIED:-}" != 1 ] && [ "${LR_INSTALL_SUPERVISED:-}" != 1 ] || return 1
+	[ -f "$DIR/.env" ] && [ -f "$DIR/daemon-compose.yml" ] && [ -f "$DIR/data/daemon/enrollment.json" ] || return 1
+	image="$(env_get LR_DAEMON_IMAGE)"
+	[ -n "$image" ] && docker image inspect "$image" >/dev/null 2>&1 || return 1
+	if ! docker run --rm --network none --label launchroom.managed=true --label launchroom.role=updater \
+		--entrypoint /usr/local/bin/launchroomd "$image" update-local --probe >/dev/null 2>&1; then
+		warn "this install's launchroomd can't take a backup before updating; updating without one."
+		return 1
+	fi
+	say "updating the existing install: files and database are backed up first, and a failed update goes back to them"
+	socket="${LR_DOCKER_SOCKET:-/var/run/docker.sock}"
+	set -- run --rm -i --label launchroom.managed=true --label launchroom.role=updater \
+		-v "$socket:/var/run/docker.sock" -v "$DIR:$DIR"
+	case "$BUNDLE" in "$DIR"/*) ;; *) set -- "$@" -v "$BUNDLE:$BUNDLE:ro" ;; esac
+	set -- "$@" --entrypoint /usr/local/bin/launchroomd "$image" update-local --dir "$DIR" --bundle "$BUNDLE"
+	for key in LR_DASHBOARD_IMAGE LR_DAEMON_IMAGE LR_CADDY_IMAGE LR_POSTGRES_IMAGE LR_VALKEY_IMAGE LR_ZOT_IMAGE \
+		LR_HEADSCALE_IMAGE LR_COMPOSE_IMAGE LAUNCHROOM_RELEASE_BASE; do
+		eval "value=\${$key:-}"
+		[ -z "$value" ] || set -- "$@" --env "$key=$value"
+	done
+	set -- "$@" --
+	[ -z "$DOMAIN" ] || set -- "$@" --domain "$DOMAIN"
+	[ "$DETECT_IP" = 1 ] || set -- "$@" --no-public-ip-detect
+	[ "$UNSTABLE" = 0 ] || set -- "$@" --unstable
+	docker "$@" </dev/null || die "the update did not finish (see above). Run $DIR/launchroom doctor to see where things stand."
 }
 
 main() {
@@ -1158,10 +1229,16 @@ main() {
 	check_inotify
 	check_buildkit_apparmor
 	check_swap
+	check_host_health "$DIR"
 	mkdir -p "$DIR"
 	DIR="$(cd "$DIR" && pwd)"
 	[ "$MOVE" = 0 ] || check_move_target
 	fetch_bundle
+	if supervised_update; then
+		rm -rf "$DIR/.tmp"
+		finish
+		return 0
+	fi
 	prepare_folder
 	start_databases
 	if [ "$MOVE" = 1 ]; then

@@ -131,7 +131,7 @@ errors as you type. The schema refuses unknown keys, so a typo is an error and i
 | `branch` | app, worker, cron | Deploy this service from another branch than the environment's |
 | `enabled` | all | `false` keeps the service out of this environment |
 | `build` | app | `builder` (`auto`, `dockerfile`, `railpack`, `static`), `dockerfilePath`, `installCommand`, `buildCommand`, `railpackVersion`, `watchPaths` (up to 64) |
-| `deploy` | all but database | `port`, `startCommand`, `releaseCommand`, `seedCommand`, `entrypoint`, `drainSeconds` (0 to 3600), `capabilities`, `schedule` (cron only), `healthcheck` |
+| `deploy` | all but database | `port`, `startCommand`, `releaseCommand`, `seedCommand`, `entrypoint`, `drainSeconds` (0 to 3600), `stopTimeoutSeconds` (1 to 300), `stopSignal`, `overlapOnVolumes`, `capabilities`, `schedule` (cron only), `healthcheck` |
 | `scaling` | all | `replicas` (0 to 64), `cpus` (0.05 to 1024), `memoryMb` (16 to 1048576), `placement` with `labels` and `strategy` (`spread` or `pack`) |
 | `variables` | all | `"KEY": "value"` or `"KEY": { "secret": true, "description": "…" }`. Up to 200 |
 | `domains` | app, image | Custom domains: `"host"` or `{ "hostname": "…", "redirectTo": "…" }`. Up to 20 |
@@ -145,8 +145,15 @@ Inside `deploy`:
 - `capabilities` takes only `CHOWN`, `DAC_OVERRIDE`, `FOWNER`, `NET_BIND_SERVICE`, `SETGID` and `SETUID`.
 - `schedule` is `{ "cron": "<5 fields>", "timeZone": "<IANA name>" }` (default UTC); `null` runs a cron service
   continuously. See [Cron jobs](/docs/projects/cron-jobs).
-- `healthcheck` takes `type` (`http`, `tcp`, `none`), `path`, `expectStatus` (`2xx`, `200`, `2xx-3xx`),
-  `startPeriodSeconds`, `intervalSeconds`, `timeoutSeconds` and `failureThreshold`.
+- `stopTimeoutSeconds` is how long a stopping replica may take before it is killed. Without it, web services get 10
+  seconds, workers and cron jobs 30, or what the framework needs. `stopSignal` is `SIGTERM` (default) or `SIGINT`.
+- `overlapOnVolumes: true` starts the new version next to the old one on a service with a volume, instead of stopping
+  the old one first.
+- `healthcheck` takes `type` (`http`, `tcp`, `none`), `path`, `expectStatus` (a status or class such as `200` or `2xx`,
+  or a range such as `2xx-3xx` or `2xx-4xx`), `startPeriodSeconds`, `intervalSeconds`, `timeoutSeconds`,
+  `failureThreshold` and `restartAfterSeconds`. On the default path `/` with the default `2xx-3xx`, any answer below 500
+  counts. `restartAfterSeconds` restarts a replica whose check keeps failing that long (default 300, at least 60, `0`
+  never).
 
 Each field inside `build`, `deploy`, `scaling` and `healthcheck` is managed on its own. For example,
 `"healthcheck": { "path": "/health" }` manages the path and leaves the timeouts to the dashboard.

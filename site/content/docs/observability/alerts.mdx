@@ -3,7 +3,7 @@ title: Alerts
 description: Built-in rules for failed deploys, crashing services, offline servers, full disks and failed backups, sent to email, Slack, Discord or a signed webhook.
 ---
 
-launchroom watches your services, servers, certificates and backups. It notifies you when something needs attention and again when the problem is resolved. Rules are built in and on by default, so the only setup is choosing where alerts go.
+launchroom watches your services, servers, certificates and backups. It notifies you when something needs attention and again when the problem is resolved. Rules are built in and most are on by default, so the only setup is choosing where alerts go.
 
 <Screenshot id="alerts" />
 
@@ -21,22 +21,28 @@ it.
 
 | Rule | Default | Fires when | Resolves when |
 |---|---|---|---|
-| A deploy fails | On | A deployment fails in production or another lasting environment. Previews never alert | The service's next deployment goes live |
-| A service keeps crashing or fails its health check | On | A replica of the live deployment is unhealthy, exited or failed, or restarted 3 times in 10 minutes, for at least 3 minutes | Every replica is healthy with no restart for 3 minutes |
+| A deploy fails | On | A deployment fails in production or another lasting environment, or launchroom rolled production back automatically. Previews never alert | The service's next deployment goes live |
+| A service keeps crashing or fails its health check | On | A replica of the live deployment is unhealthy, exited or failed, or restarted 3 times in 10 minutes, for at least 3 minutes. Within a day of a deploy, it names the version to roll back to | Every replica is healthy with no restart for 3 minutes |
+| A running service crashes | Off | A replica exits with an error or runs out of memory while it serves. At most one message an hour per service | An hour without a crash |
+| A cron job fails or doesn't run | Off | A run exits with an error, or a scheduled run didn't start within 3 minutes while its server was online | The next run succeeds |
 | Requests start failing | On, 5 % for 5 min | Server errors (5xx) exceed the threshold, once there are at least 50 requests | The rate drops below half the threshold |
-| A server goes offline | On | No contact from the server for 5 minutes | The server is online again |
+| A server goes offline | On | No contact from the server for 5 minutes. When the dashboard refused it, the alert names the reason, for example its clock | The server is online again |
+| A server stops serving your domains | On | Its web server is down for 2 minutes, for example because another program holds port 80 | It serves again |
 | CPU stays high | On, 90 % for 10 min | Average CPU of the whole server stays above the threshold | The average drops 10 points below it |
 | Memory stays high | On, 90 % for 10 min | Memory in use out of what the server has | The average drops 10 points below it |
 | A disk is nearly full | On, 90 % | The disk Docker stores images, volumes and builds on | Usage is 5 points below the threshold |
-| A certificate is about to expire | On, 14 days | A domain's certificate expires within the threshold. Renewal starts 30 days ahead, so this alert means renewal keeps failing | The certificate is renewed |
-| A backup fails | On | A database, volume or launchroom backup fails | The next backup succeeds |
+| A certificate is about to expire | On, 14 days | A domain's or the dashboard's certificate expires within the threshold. Renewal starts 30 days ahead, so this alert means renewal keeps failing | The certificate is renewed |
+| A certificate can't be issued | On | 30 minutes after the domain's DNS is correct, or right away when the certificate authority's limit is reached | The certificate is issued |
+| A backup fails | On | A database, volume or launchroom backup fails, or launchroom's own backup is overdue | The next backup succeeds |
+| launchroom itself has trouble | On | The dashboard stopped answering, or one of launchroom's services was restarted or stayed down for 5 minutes. Goes to the main server's team | All of launchroom's services run |
+| Background work falls behind | On | The oldest waiting background job is older than 5 minutes. Goes to the main server's team | The oldest job is younger than 5 minutes |
 
 ### Severity
 
 Alerts are either **warning** or **critical**:
 
 - Failed deploys and crashing services are critical in production and warnings elsewhere.
-- Offline servers and failed backups are always critical.
+- Offline servers, servers that stop serving your domains and failed backups are always critical.
 - A disk at 95 % or more, an error rate of 25 % or more, and a certificate with less than 3 days left (or already expired) become critical.
 - High CPU and memory are warnings.
 
@@ -80,6 +86,14 @@ Alert titles and summaries name your services, servers and domains. They never c
 - **Cooldown**: if the same problem comes back within 10 minutes of resolving, the old alert reopens instead of a new one. You're notified again only if the last message is older than 10 minutes, so a flapping service doesn't flood your channel.
 
 Alerts also appear on the **Activity** page (filter **Alerts**) with how long they were open. **Open only** narrows the list to alerts that are still open. The **Activity** entry in the sidebar shows how many alerts are open, and project activity shows the project's alerts.
+
+## When the dashboard itself is down
+
+Alerts come from the dashboard, so they stop while it is down. One channel can also be sent by your servers in that case. As an instance owner, open the channel's ⋯ menu and choose **Also use when the dashboard is down**. It has to be a webhook, Slack or Discord channel of the main server's team, or email when the dashboard sends mail through SMTP with a password. For an address on your private network, also choose **Allow a private address**. See [When the dashboard is down](/docs/operations/when-the-dashboard-is-down#get-a-message-when-the-dashboard-is-down).
+
+## Automatic rollbacks
+
+When launchroom rolls production back because a new version kept crashing after it went live, **A deploy fails** opens with the reason, for example "web was rolled back in production", and adds that new pushes don't go live until you resume deploys. It resolves when the next deployment goes live.
 
 ## Backup alerts
 

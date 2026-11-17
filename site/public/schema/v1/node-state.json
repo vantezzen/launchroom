@@ -207,6 +207,111 @@
       ],
       "description": "DNSChallengeSpec is a DNS provider for DNS-01 challenges."
     },
+    "FallbackChannel": {
+      "properties": {
+        "kind": {
+          "type": "string",
+          "enum": [
+            "webhook",
+            "slack",
+            "discord",
+            "email"
+          ]
+        },
+        "secret": {
+          "$ref": "#/$defs/Sealed",
+          "description": "Secret is a sealed IngressSecret (purpose fallback_channel): \"url\"\n(webhook, slack, discord; it carries the token) or \"password\" and an\noptional \"username\" (email)."
+        },
+        "smtp": {
+          "oneOf": [
+            {
+              "$ref": "#/$defs/FallbackSMTP",
+              "description": "SMTP is the mail server and addresses (kind email only)."
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "allowPrivateHosts": {
+          "type": "boolean",
+          "description": "AllowPrivateHosts was set explicitly when the channel was saved."
+        },
+        "serverLabel": {
+          "type": "string",
+          "maxLength": 128,
+          "minLength": 1,
+          "description": "ServerLabel is how messages name this server (its display name, text only)."
+        }
+      },
+      "additionalProperties": false,
+      "type": "object",
+      "required": [
+        "kind",
+        "secret",
+        "serverLabel"
+      ],
+      "description": "FallbackChannel is the alert channel launchroomd itself uses while the dashboard is down."
+    },
+    "FallbackSMTP": {
+      "properties": {
+        "host": {
+          "type": "string",
+          "maxLength": 253,
+          "pattern": "^(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\\.)+[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$"
+        },
+        "port": {
+          "type": "integer",
+          "maximum": 65535,
+          "minimum": 1
+        },
+        "from": {
+          "type": "string",
+          "maxLength": 254,
+          "pattern": "^[A-Za-z0-9._%+-]{1,64}@(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\\.)+[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$"
+        },
+        "to": {
+          "items": {
+            "type": "string",
+            "maxLength": 254,
+            "pattern": "^[A-Za-z0-9._%+-]{1,64}@(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\\.)+[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$"
+          },
+          "type": "array",
+          "maxItems": 5,
+          "minItems": 1
+        }
+      },
+      "additionalProperties": false,
+      "type": "object",
+      "required": [
+        "host",
+        "port",
+        "from",
+        "to"
+      ],
+      "description": "FallbackSMTP is the mail server of an email fallback channel (implicit TLS on 465, STARTTLS required on every other port)."
+    },
+    "FileOwner": {
+      "properties": {
+        "uid": {
+          "type": "integer",
+          "maximum": 2147483647,
+          "minimum": 0
+        },
+        "gid": {
+          "type": "integer",
+          "maximum": 2147483647,
+          "minimum": 0
+        }
+      },
+      "additionalProperties": false,
+      "type": "object",
+      "required": [
+        "uid",
+        "gid"
+      ],
+      "description": "FileOwner is a numeric owner for imported files."
+    },
     "FirewallSpec": {
       "properties": {
         "meshAllow": {
@@ -286,6 +391,17 @@
           "type": "integer",
           "maximum": 100,
           "minimum": 1
+        },
+        "host": {
+          "type": "string",
+          "maxLength": 253,
+          "pattern": "^(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\\.)+[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$",
+          "description": "Host is sent as the Host header of http probes, with\nX-Forwarded-Proto: https, so apps that check their own domain\n(allowed hosts, forced https) answer as they do for visitors. The\ndashboard renders the primary domain (daemon feature \"probeHost\").\nOmitted: the container address."
+        },
+        "restartAfter": {
+          "type": "string",
+          "pattern": "^[1-9][0-9]{0,5}(?:ms|s|m|h)$",
+          "description": "RestartAfter makes launchroomd restart a serving workload whose probe\nhas failed continuously for this long in steady state (1m to 1h; at\nmost 3 times an hour, then issue \"unresponsive\"). Omitted: never\n(daemon feature \"livenessRestart\")."
         }
       },
       "additionalProperties": false,
@@ -431,6 +547,17 @@
         },
         "readOnly": {
           "type": "boolean"
+        },
+        "initOwner": {
+          "oneOf": [
+            {
+              "$ref": "#/$defs/FileOwner",
+              "description": "InitOwner makes launchroomd give the volume's top folder to this\nowner once, when the volume is new or still empty (images that run\nas a non-root user; daemon feature \"volumeInitOwner\"). Never with\nreadOnly; never changes a volume that has files."
+            },
+            {
+              "type": "null"
+            }
+          ]
         }
       },
       "additionalProperties": false,
@@ -912,6 +1039,17 @@
         "controlPlane": {
           "$ref": "#/$defs/ControlPlaneSpec",
           "description": "ControlPlane is the dashboard's canonical public origin (docs/03 §4.2);\nomitted on the control-plane host and for daemons without the\ncontrolPlaneUrl feature."
+        },
+        "watchdog": {
+          "oneOf": [
+            {
+              "$ref": "#/$defs/WatchdogSpec",
+              "description": "Watchdog turns on the control-plane watchdog (role control_plane, on\nthe control-plane host) or the fallback notifier (role peer). Omitted\nwhen off (daemon feature \"watchdog\")."
+            },
+            {
+              "type": "null"
+            }
+          ]
         }
       },
       "additionalProperties": false,
@@ -1093,6 +1231,34 @@
         "interval"
       ],
       "description": "WalArchiveSpec turns on continuous WAL shipping for a Postgres workload (NodeState workloads[].walArchive)."
+    },
+    "WatchdogSpec": {
+      "properties": {
+        "role": {
+          "type": "string",
+          "enum": [
+            "control_plane",
+            "peer"
+          ]
+        },
+        "fallback": {
+          "oneOf": [
+            {
+              "$ref": "#/$defs/FallbackChannel",
+              "description": "Fallback is where launchroomd sends its notifications while the\ndashboard can't; omitted: it only restarts (control_plane) or does\nnothing (peer)."
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "additionalProperties": false,
+      "type": "object",
+      "required": [
+        "role"
+      ],
+      "description": "WatchdogSpec is NodeState system.watchdog."
     },
     "WorkloadSpec": {
       "properties": {

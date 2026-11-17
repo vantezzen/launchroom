@@ -1,0 +1,63 @@
+---
+title: Django and Python
+description: How launchroom builds and runs Django, FastAPI, Flask and Litestar apps, including allowed hosts, CSRF origins and static files.
+---
+
+launchroom applies the Django preset to apps with `manage.py` and Django in their dependencies, and the Python web preset to FastAPI, Flask and Litestar apps.
+
+## Django
+
+| Decision | What it does |
+|---|---|
+| Run migrations once per deploy | `python manage.py migrate --noinput` runs as the release command. The container starts gunicorn on `WSGI_APPLICATION`, or uvicorn or daphne for an ASGI app with Channels, Daphne or uvicorn installed. |
+| Collect static files at build | `python manage.py collectstatic --noinput`, when `STATIC_ROOT` is set. |
+| Generate SECRET_KEY | When your settings read `SECRET_KEY` from a variable and the service has none, launchroom creates it as a secret variable per environment, kept across deploys. |
+| Trust launchroom's proxy | `FORWARDED_ALLOW_IPS` names the addresses requests arrive from, so gunicorn and uvicorn know the request was HTTPS and who sent it. |
+| Allow this environment's domains | Adds the environment's domains to `ALLOWED_HOSTS` and `CSRF_TRUSTED_ORIGINS` (below). |
+| Serve static files with WhiteNoise | When `whitenoise` is installed but not in `MIDDLEWARE`, adds its middleware after `SecurityMiddleware`. |
+| Celery worker process, Celery beat process | Suggested when Celery is installed. The worker gets 60 seconds to finish running tasks when it stops. |
+
+### Allowed hosts and CSRF origins
+
+Django refuses requests for hosts that aren't in `ALLOWED_HOSTS` and form posts from origins that aren't in `CSRF_TRUSTED_ORIGINS`. How launchroom handles them depends on your settings:
+
+- **Your settings read them from variables**, for example `os.environ["DJANGO_ALLOWED_HOSTS"]`, `env.list(...)` or `config(...)`: launchroom sets those variables to the environment's domains, the service's private name and `localhost`, and the origins to its `https://` addresses. Your own values replace them.
+- **`ALLOWED_HOSTS` is fixed in your settings**: launchroom starts Django with a small settings module (`DJANGO_SETTINGS_MODULE=launchroom_django`). It loads your settings unchanged, then appends the environment's domains to `ALLOWED_HOSTS` and `CSRF_TRUSTED_ORIGINS` and sets `SECURE_PROXY_SSL_HEADER` if you haven't. Your code is not changed.
+- **`ALLOWED_HOSTS = ["*"]`**: nothing to do.
+
+The health check asks for the service's domain, so Django answers it like a visitor's request.
+
+### Databases and files
+
+- **SQLite**: the plan warns that the database file is reset on every deploy. When the file is in a subfolder, **Keep files across deploys** offers a volume for that folder. A service with a volume runs as one replica.
+- **Static files**: without `STATIC_ROOT`, or with `STATIC_ROOT` but without WhiteNoise or remote storage, the plan warns. Add `whitenoise` to your dependencies and launchroom adds its middleware.
+
+## FastAPI, Flask and Litestar
+
+| Decision | What it does |
+|---|---|
+| Start `<file>:<app>` | Finds the app object in `main.py`, `app.py`, `app/main.py` or `src/*/main.py` and starts it: `fastapi run` with `fastapi[standard]`, uvicorn for FastAPI and Litestar, gunicorn for Flask. |
+| Trust launchroom's proxy | `FORWARDED_ALLOW_IPS`, so `request.url` starts with `https://`. |
+
+The health check uses `/`, where any answer below 500 counts, so an API without a home page deploys.
+
+## Shared by Python apps
+
+- **WEB_CONCURRENCY**: web services built with Railpack get a worker count from their CPU and memory (two per CPU, at most one per 256 MB, between 1 and 16). gunicorn and uvicorn read it. Set your own `WEB_CONCURRENCY` to change it.
+
+## What you might still do
+
+- Add `gunicorn` (Django, Flask) or `uvicorn` (FastAPI, Litestar) to your dependencies when the plan says it is missing.
+- Connect a database instead of SQLite, and read `DATABASE_URL` in your settings.
+- With a fixed `ALLOWED_HOSTS` and your own `PYTHONPATH` variable, the settings module can't load. Read `ALLOWED_HOSTS` from a variable instead.
+
+## Turn a decision off
+
+Open **Settings → Build → Preset decisions**, select **×** on the chip and save. Remove **Allow this environment's domains** to start Django with your own settings module. A `DJANGO_SETTINGS_MODULE` variable you set also turns the settings module off.
+
+## Next steps
+
+<Cards>
+  <Card title="Variables" href="/docs/projects/variables" description="Variables that follow your domains." />
+  <Card title="Health checks" href="/docs/troubleshooting/health-checks" description="When the app refuses its own domain." />
+</Cards>

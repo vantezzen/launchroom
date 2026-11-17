@@ -1,0 +1,34 @@
+---
+title: Phoenix
+description: How launchroom builds and runs Phoenix apps, including LiveView, the secret key and migrations.
+---
+
+launchroom applies the Phoenix preset to every Phoenix app. With your own Dockerfile, the variables below still apply; see [Dockerfiles](/docs/builds/frameworks/dockerfiles).
+
+## What launchroom sets up
+
+| Decision | What it does |
+|---|---|
+| Start the web server | `PHX_SERVER=true`, so the release serves HTTP when it starts. |
+| Set PHX_HOST to the service's domain | `PHX_HOST` follows each environment's domain, so generated URLs and LiveView's origin check use it, also in previews. |
+| Generate SECRET_KEY_BASE | When the service has none, launchroom creates `SECRET_KEY_BASE` as a secret variable per environment, kept across deploys. |
+| Run migrations once per deploy | With Ecto and a release module that defines `migrate` (from `mix phx.gen.release`), `bin/<app> eval <Module>.Release.migrate` runs as the release command. |
+
+The health check uses `/`, where any answer below 500 counts.
+
+## What you might still do
+
+- **Migrations**: without a release module, migrations don't run on deploy, and the plan says so. Run `mix phx.gen.release` and commit `lib/<app>/release.ex`. launchroom then runs its `migrate` function on every deploy.
+- **Several domains**: `PHX_HOST` is the primary domain. LiveView's origin check refuses the others until you list them in `check_origin` in your endpoint config. When a socket is refused, the service panel says so.
+- **Database**: connect a database and read `DATABASE_URL` in `config/runtime.exs`, as the generator does.
+
+## Turn a decision off
+
+Open **Settings → Build → Preset decisions**, select **×** on the chip and save. Your own `PHX_HOST` or `SECRET_KEY_BASE` variable always wins over the preset's.
+
+## Next steps
+
+<Cards>
+  <Card title="Variables" href="/docs/projects/variables" description="Variables that follow your domains." />
+  <Card title="How builds work" href="/docs/builds/how-builds-work" description="Release commands and rollouts." />
+</Cards>

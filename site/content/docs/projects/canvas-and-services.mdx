@@ -145,7 +145,7 @@ writes to. launchroom suggests common paths, such as `/app/storage` for Laravel.
 A service with a volume:
 
 - runs as one replica and stays on the server that holds its data
-- restarts with a short interruption on deploys, because two copies can't share one data directory
+- stops its old container before the new one starts on deploys, with a short downtime. Switch on **Two copies during a deploy** under Settings → Deploy for an app that handles two copies on its data.
 - can be backed up as snapshots (see [Backups](/docs/databases/backups))
 
 Volumes start empty and are kept when a service is removed from an environment.

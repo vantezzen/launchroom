@@ -4,6 +4,13 @@ import { Step, Steps } from 'fumadocs-ui/components/steps';
 import { Tab, Tabs } from 'fumadocs-ui/components/tabs';
 import type { MDXComponents } from 'mdx/types';
 import { Screenshot } from '@/components/screenshot';
+import { YouTubeVideo } from '@/components/youtube-video';
+import { tutorialVideo } from '@/lib/shared';
+
+/** The walkthrough video, for MDX pages: `<TutorialVideo />`. */
+function TutorialVideo() {
+    return <YouTubeVideo {...tutorialVideo} className="my-6" />;
+}
 
 export function getMDXComponents(components?: MDXComponents) {
     return {
@@ -15,6 +22,7 @@ export function getMDXComponents(components?: MDXComponents) {
         Tab,
         Tabs,
         Screenshot,
+        TutorialVideo,
         ...components,
     } satisfies MDXComponents;
 }

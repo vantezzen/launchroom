@@ -38,6 +38,7 @@ A page that says the request was blocked by the web firewall, with a reference. 
 - File contents of uploads aren't checked. Field names, file names and the other form fields are.
 - Responses aren't checked, so streaming and server-sent events work as before.
 - WebSocket connections pass through.
+- Bodies browsers send on their own are accepted in Block mode and still inspected: Next.js server actions called from client code and `navigator.sendBeacon` send `text/plain`, CSP and Reporting API reports send `application/csp-report` and `application/reports+json`. A request with a `Next-Action` header and the reports are read as JSON, so their arguments are checked like any JSON API. A server action whose argument carries an attack is still blocked.
 - The dashboard itself isn't behind the firewall.
 
 <Callout type="warn" title="A filter, not a fix">
@@ -47,6 +48,8 @@ A page that says the request was blocked by the web firewall, with a reference. 
 ## Proxies
 
 Behind a proxy or a load balancer (Cloudflare, for example), the client network the firewall sees is the proxy's. Requests from different visitors can then share one network.
+
+Your app gets the visitor's address in `X-Forwarded-For` and `X-Real-IP`. The edge sets both on every request and overwrites what the client sent, so a visitor can't pretend to be someone else.
 
 ## Performance
 

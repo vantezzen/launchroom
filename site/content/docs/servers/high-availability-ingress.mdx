@@ -45,6 +45,10 @@ With two or more sharing edges and the private network on, launchroom sets up th
 dashboard's server automatically. You don't configure anything by hand. Each edge keeps a local copy of the
 certificates, so it restarts with valid certificates even when the shared storage is unreachable.
 
+The shared storage lives in the dashboard server's cache. While the dashboard's server is down, edges keep serving the
+certificates they have, but they can't obtain or renew certificates until it is back. Renewal starts 30 days before
+expiry, so a short outage doesn't matter.
+
 Share certificates only with edges you trust with every team's certificates and your DNS provider token. Edges are
 infrastructure of the whole install. An edge that doesn't share still serves its team's apps, with its own
 certificates.

@@ -17,7 +17,7 @@ Backups turn on as soon as you add a destination. Databases and volumes in produ
 | Volumes of app and image services | A snapshot of the volume's files | Daily | 7 daily, 4 weekly |
 | Previews | Not backed up | | |
 
-Schedules, retention and on/off are editable per service in its **Settings → Backups**, with an hourly option and custom cron expressions. Daily backups start at a staggered time between 01:00 and 07:00 UTC so they don't all run at once. Each server runs at most one heavy backup at a time, at lower CPU and IO priority than your apps.
+Schedules, retention and on/off are editable per service in its **Settings → Backups**, with an hourly option and custom cron expressions. Daily backups start at a staggered time between 01:00 and 07:00 UTC so they don't all run at once. Each server runs at most one heavy backup at a time, at lower CPU and IO priority than your apps. When a scheduled time passes while launchroom is down or being updated, the backup runs once as soon as it is back, never once for every missed time. This also applies to the base backups of point-in-time recovery. Changing a schedule, or turning it on again, counts from that moment and doesn't start a backup.
 
 launchroom doesn't back up what it can recreate:
 

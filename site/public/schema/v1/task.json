@@ -510,6 +510,32 @@
       ],
       "description": "BuilderSpec is the builder decision made by the dashboard (docs/04 §2, §3)."
     },
+    "CertRetrySpec": {
+      "properties": {
+        "hosts": {
+          "items": {
+            "type": "string",
+            "maxLength": 253,
+            "pattern": "^(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\\.)+[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$"
+          },
+          "type": "array",
+          "maxItems": 100,
+          "minItems": 1
+        }
+      },
+      "additionalProperties": false,
+      "type": "object",
+      "required": [
+        "hosts"
+      ],
+      "description": "CertRetrySpec asks the edge to try obtaining certificates for these hosts again now, instead of waiting for Caddy's backoff (daemon feature \"certificateRetry\")."
+    },
+    "CleanupSpec": {
+      "properties": {},
+      "additionalProperties": false,
+      "type": "object",
+      "description": "CleanupSpec asks launchroomd to free disk space now, with the settings of its disk-pressure cleanup (unused launchroom images beyond retention, BuildKit cache, leftover one-off containers; never volumes)."
+    },
     "DbExportSpec": {
       "properties": {
         "engine": {
@@ -1247,6 +1273,29 @@
       "type": "object",
       "description": "Retention is a restic forget policy."
     },
+    "RunOnceMount": {
+      "properties": {
+        "volume": {
+          "type": "string",
+          "pattern": "^vol_[0-7][0-9A-HJKMNP-TV-Z]{25}$"
+        },
+        "target": {
+          "type": "string",
+          "maxLength": 1024,
+          "pattern": "^/[A-Za-z0-9._@+=,-]+(?:/[A-Za-z0-9._@+=,-]+)*$"
+        },
+        "readOnly": {
+          "type": "boolean"
+        }
+      },
+      "additionalProperties": false,
+      "type": "object",
+      "required": [
+        "volume",
+        "target"
+      ],
+      "description": "RunOnceMount mounts one of the service's volumes into a run_once container."
+    },
     "RunOnceProbe": {
       "properties": {
         "port": {
@@ -1364,6 +1413,21 @@
               "type": "null"
             }
           ]
+        },
+        "mounts": {
+          "oneOf": [
+            {
+              "items": {
+                "$ref": "#/$defs/RunOnceMount"
+              },
+              "type": "array",
+              "maxItems": 32,
+              "description": "Mounts are the service's volumes, mounted as its workloads mount them\n(release commands of a service that keeps data on a volume, e.g.\nSQLite migrations; daemon feature \"releaseMounts\"). Every volume must\nbe declared in the server's verified NodeState for the same service\nand environment."
+            },
+            {
+              "type": "null"
+            }
+          ]
         }
       },
       "additionalProperties": false,
@@ -1434,7 +1498,8 @@
           "type": "string",
           "enum": [
             "console",
-            "data"
+            "data",
+            "recovery"
           ]
         },
         "workload": {
@@ -1491,6 +1556,10 @@
             "clickhouse"
           ],
           "description": "Engine is the database engine (data sessions only)."
+        },
+        "allowChanges": {
+          "type": "boolean",
+          "description": "AllowChanges mounts the workload's volumes writable in a recovery\ncontainer (recovery sessions only; audited by the dashboard)."
         }
       },
       "additionalProperties": false,
@@ -1842,6 +1911,44 @@
       "if": {
         "properties": {
           "type": {
+            "const": "cert_retry"
+          }
+        },
+        "required": [
+          "type"
+        ]
+      },
+      "then": {
+        "properties": {
+          "spec": {
+            "$ref": "#/$defs/CertRetrySpec"
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "type": {
+            "const": "cleanup"
+          }
+        },
+        "required": [
+          "type"
+        ]
+      },
+      "then": {
+        "properties": {
+          "spec": {
+            "$ref": "#/$defs/CleanupSpec"
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "type": {
             "const": "db_export"
           }
         },
@@ -2111,7 +2218,9 @@
         "volume_export",
         "access",
         "inventory",
-        "inspect_container"
+        "inspect_container",
+        "cleanup",
+        "cert_retry"
       ]
     },
     "leaseExpiresAt": {

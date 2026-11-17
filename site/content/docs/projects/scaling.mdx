@@ -30,6 +30,16 @@ check it.
 - **Two or more**: deploys roll through them one at a time (below) and a server going down leaves the others serving.
 - **Zero**: the service is stopped. Nothing runs until you scale it up again.
 
+### Before you add a second replica
+
+Some apps keep state inside the container. While you set more than one replica, the scaling page warns about what
+would break:
+
+- Laravel sessions or cache stored in files, or with no session driver set (Laravel 10 defaults to files). Set
+  `SESSION_DRIVER` and `CACHE_STORE` to `database` or `redis`.
+- A worker running `schedule:work`, which would run every scheduled task once per replica.
+- Next.js ISR and `revalidateTag`, which need a shared cache handler across replicas.
+
 To find a single setting, type it into the search field at the top of the settings sidebar, for example "replicas".
 
 <Screenshot id="settings-search" />
@@ -50,7 +60,7 @@ default is 1 core and 512 MB. A replica that goes over its memory limit is resta
 Previews cap each replica at half a CPU by default.
 
 Limits are caps, not reservations. A service that idles at 80 MB only uses 80 MB, whatever its limit, so the limits of
-all services on a server can add up to more than the server has. launchroom places a replica where it really fits:
+all services on a server can add up to more than the server has. launchroom places a replica where it fits:
 
 - Memory is what counts. A replica needs about as much as it used at its busiest in the last few hours (128 MB before it
   has run, never more than its limit), and the server needs that much actually free, plus a small reserve for the system.
@@ -90,15 +100,17 @@ The number of serving replicas never drops below the previous count (one extra a
 check, launchroom removes the new replicas and puts the old ones back, and the deployment is marked Failed with the
 reason. The version that was live keeps serving throughout.
 
-The health check is set under **Settings → Deploy**: HTTP (a path such as `/health`, where any 2xx or 3xx counts by default),
-TCP or none, with start period, interval, timeout and failure threshold. See
-[Health checks](/docs/troubleshooting/health-checks).
+The health check is set under **Settings → Deploy**: HTTP, TCP or none, with start period, interval, timeout and
+failure threshold. On the default path `/`, any answer below 500 counts. A path you set, such as `/health`, expects a
+2xx or 3xx answer. See [Health checks](/docs/troubleshooting/health-checks).
 
 ## Databases and services with volumes
 
 Two copies can't share one data directory, so databases and services with a volume always run **one replica**, pinned to
-the server that holds their data. The scaling page shows the other servers dimmed with "Its data lives on …". Their
-deploys stop the old container before starting the new one, with a short interruption.
+the server that holds their data. The scaling page shows the other servers dimmed with "Its data lives on …". A deploy of
+a database or a service with a volume stops the old container before starting the new one, with a short interruption. For an app
+that handles two copies on its data, switch on **Two copies during a deploy** under **Settings → Deploy → Rollout**: the
+new container then starts next to the old one, and both use the volume for a moment.
 
 To move such a service to another server, restore a backup there. See
 [Restore and disaster recovery](/docs/databases/restore-and-disaster-recovery).

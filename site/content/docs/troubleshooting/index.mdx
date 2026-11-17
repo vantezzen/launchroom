@@ -9,7 +9,13 @@ The dashboard explains most problems before you need a terminal:
 - A server lists its health checks.
 - Activity records what changed and who changed it.
 
-Start there, then use the guides below for the symptom you see.
+Start there, then use the guides below for the symptom you see. When the dashboard itself doesn't open, or a server misbehaves, run the doctor on the server first:
+
+```sh title="On the control-plane server, in the launchroom folder"
+./launchroom doctor
+```
+
+On any other server, run `docker compose run --rm launchroomd doctor` in its launchroomd folder. See [When the dashboard is down](/docs/operations/when-the-dashboard-is-down).
 
 ## Where to look first
 
@@ -32,7 +38,7 @@ The project's **Logs** tab searches build lines and runtime lines of every servi
 
 ### The server page
 
-When a whole server misbehaves, open it under **Servers**. The Overview tab has a **Health** section with one line per check: Health report, Disk, Memory, Load, File watch limits, Docker networks, Clock, Build cache, Disk cleanup and Desired state. Anything not green carries a sentence that says what to do. The Network tab shows the private network, its path to other servers and what the server can do.
+When a whole server misbehaves, open it under **Servers**. Notices at the top say when it can't reach Docker, why the dashboard refuses it, or that launchroom restarted on it. The Overview tab has a **Health** section with one line per check: Health report, Docker, Disk, Memory, Load, File watch limits, Docker networks, Clock, Build cache, Disk cleanup and Desired state. Anything not green carries a sentence that says what to do. The **Disk** section shows what takes the space, with **Free space now**. The Network tab shows the private network, its path to other servers and what the server can do.
 
 ### Activity
 
@@ -45,7 +51,8 @@ If the guides don't solve the problem, open a bug report. Include:
 1. **Versions.** Settings → Updates shows the launchroom version and the version of every server (instance owners). A server's page also shows its version in the at-a-glance summary.
 2. **What you did and what you saw.** The exact status word (Failed, Unreachable, Last deploy failed), the explanation card's title and the failure class.
 3. **The relevant log lines.** Copy the excerpt from the deployment page, not the whole log. launchroom masks secret values in build and deploy logs, but check what you paste: your own app may print tokens or connection strings.
-4. **Server-side logs**, when the problem is with a server rather than an app. On the control-plane server, from the install folder (default `./launchroom`):
+4. **A support bundle**, when the problem is with launchroom itself. `./launchroom doctor --bundle` on the control-plane server writes `data/doctor/launchroom-support-<time>.tar.gz` with the doctor's report, container states and recent logs of launchroom's own services. Passwords, keys and `.env` are left out and secrets in logs are replaced, but look through it before you share it.
+5. **Server-side logs**, when the problem is with a server rather than an app. On the control-plane server, from the install folder (default `./launchroom`):
 
    ```sh title="On the control-plane server"
    ./launchroom status
@@ -68,8 +75,9 @@ If the guides don't solve the problem, open a bug report. Include:
 ## Guides by topic
 
 <Cards>
-  <Card title="Builds" href="/docs/troubleshooting/builds" description="No framework detected, lockfile mismatches, out of memory, clone and registry failures, builds stuck in the queue." />
-  <Card title="Health checks" href="/docs/troubleshooting/health-checks" description="Deploys stuck at Health check, wrong port or host, slow starts, large first pulls, crash loops, release commands." />
+  <Card title="When the dashboard is down" href="/docs/operations/when-the-dashboard-is-down" description="The doctor, its fixes, what launchroom repairs by itself, and getting back in." />
+  <Card title="Builds" href="/docs/troubleshooting/builds" description="No framework detected, lockfile mismatches, out of memory, full disks, DNS, clone and registry failures, builds stuck in the queue." />
+  <Card title="Health checks" href="/docs/troubleshooting/health-checks" description="Deploys stuck at Health check, wrong port or host, apps that refuse their domain, exit codes, wrong images, crash loops, release commands." />
   <Card title="DNS and TLS" href="/docs/troubleshooting/dns-and-tls" description="DNS check states, records pointing elsewhere, proxied DNS, certificates that won't issue, wildcards." />
   <Card title="Servers" href="/docs/troubleshooting/servers" description="Servers that never connect or show Unreachable, health warnings, rootless hosts, reboots, removing a stuck server." />
   <Card title="Private network" href="/docs/troubleshooting/mesh" description="Services on different servers can't reach each other, relayed links, NAT and your own Tailscale." />

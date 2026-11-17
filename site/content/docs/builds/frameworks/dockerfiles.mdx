@@ -1,0 +1,68 @@
+---
+title: Dockerfiles
+description: What launchroom applies to an app built from your own Dockerfile, and what stays your job.
+---
+
+With the builder on Automatic, a `Dockerfile` (or `Containerfile`) at the configured path wins over Railpack. launchroom builds it as it is. It never changes the image, but it still applies the part of the framework preset that acts on the running container.
+
+## What launchroom still sets up
+
+When a preset matches the repository, its runtime decisions apply to the Dockerfile build too:
+
+- **Variables**, such as `RAILS_ENV=production`, `PHX_SERVER=true`, `JAVA_TOOL_OPTIONS` or `ASPNETCORE_FORWARDEDHEADERS_ENABLED`.
+- **Variables that follow your domains**, such as `APP_URL`, `PHX_HOST` or `FORWARDED_ALLOW_IPS`.
+- **Generated secrets**, such as `APP_KEY` or `SECRET_KEY_BASE`, and secrets to ask for, such as `RAILS_MASTER_KEY`.
+- **The health check path**, such as `/up` for Rails.
+- **Worker suggestions and volume suggestions**.
+
+Build changes are left out: commands, the release command, the Next.js adapter, the PHP server adjustments and the Django settings module. The chips under **Settings → Build → Preset decisions** show only what applies.
+
+### Port
+
+The port comes from the Dockerfile's `EXPOSE`. Without one, launchroom uses the framework's usual port, for example 80 for a Rails Dockerfile with Thruster. When no port is set and the app listens on exactly one port, launchroom sets that port and deploys again.
+
+### Images that start as root
+
+Many images start as root and switch to their own user, such as `FROM nginx` or entrypoints with `gosu` or `su-exec`. launchroom drops every Linux capability by default, which would stop that switch. When the image's user is root or not set, launchroom gives the container the capabilities it needs for it: `CHOWN`, `DAC_OVERRIDE`, `FOWNER`, `NET_BIND_SERVICE`, `SETGID` and `SETUID`. Every other capability stays dropped. Settings → Advanced → Capabilities says when this applies.
+
+If an app still fails because it can't switch users, the failure card offers **Allow it to switch users and redeploy**.
+
+### Volumes and non-root users
+
+When the image runs as a numeric user such as `USER 1000`, launchroom gives a new, empty volume to that user before the first start, so the app can write to it. A volume that already holds files is left as it is. If an app can't write to its volume, the failure card explains it and, for a numeric user, offers to give new volumes to that user.
+
+### Health checks
+
+A Dockerfile `HEALTHCHECK` is not used. launchroom checks the app from outside with its own [health check](/docs/builds/how-builds-work#health-checks). Set the path under Settings → Deploy → Health check.
+
+### Development Dockerfiles
+
+If the Dockerfile looks like a development setup (its `CMD` runs `npm run dev`, `vite`, `artisan serve` or `runserver`, or the file is named `*.dev`), the plan warns and the build still uses it.
+
+## PHP
+
+launchroom adjusts the PHP server only for Railpack builds. With your own Dockerfile:
+
+- **Extensions**: the plan warns with the database drivers and the `composer.lock` extensions the app needs. Install them in the Dockerfile, for example `install-php-extensions pdo_pgsql intl`.
+- **Proxy trust**: the plan warns with the exact lines to add. For Laravel, in `bootstrap/app.php`:
+
+  ```php
+  $middleware->trustProxies(at: ['10.0.0.0/8', '172.16.0.0/12', '192.168.0.0/16', '100.64.0.0/10']);
+  ```
+
+  For Caddy or FrankenPHP, a `servers { trusted_proxies … }` block, and for nginx with PHP-FPM, `fastcgi_param HTTPS` set from `X-Forwarded-Proto`.
+
+## Django
+
+The Django settings module that adds your domains to `ALLOWED_HOSTS` needs a file in the image, so it is not used with a Dockerfile. Read `ALLOWED_HOSTS` and `CSRF_TRUSTED_ORIGINS` from variables in your settings, and launchroom sets them. See [Django](/docs/builds/frameworks/django#allowed-hosts-and-csrf-origins).
+
+## Turn a decision off
+
+Open **Settings → Build → Preset decisions**, select **×** on the chip and save, as for Railpack builds.
+
+## Next steps
+
+<Cards>
+  <Card title="Framework guides" href="/docs/builds/frameworks" description="What each preset sets up." />
+  <Card title="Build troubleshooting" href="/docs/troubleshooting/builds" description="What failed builds mean and how to fix them." />
+</Cards>

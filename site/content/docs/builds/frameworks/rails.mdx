@@ -1,0 +1,56 @@
+---
+title: Rails
+description: How launchroom builds and runs Rails apps, with or without the Dockerfile Rails generates.
+---
+
+launchroom applies the Rails preset to every Rails app. Rails 7.1 and later generate a production `Dockerfile`, which launchroom builds by default. Without one, Railpack builds the app. The preset applies in both cases, with the differences noted below.
+
+## What launchroom sets up
+
+| Decision | What it does |
+|---|---|
+| Run in production mode | `RAILS_ENV` and `RACK_ENV` are `production`, logs go to stdout and Rails serves static files. |
+| Generate SECRET_KEY_BASE | When the service has none, launchroom creates `SECRET_KEY_BASE` as a secret variable per environment, kept across deploys. |
+| Prepare the database once per deploy | `bin/rails db:prepare` runs as the release command: it creates the database the first time and runs pending migrations after that. Not with a Dockerfile, whose entrypoint already does this. |
+| Start the Rails server | Starts Puma on the service's port and removes a `server.pid` left over from an earlier run, which would stop Rails after a restart. With SQLite, it also runs `db:prepare` at start. Not with a Dockerfile. |
+| Health check on /up | Rails' own health route (`rails/health#show`), when `config/routes.rb` has it. Otherwise `/`, where any answer below 500 counts. |
+| Ask for RAILS_MASTER_KEY | When the app has encrypted credentials and their key isn't in the repository. See below. |
+| Suggest a volume for storage/ | With SQLite in production or Active Storage on the local disk, **Keep files across deploys** offers a volume for `storage/`. |
+
+With the Rails `Dockerfile`, the service listens on port 80 when Thruster is installed, else on 3000.
+
+### RAILS_MASTER_KEY
+
+launchroom can't generate the key that decrypts `config/credentials.yml.enc`. When you import the repository, the import asks you to paste it. On an existing service, **Settings → Build** lists it under **Needed before the first deploy** with **Add as a secret**. Paste the contents of `config/master.key` (or `config/credentials/production.key`).
+
+A deployment without it stops after the build and names the variable.
+
+### Background jobs
+
+When you import the repository, launchroom offers one of these as a worker next to the app:
+
+- **Sidekiq worker process**: `bundle exec sidekiq`.
+- **GoodJob worker process**: `bundle exec good_job start`.
+- **Solid Queue worker process**: `bin/jobs`. With SQLite in production, **Run Solid Queue inside Puma** sets `SOLID_QUEUE_IN_PUMA=true` instead, because the queue lives next to the app.
+
+Workers get 30 seconds to finish running jobs when they stop.
+
+### Domains
+
+The health check asks for the service's domain, the way a visitor's request arrives. When your app sets `config.hosts`, add the environment's domains to it, for example from the `DOMAINS` variable (a comma-separated list). If Rails blocks a domain, the deployment and the service panel say which one.
+
+## What you might still do
+
+- **SQLite in production**: add the `storage/` volume, or connect a database and read `DATABASE_URL`. A service with a volume runs as one replica.
+- **Puma workers**: for apps built with Railpack, launchroom sets `WEB_CONCURRENCY` from the service's CPU and memory (two per CPU, at most one per 256 MB). Set your own to change it.
+
+## Turn a decision off
+
+Open **Settings → Build → Preset decisions**, select **×** on the chip and save. For example, remove **Ask for RAILS_MASTER_KEY** if the app starts with `SECRET_KEY_BASE` alone. If you remove **Start the Rails server**, a leftover `server.pid` can stop Rails after a restart.
+
+## Next steps
+
+<Cards>
+  <Card title="Dockerfiles" href="/docs/builds/frameworks/dockerfiles" description="What launchroom applies to your own Dockerfile." />
+  <Card title="Variables" href="/docs/projects/variables" description="Secrets and generated values." />
+</Cards>

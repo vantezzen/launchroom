@@ -161,9 +161,17 @@ If your git server reaches the dashboard under a different address than its publ
 
 <Screenshot id="git-source" />
 
-A service builds one directory of a repository: its **root directory**, set when you add the service and shown in Settings → Source. For a workspace monorepo (pnpm, yarn or npm workspaces, Turborepo, Nx), add one service per app and pick its directory. Several services can point at the same repository.
+A service builds one directory of a repository: its **root directory**, set when you add the service and shown in Settings → Source. For a workspace monorepo (pnpm, yarn, npm or Bun workspaces, Turborepo, Nx), add one service per app and pick its directory. Several services can point at the same repository.
 
-Use **Watch paths** (Settings → Build → When to build) so a push only deploys the services whose files changed. They are repository-relative globs, comma-separated, for example `apps/web/**, packages/ui/**`. Pull request previews use the same paths to rebuild only the services a pull request touches.
+When the root directory belongs to a JavaScript workspace, the build runs from the workspace root, so imports of workspace packages such as `@repo/ui` resolve. It builds only the app and the packages it depends on, and starts the app from its folder. See [monorepos](/docs/builds/how-builds-work#monorepos) for the commands. An app with its own lockfile builds on its own.
+
+Use **Watch paths** (Settings → Build → When to build) so a push only deploys the services whose files changed. They are repository-relative globs, comma-separated, for example `apps/web/**, packages/ui/**`. Without watch paths of your own, an app in a workspace deploys, from its first build on, when a push changes:
+
+- its own folder
+- a workspace package it depends on
+- the workspace root's `package.json`, lockfile and workspace or tool config (`pnpm-workspace.yaml`, `turbo.json`, `nx.json`)
+
+An app at the repository root deploys on every push. Pull request previews use the same paths to rebuild only the services a pull request touches.
 
 ## Push to deploy
 

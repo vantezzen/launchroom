@@ -32,7 +32,7 @@ Even if the control plane were fully compromised, it must not be able to turn a 
 - Images only by digest, from launchroom's registry.
 - No privileged containers, no host network or other host namespaces, no devices.
 - No bind mounts of server paths, and never the Docker socket. Only named, launchroom-labelled volumes.
-- Capabilities from a small allow-list only, on top of dropping all others: `NET_BIND_SERVICE`, `CHOWN`, `SETUID`, `SETGID`, `DAC_OVERRIDE`, `FOWNER`.
+- Capabilities from a small allow-list only, on top of dropping all others: `NET_BIND_SERVICE`, `CHOWN`, `SETUID`, `SETGID`, `DAC_OVERRIDE`, `FOWNER`. An image that starts as root (stock nginx, images that switch user with gosu or su-exec) gets these six so it can switch to its own user. Every other capability Docker would grant stays dropped, and no new privileges stays on.
 - Hardened defaults on every container: no new privileges, CPU, memory and process limits, an init process, log rotation.
 - seccomp and Docker's default AppArmor profile stay on. A container can't pick another AppArmor profile.
 - Network isolation is applied before any container starts. If it can't be applied, nothing starts.
@@ -42,6 +42,12 @@ Relaxing any of this (for example to allow a GPU) is only possible in a local fi
 ### dockerd-guard
 
 launchroomd doesn't hold the Docker socket either. A separate process on each server, **dockerd-guard**, owns the socket and forwards only an allow-list of Docker API calls, after checking every request body against the same policy floor. It has no network access, drops all capabilities and runs with a read-only filesystem. The floor is enforced twice: by launchroomd, and again by the guard. A compromised launchroomd can't reconfigure the guard.
+
+On the main server, the guard also lets launchroomd inspect launchroom's own services and restart the dashboard, background workers, realtime server, scheduler and registry when they hang, at most 3 times an hour per service. It never lets launchroomd restart, stop or read the database or cache, run commands in any of them, or read their logs. Every restart is logged by the guard. See [When the dashboard is down](/docs/operations/when-the-dashboard-is-down).
+
+### Tools you run on the server
+
+`./launchroom doctor` and the update helper run as one-off containers with the host's Docker socket, so they are as powerful as root. Only someone with access to the server's terminal can start them. The doctor also gets a read-only view of the host's files to measure the disk. Its support bundle leaves out `.env`, keys and backups and replaces secrets in logs. On other servers the doctor runs as launchroomd and sees only what the guard allows.
 
 On a [rootless Docker](/docs/servers/rootless-docker) server, everything runs inside an unprivileged user's namespaces, which narrows the impact further.
 
@@ -80,6 +86,8 @@ The restriction stays on for the rest of the server. dockerd-guard allows exactl
 
 - Incoming Git webhooks are verified with a signature over the raw body and **fail closed**: a missing secret or header is refused.
 - Every outgoing request to an address a user can influence (Git servers, alert webhooks, S3 endpoints, health URLs) goes through a guarded client: only allowed schemes, the address is resolved once and pinned, private, loopback and metadata addresses are refused, and redirects aren't followed. Private destinations for backups or self-hosted Git need an instance owner's permission, which is audited.
+- Servers make one kind of outgoing request to a third party: the [notification for a dashboard that is down](/docs/operations/when-the-dashboard-is-down#get-a-message-when-the-dashboard-is-down). The channel's address and token are encrypted for the two servers that send it. They send over HTTPS only (SMTP only with TLS), check the address when they connect, refuse private addresses unless an instance owner allowed them, follow no redirects, and send fixed texts that name only the dashboard's address and the server.
+- Sign-in details for [private registries](/docs/projects/private-images) stay encrypted in the dashboard. The dashboard copies private images into launchroom's registry under the team, and servers pull them with a token for that team. Servers never see the credentials.
 
 ## Sign-in and access
 

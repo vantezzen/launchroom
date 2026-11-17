@@ -17,6 +17,7 @@ Re-running is also how you upgrade, so repeated runs are supported:
 
 - `.env` (your secrets) and `data/` (database, keys, registry) are kept. `compose.yml`, the `launchroom` helper and the image pins are replaced.
 - The local launchroomd is only enrolled again if it isn't enrolled yet.
+- On an existing install, the installer backs up the managed files and the database first and goes back to them if the update fails, as an update from the dashboard does.
 - Once launchroom's own Caddy holds ports 80 and 443, the port check skips them.
 - Nothing is written outside the install folder (`./launchroom`, or the one you pass with `--dir`), apart from Docker objects labelled `launchroom.managed=true`. The two exceptions, Docker itself and `/etc/sysctl.d/60-launchroom-inotify.conf`, only happen after you answer yes or pass a flag (see [Install](/docs/getting-started/install#docker)).
 
@@ -61,6 +62,23 @@ Other ports the control plane binds: `127.0.0.1:8000` (dashboard), `127.0.0.1:50
 | "the control plane runs on Linux (found Darwin)" | The dashboard needs a Linux server. Docker Desktop on macOS or Windows works for build servers and development, not for the control plane. |
 
 A warning about less than 2 GB of RAM doesn't stop the install. The control plane fits, but builds on the same machine may run out of memory. See [Build problems](/docs/troubleshooting/builds).
+
+Two more warnings never stop the install:
+
+- **"only 4200 MB of disk space is free here"**: launchroom needs room for its database, images and builds. 10 GB or more is comfortable. The warning appears below 5 GB.
+- **"this server's clock isn't synchronised"**: servers sign every request with the time, so a clock that drifts cuts them off. Turn it on with `sudo timedatectl set-ntp true`.
+
+## This server is already connected
+
+The server install command stops with nothing changed when the machine already runs launchroomd:
+
+| Message | What to do |
+|---|---|
+| "launchroomd already runs on this server (installed from …)" | A server runs one launchroomd. Use the existing one, or uninstall it first |
+| "this server is already connected to this launchroom … Adding it to another team comes in a later update." | The server is already yours. It shows on the Servers page of the team it joined. The join token was not used |
+| "this server is already connected to another launchroom at …" | Move its apps away and remove the server in that dashboard, uninstall launchroomd, then run the command again |
+
+The control-plane server runs launchroomd too, so it can't be added to a second launchroom either.
 
 ## Low inotify limits
 
@@ -137,7 +155,13 @@ docker run --rm -v "$PWD/launchroom/.tmp:/work:ro" ghcr.io/sigstore/cosign/cosig
 
 The installer waits up to 10 minutes for the dashboard, its workers, the database and the registry to report healthy. The first start runs the database migrations, which takes longer on small servers.
 
-If it gives up, look at what is unhealthy and why:
+If it gives up, run the doctor first. It checks every service and says which command fixes what it finds:
+
+```sh title="In the launchroom folder"
+./launchroom doctor
+```
+
+To look at it yourself, see what is unhealthy and why:
 
 ```sh title="In the install folder"
 cd launchroom
