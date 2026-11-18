@@ -51,6 +51,9 @@ Route::middleware(['web', 'auth', 'verified'])->group(function (): void {
     Route::post('p/{project}/{environment}/s/{service}/firewall/exclusions', [ServiceFirewallController::class, 'store'])
         ->middleware('throttle:30,1')
         ->name('security.firewall.exclusions.store');
+    Route::post('p/{project}/{environment}/s/{service}/firewall/exclusions/allow', [ServiceFirewallController::class, 'allow'])
+        ->middleware('throttle:30,1')
+        ->name('security.firewall.exclusions.allow');
     Route::delete('p/{project}/{environment}/s/{service}/firewall/exclusions/{wafExclusion}', [ServiceFirewallController::class, 'destroy'])
         ->middleware('throttle:30,1')
         ->name('security.firewall.exclusions.destroy');

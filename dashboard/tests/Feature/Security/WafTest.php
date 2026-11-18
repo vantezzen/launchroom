@@ -5,6 +5,7 @@ declare(strict_types=1);
 use App\Actions\Alerts\EvaluateAlertConditions;
 use App\Actions\Deployments\DeployEnvironment;
 use App\Actions\Security\AddWafExclusion;
+use App\Actions\Security\AddWafExclusions;
 use App\Actions\Security\RemoveWafExclusion;
 use App\Actions\Security\RollupWafSamples;
 use App\Actions\Security\SetWafSettings;
@@ -24,6 +25,7 @@ use App\Exceptions\DomainRuleViolation;
 use App\Models\Alerts\Alert;
 use App\Models\AuditEvent;
 use App\Models\Domain;
+use App\Models\Security\WafExclusion;
 use App\Models\Server;
 use App\Models\ServiceInstance;
 use App\Models\Team;
@@ -121,6 +123,21 @@ test('exclusions are refused when duplicate, beyond 50 or outside the detection 
 
     expect(fn () => $add->handle($this->instance, new AddWafExclusionData(941150), $this->owner, $this->actor))
         ->toThrow(DomainRuleViolation::class, 'at most 50');
+});
+
+test('a batch of exclusions is added in one step and respects the limit as a whole', function (): void {
+    $add = resolve(AddWafExclusions::class);
+
+    for ($rule = 941100; $rule < 941149; $rule++) {
+        $add->handle($this->instance, [new AddWafExclusionData($rule)], $this->owner, $this->actor);
+    }
+
+    expect(fn (): array => $add->handle($this->instance, [new AddWafExclusionData(911100, '/v1'), new AddWafExclusionData(920420, '/v1')], $this->owner, $this->actor))
+        ->toThrow(DomainRuleViolation::class, 'at most 50');
+    expect(WafExclusion::query()->where('service_instance_id', $this->instance->id)->count())->toBe(49);
+
+    // Already existing ones don't count against the limit.
+    expect($add->handle($this->instance, [new AddWafExclusionData(941100), new AddWafExclusionData(911100, '/v1')], $this->owner, $this->actor))->toHaveCount(1);
 });
 
 test('edges without the waf feature get no firewall settings', function (): void {

@@ -5,10 +5,12 @@ declare(strict_types=1);
 namespace App\Http\Controllers\Security;
 
 use App\Actions\Security\AddWafExclusion;
+use App\Actions\Security\AddWafExclusions;
 use App\Actions\Security\RemoveWafExclusion;
 use App\Actions\Security\SetWafSettings;
 use App\Actions\Security\StartInvestigation;
 use App\Data\Security\AddWafExclusionData;
+use App\Data\Security\AddWafExclusionsData;
 use App\Data\Security\ServiceFirewallData;
 use App\Data\Security\SetWafSettingsData;
 use App\Http\Controllers\Controller;
@@ -57,6 +59,19 @@ final class ServiceFirewallController extends Controller
         $exclusion = $add->handle($instance, $data, $user, $this->auditActor($request, $user));
 
         return new JsonResponse(['id' => $exclusion->public_id], 201);
+    }
+
+    /**
+     * "Allow requests like this" from a firewall event: the exceptions for
+     * every rule that scored, added together (docs/22 §6.4).
+     */
+    public function allow(Request $request, Project $project, Environment $environment, Service $service, AddWafExclusionsData $data, #[CurrentUser] User $user, AddWafExclusions $add): JsonResponse
+    {
+        $instance = RouteScope::editable(RouteScope::instance($project, $environment, $service));
+        Gate::authorize('create', [WafExclusion::class, $instance]);
+        $added = $add->handle($instance, $data->exclusions, $user, $this->auditActor($request, $user));
+
+        return new JsonResponse(['added' => array_map(static fn (WafExclusion $exclusion): string => $exclusion->public_id, $added)], 201);
     }
 
     public function destroy(Request $request, Project $project, Environment $environment, Service $service, WafExclusion $wafExclusion, #[CurrentUser] User $user, RemoveWafExclusion $remove): JsonResponse

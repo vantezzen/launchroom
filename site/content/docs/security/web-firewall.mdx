@@ -39,6 +39,8 @@ A page that says the request was blocked by the web firewall, with a reference. 
 - Responses aren't checked, so streaming and server-sent events work as before.
 - WebSocket connections pass through.
 - Bodies browsers send on their own are accepted in Block mode and still inspected: Next.js server actions called from client code and `navigator.sendBeacon` send `text/plain`, CSP and Reporting API reports send `application/csp-report` and `application/reports+json`. A request with a `Next-Action` header and the reports are read as JSON, so their arguments are checked like any JSON API. A server action whose argument carries an attack is still blocked.
+- REST APIs work in Block mode: `GET`, `HEAD`, `POST`, `OPTIONS`, `PUT`, `PATCH` and `DELETE` are allowed. Other methods, such as `TRACE`, are blocked.
+- Raw uploads sent as `application/octet-stream` are accepted. Their bytes are checked for a few attacks that arrive as raw data (Java deserialization, request smuggling), but they aren't split into fields, so injection checks don't see them. If your app reads JSON or form data from a body, have it require the matching content type.
 - The dashboard itself isn't behind the firewall.
 
 <Callout type="warn" title="A filter, not a fix">

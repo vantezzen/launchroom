@@ -119,11 +119,11 @@ func TestRenderWafGolden(t *testing.T) {
 		"SecRuleEngine On\n",
 		"SecAuditLog http://127.0.0.1:2023/waf\n",
 		"SecAuditLogParts AKZ\n",
-		`SecRule REQUEST_HEADERS:X-Lr-Waf-Route "@streq rt_01J9Z8X7W6V5T4S3R2Q1P0N9N9" "id:10005,phase:1,pass,nolog,chain"` + "\n" +
+		`SecRule REQUEST_HEADERS:X-Lr-Waf-Route "@streq rt_01J9Z8X7W6V5T4S3R2Q1P0N9N9" "id:10006,phase:1,pass,nolog,chain"` + "\n" +
 			`  SecRule REQUEST_FILENAME "@beginsWith /api/search" "ctl:ruleRemoveTargetById=942100;ARGS:q"` + "\n",
-		`SecRule REQUEST_HEADERS:X-Lr-Waf-Route "@streq rt_01J9Z8X7W6V5T4S3R2Q1P0N9N9" "id:10006,phase:1,pass,nolog,ctl:ruleRemoveById=920350"` + "\n",
-		`SecRule REQUEST_HEADERS:X-Lr-Waf-Route "@streq rt_01J9Z8X7W6V5T4S3R2Q1P0N9NA" "id:10007,phase:1,pass,nolog,ctl:ruleEngine=DetectionOnly"` + "\n",
-		`SecRule REQUEST_HEADERS:X-Lr-Waf-Route "@streq rt_01J9Z8X7W6V5T4S3R2Q1P0N9NA" "id:10008,phase:1,pass,nolog,ctl:requestBodyLimit=131072"` + "\n",
+		`SecRule REQUEST_HEADERS:X-Lr-Waf-Route "@streq rt_01J9Z8X7W6V5T4S3R2Q1P0N9N9" "id:10007,phase:1,pass,nolog,ctl:ruleRemoveById=920350"` + "\n",
+		`SecRule REQUEST_HEADERS:X-Lr-Waf-Route "@streq rt_01J9Z8X7W6V5T4S3R2Q1P0N9NA" "id:10008,phase:1,pass,nolog,ctl:ruleEngine=DetectionOnly"` + "\n",
+		`SecRule REQUEST_HEADERS:X-Lr-Waf-Route "@streq rt_01J9Z8X7W6V5T4S3R2Q1P0N9NA" "id:10009,phase:1,pass,nolog,ctl:requestBodyLimit=131072"` + "\n",
 		"SecRequestBodyLimit 1048576\n",
 		"SecArgumentsLimit 256\n",
 		`SecAction "id:10002,phase:1,pass,nolog,ctl:requestBodyLimit=32768"` + "\n",
@@ -131,8 +131,12 @@ func TestRenderWafGolden(t *testing.T) {
 		// types are allowed, a Next-Action body is parsed as JSON.
 		`SecRule REQUEST_HEADERS:Next-Action "@rx ^[0-9a-f]{40,64}$" "id:10003,phase:1,t:none,t:lowercase,pass,nolog,ctl:requestBodyProcessor=JSON"` + "\n",
 		`SecRule REQUEST_HEADERS:Content-Type "^application/(?:json|csp-report|reports\+json)" "id:10001,`,
-		"|application/json| |text/plain| |application/csp-report| |application/reports+json|'\"\n",
-		`SecRule REQUEST_HEADERS:X-Lr-Waf-Route "@streq rt_01J9Z8X7W6V5T4S3R2Q1P0N9NA" "id:10009,phase:1,pass,nolog,setvar:tx.blocking_paranoia_level=2"` + "\n",
+		"|application/json| |text/plain| |application/csp-report| |application/reports+json| |application/octet-stream|',",
+		// REST APIs and raw uploads: PUT, PATCH and DELETE are allowed, an
+		// application/octet-stream body is handed to the rules unparsed.
+		"setvar:'tx.allowed_methods=GET HEAD POST OPTIONS PUT PATCH DELETE'\"\n",
+		`SecRule REQUEST_HEADERS:Content-Type "^application/octet-stream(?:[;\s]|$)" "id:10005,phase:1,t:none,t:lowercase,pass,nolog,ctl:requestBodyProcessor=RAW"` + "\n",
+		`SecRule REQUEST_HEADERS:X-Lr-Waf-Route "@streq rt_01J9Z8X7W6V5T4S3R2Q1P0N9NA" "id:10010,phase:1,pass,nolog,setvar:tx.blocking_paranoia_level=2"` + "\n",
 	} {
 		if !strings.Contains(dirs, want) {
 			t.Errorf("directives lack %q:\n%s", want, dirs)

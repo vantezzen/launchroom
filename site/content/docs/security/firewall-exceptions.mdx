@@ -9,9 +9,15 @@ The firewall sometimes blocks a legitimate request, for example a search for a w
 
 1. Open **Security** and find the request under **Recent blocks**. The reference on the blocked page helps you find it.
 2. Select it. The sheet shows the rules that matched and the part of the request they matched.
-3. Select **Add exception**, or **Edit first** to change it in the service settings.
+3. Under **Allow requests like this**, check the rules listed, then select **Add exception** (or **Add 2 exceptions**, and so on). Select **Edit first** to change them in the service settings.
 
-The exception is filled in from the request: the rule, the path cut to its fixed part (`/api/products` for `/api/products/:id`) and the part of the request, such as `ARGS:q`.
+A request is blocked when the rules it matched add up to the firewall's threshold, often two or three rules together. The button adds one exception for each of them in one step, so the same request passes afterwards. Each exception is filled in from the request:
+
+- The rule.
+- The path cut to its fixed part (`/api/products` for `/api/products/:id`).
+- The part of the request, such as `ARGS:q`, when the request shows which part the rule matched. Otherwise the exception covers the whole request under that path.
+
+Exceptions that already exist are skipped. A few rules can't be excepted. The sheet names them, and requests like this can then still be blocked.
 
 ## By hand
 

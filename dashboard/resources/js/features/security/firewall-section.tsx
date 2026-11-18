@@ -17,6 +17,12 @@ import { requestJson } from '@/lib/http';
 import { rangeWords } from '@/lib/observe-scope';
 import { cn } from '@/lib/utils';
 import { labelOf, vocabulary } from '@/lib/vocabulary';
+import {
+    allowBody,
+    allowedToast,
+    allowLabel,
+    uncoveredNote,
+} from './exclusion-draft';
 import { card, SERIES_COLOR } from './format';
 import { formatCompact, listNames, plural } from '@/lib/format';
 
@@ -611,12 +617,12 @@ function EventSheet({
         setBusy(true);
 
         try {
-            await requestJson('post', draft.exclusionsUrl, {
-                rule: draft.rule,
-                path: draft.path,
-                target: draft.target,
-            });
-            toast.success('Requests like this are allowed now');
+            const result = await requestJson<{ added: string[] }>(
+                'post',
+                draft.allowUrl,
+                allowBody(draft),
+            );
+            toast.success(allowedToast(draft, result.added.length));
             onOpenChange(false);
         } catch (error) {
             toast.error((error as Error).message);
@@ -693,36 +699,60 @@ function EventSheet({
                         >
                             <div className="flex flex-col gap-3">
                                 <p className="type-small text-muted-foreground">
-                                    Rule{' '}
-                                    <code className="font-mono">
-                                        {draft.rule}
-                                    </code>{' '}
-                                    stops checking{' '}
-                                    {draft.target ? (
-                                        <code className="font-mono">
-                                            {draft.target}
-                                        </code>
-                                    ) : (
-                                        'requests'
-                                    )}
+                                    {draft.rules.length === 1
+                                        ? 'This rule stops checking'
+                                        : 'These rules stop checking'}{' '}
                                     {draft.path ? (
                                         <>
-                                            {' '}
-                                            under{' '}
+                                            requests under{' '}
                                             <code className="font-mono">
                                                 {draft.path}
                                             </code>
                                         </>
-                                    ) : null}{' '}
-                                    on {event.service.name}.
+                                    ) : (
+                                        'all requests'
+                                    )}{' '}
+                                    on {event.service.name}:
                                 </p>
+                                <ul className="flex flex-col gap-2">
+                                    {draft.rules.map((r) => (
+                                        <li
+                                            key={r.rule}
+                                            className="flex items-baseline gap-3 type-small"
+                                        >
+                                            <code className="type-mono-small text-muted-foreground">
+                                                {r.rule}
+                                            </code>
+                                            <span>
+                                                {r.message}
+                                                {r.target && (
+                                                    <>
+                                                        {', only in '}
+                                                        <code className="font-mono">
+                                                            {r.target}
+                                                        </code>
+                                                    </>
+                                                )}
+                                            </span>
+                                        </li>
+                                    ))}
+                                </ul>
+                                {uncoveredNote(draft) && (
+                                    <p className="flex items-center gap-2 type-small text-muted-foreground">
+                                        <TriangleAlert
+                                            aria-hidden="true"
+                                            className="size-3.5 shrink-0"
+                                        />
+                                        {uncoveredNote(draft)}
+                                    </p>
+                                )}
                                 <div className="flex flex-wrap gap-2">
                                     <Button
                                         size="sm"
                                         disabled={busy}
                                         onClick={() => void allow()}
                                     >
-                                        Add exception
+                                        {allowLabel(draft)}
                                     </Button>
                                     <Button size="sm" variant="ghost" asChild>
                                         <Link href={draft.settingsHref}>

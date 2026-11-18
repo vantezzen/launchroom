@@ -61,6 +61,15 @@ const (
 // argument list, so a request carrying a Next-Action id is parsed as JSON
 // too and its values are inspected like any JSON API's (rule 10003). Other
 // text/plain bodies get Coraza's default (form-encoded) parsing.
+// application/octet-stream is allowed for raw uploads (PUT of a file). Form
+// parsing would turn binary data into field names and its NUL bytes alone
+// reach the threshold (rule 920270), so such a body is handed to the rules
+// whole (Coraza's RAW processor, rule 10005): the rules that read the raw
+// body (Java deserialisation, request smuggling, remote file inclusion)
+// still run, the field-based injection rules see nothing.
+// Allowed methods are CRS's default (GET HEAD POST OPTIONS, rule 901160)
+// plus PUT, PATCH and DELETE, which every REST API uses (rule 911100 would
+// refuse them in Block); TRACE, CONNECT and WebDAV methods stay refused.
 // CRS's cost grows with the inspected fields and bytes, so the limit bounds
 // the CPU one request can cost the shared edge. Multipart file contents go
 // to a temporary file no rule reads: only field names, file names, sizes
@@ -85,7 +94,8 @@ SecRule REQUEST_HEADERS:Content-Type "^(?:application(?:/soap\+|/)|text/)xml" "i
 SecRule REQUEST_HEADERS:Content-Type "^application/(?:json|csp-report|reports\+json)" "id:10001,phase:1,t:none,t:lowercase,pass,nolog,ctl:requestBodyProcessor=JSON"
 SecAction "id:10002,phase:1,pass,nolog,ctl:requestBodyLimit=32768"
 SecRule REQUEST_HEADERS:Next-Action "@rx ^[0-9a-f]{40,64}$" "id:10003,phase:1,t:none,t:lowercase,pass,nolog,ctl:requestBodyProcessor=JSON"
-SecAction "id:10004,phase:1,pass,nolog,setvar:'tx.allowed_request_content_type=|application/x-www-form-urlencoded| |multipart/form-data| |text/xml| |application/xml| |application/soap+xml| |application/json| |text/plain| |application/csp-report| |application/reports+json|'"
+SecAction "id:10004,phase:1,pass,nolog,setvar:'tx.allowed_request_content_type=|application/x-www-form-urlencoded| |multipart/form-data| |text/xml| |application/xml| |application/soap+xml| |application/json| |text/plain| |application/csp-report| |application/reports+json| |application/octet-stream|',setvar:'tx.allowed_methods=GET HEAD POST OPTIONS PUT PATCH DELETE'"
+SecRule REQUEST_HEADERS:Content-Type "^application/octet-stream(?:[;\s]|$)" "id:10005,phase:1,t:none,t:lowercase,pass,nolog,ctl:requestBodyProcessor=RAW"
 Include @crs-setup.conf.example
 `
 
@@ -94,8 +104,9 @@ const wafTail = "Include @owasp_crs/*.conf\n"
 
 // wafFirstRouteRule is the first id of the per-route rules (10000 and
 // 10001 are the body processors, 10002 the default body limit, 10003 the
-// server action body processor, 10004 the allowed content types).
-const wafFirstRouteRule = 10005
+// server action body processor, 10004 the allowed content types and
+// methods, 10005 the raw upload body processor).
+const wafFirstRouteRule = 10006
 
 // WafRoutes returns the routes that get the firewall: those asking for it,
 // except routes with clientAuth, the dashboard's system route (all upstreams

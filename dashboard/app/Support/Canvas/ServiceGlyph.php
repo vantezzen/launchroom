@@ -26,7 +26,7 @@ final class ServiceGlyph
         // One-click apps and stacks (templates and Compose imports, docs/17 §3.2).
         'umami', 'plausible', 'uptimekuma', 'n8n', 'ghost', 'gitea', 'forgejo', 'meilisearch', 'pocketbase',
         'metabase', 's3', 'clickhouse', 'mariadb', 'rails', 'ruby', 'php', 'celery', 'sidekiq', 'minio',
-        'wordpress', 'grafana', 'nextcloud', 'mongodb', 'supabase',
+        'wordpress', 'grafana', 'nextcloud', 'mongodb', 'supabase', 'listmonk',
         // Parts of a stack without a mark of their own (Supabase, D65).
         'auth', 'api', 'realtime', 'storage',
     ];

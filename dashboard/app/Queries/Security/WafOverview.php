@@ -5,11 +5,13 @@ declare(strict_types=1);
 namespace App\Queries\Security;
 
 use App\Data\Metrics\DeployMarkerData;
+use App\Data\Security\AddWafExclusionData;
 use App\Data\Security\SecurityServiceRefData;
 use App\Data\Security\WafCategoryCountData;
 use App\Data\Security\WafEdgeProblemData;
 use App\Data\Security\WafEventData;
 use App\Data\Security\WafExclusionDraftData;
+use App\Data\Security\WafExclusionDraftRuleData;
 use App\Data\Security\WafOverviewData;
 use App\Data\Security\WafRuleData;
 use App\Data\Security\WafSeriesData;
@@ -413,26 +415,26 @@ final readonly class WafOverview
     }
 
     /**
-     * "Allow requests like this" (docs/22 §6.4): the first excludable rule,
-     * the path cut to its static prefix, the first target an exclusion can
-     * name.
+     * "Allow requests like this" (docs/22 §6.4): one exception per rule that
+     * scored (the event lists only detection rules, never the evaluation
+     * ones), all for the path cut to its static prefix. An event lists its
+     * matched targets for the whole request, not per rule, so a rule gets a
+     * target only when the event matched exactly one part of the request
+     * and that part is one an exception can name: for the event's only rule,
+     * or for an attack rule (930000–944999, which always log the part they
+     * matched) beside other rules. Protocol and method rules (911–922) next
+     * to others log no part, so they get the path only. Null when no rule
+     * can be excepted.
      *
      * @param  list<int>  $rules
      * @param  list<string>  $targets
      */
     public static function draft(array $rules, string $path, array $targets, string $serviceHref): ?WafExclusionDraftData
     {
-        $rule = null;
+        $rules = array_values(array_unique($rules));
+        $excludable = array_values(array_filter($rules, static fn (int $rule): bool => $rule >= Limits::WAF_EXCLUDABLE_MIN && $rule <= Limits::WAF_EXCLUDABLE_MAX));
 
-        foreach ($rules as $candidate) {
-            if ($candidate >= Limits::WAF_EXCLUDABLE_MIN && $candidate <= Limits::WAF_EXCLUDABLE_MAX) {
-                $rule = $candidate;
-
-                break;
-            }
-        }
-
-        if ($rule === null) {
+        if ($excludable === []) {
             return null;
         }
 
@@ -447,19 +449,21 @@ final readonly class WafOverview
         }
 
         $prefix = $prefix === '' || strlen($prefix) > 128 ? null : $prefix;
-        $target = null;
+        $parts = array_values(array_unique(array_map(static fn (string $target): string => preg_replace('/^ARGS_(?:GET|POST):/', 'ARGS:', $target) ?? $target, $targets)));
+        $target = count($parts) === 1 && preg_match(AddWafExclusionData::TARGET, $parts[0]) === 1 ? $parts[0] : null;
+        $single = count($rules) === 1;
 
-        foreach ($targets as $candidate) {
-            $mapped = preg_replace('/^ARGS_(?:GET|POST):/', 'ARGS:', $candidate) ?? $candidate;
-
-            if (preg_match('/^(?:(?:ARGS|REQUEST_COOKIES|REQUEST_HEADERS):[A-Za-z0-9_.-]{1,64}|ARGS_NAMES|REQUEST_COOKIES_NAMES|REQUEST_BODY|XML|FILES)$/D', $mapped) === 1) {
-                $target = $mapped;
-
-                break;
-            }
-        }
-
-        return new WafExclusionDraftData($rule, $prefix, $target, "{$serviceHref}/settings/firewall", "{$serviceHref}/firewall/exclusions");
+        return new WafExclusionDraftData(
+            rules: array_map(static fn (int $rule): WafExclusionDraftRuleData => new WafExclusionDraftRuleData(
+                $rule,
+                CrsRules::message($rule),
+                $single || $rule >= 930000 ? $target : null,
+            ), $excludable),
+            path: $prefix,
+            uncovered: array_values(array_diff($rules, $excludable)),
+            settingsHref: "{$serviceHref}/settings/firewall",
+            allowUrl: "{$serviceHref}/firewall/exclusions/allow",
+        );
     }
 
     private static function seriesLabel(string $key): string

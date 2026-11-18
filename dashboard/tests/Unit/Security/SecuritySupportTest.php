@@ -143,13 +143,37 @@ test('stacked firewall bars share a request out over its categories', function (
 });
 
 test('firewall exceptions from an event cut the path to its static prefix', function (): void {
-    $draft = WafOverview::draft([949110, 942100], '/api/products/:id', ['ARGS_GET:id', 'REQUEST_HEADERS:User-Agent'], '/p/x/y/s/z');
+    $draft = WafOverview::draft([942100], '/api/products/:id', ['ARGS_GET:id'], '/p/x/y/s/z');
 
-    expect($draft?->rule)->toBe(942100)
+    expect($draft?->rules[0]->rule)->toBe(942100)
         ->and($draft?->path)->toBe('/api/products')
-        ->and($draft?->target)->toBe('ARGS:id')
-        ->and(WafOverview::draft([949110], '/', [], '/p'))->toBeNull()
+        ->and($draft?->rules[0]->target)->toBe('ARGS:id')
+        ->and($draft?->uncovered)->toBe([])
+        ->and($draft?->allowUrl)->toBe('/p/x/y/s/z/firewall/exclusions/allow')
+        ->and(WafOverview::draft([], '/', [], '/p'))->toBeNull()
+        ->and(WafOverview::draft([951110], '/', [], '/p'))->toBeNull()
         ->and(WafOverview::draft([913100], '/:id', [], '/p')?->path)->toBeNull();
+});
+
+test('allow requests like this covers every rule that scored', function (): void {
+    // A PUT with a raw body under the old defaults: method and content type.
+    $draft = WafOverview::draft([911100, 920420], '/v1/orders/:id/upload', [], '/p');
+
+    expect(array_map(static fn ($r): array => [$r->rule, $r->target], $draft->rules ?? []))->toBe([[911100, null], [920420, null]])
+        ->and($draft?->path)->toBe('/v1/orders')
+        ->and($draft?->rules[0]->message)->toBe('Method is not allowed by policy');
+
+    // One matched part: attack rules get it, protocol rules beside them don't.
+    $draft = WafOverview::draft([942100, 942190, 920420], '/search', ['ARGS:q'], '/p');
+    expect(array_map(static fn ($r): ?string => $r->target, $draft->rules ?? []))->toBe(['ARGS:q', 'ARGS:q', null]);
+
+    // Several matched parts: no rule can be tied to one, so the path only.
+    $draft = WafOverview::draft([942100, 941100], '/search', ['ARGS:q', 'REQUEST_COOKIES:s'], '/p');
+    expect(array_map(static fn ($r): ?string => $r->target, $draft->rules ?? []))->toBe([null, null]);
+    expect(WafOverview::draft([942100], '/search', ['ARGS:q', 'ARGS:r'], '/p')?->rules[0]->target)->toBeNull();
+
+    // A rule no exception can name is reported, not dropped silently.
+    expect(WafOverview::draft([942100, 951110], '/', ['ARGS:q'], '/p')?->uncovered)->toBe([951110]);
 });
 
 test('the inventory query grammar reads words, versions and filters', function (): void {

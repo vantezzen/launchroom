@@ -1,0 +1,60 @@
+schema: launchroom.template/v1
+id: listmonk
+name: Listmonk
+tagline: Newsletters and mailing lists you host yourself.
+description: >-
+    Manage subscribers and lists, and send campaigns and transactional mail
+    through your own mail provider. Sign in as admin with the password from the
+    service's LISTMONK_ADMIN_PASSWORD variable.
+category: content
+logo: listmonk
+website: https://listmonk.app
+license: AGPL-3.0
+repositories:
+    - https://github.com/knadh/listmonk
+notes:
+    - Add your SMTP provider under Settings → SMTP before sending.
+    - Set Settings → General → Root URL to this service's address, so links in mails point to it.
+inputs:
+    - id: domain
+      label: Domain
+      type: domain
+      optional: true
+      description: Subscribers open links and unsubscribe here. Leave empty to use the generated address.
+services:
+    listmonk:
+        image: docker.io/listmonk/listmonk:v6.2.0@sha256:f535d59e14991337a9f2d570273685378ae86b0d7698c3e00da444e3bc205286
+        # Listmonk's own Compose start (create or upgrade the schema, then
+        # serve), after waiting for Postgres: Listmonk exits at once when the
+        # database isn't reachable yet, on a first deploy or after a reboot.
+        command:
+            [
+                'sh',
+                '-c',
+                "until nc -z \"$$LISTMONK_db__host\" \"$$LISTMONK_db__port\"; do sleep 2; done; ./listmonk --install --idempotent --yes --config '' && ./listmonk --upgrade --yes --config '' && ./listmonk --config ''",
+            ]
+        ports: ['9000']
+        environment:
+            LISTMONK_app__address: 0.0.0.0:9000
+            LISTMONK_db__host: ${service.db.host}
+            LISTMONK_db__port: ${service.db.port}
+            LISTMONK_db__user: ${service.db.user}
+            LISTMONK_db__password: ${service.db.password}
+            LISTMONK_db__database: ${service.db.database}
+            LISTMONK_db__ssl_mode: disable
+            LISTMONK_ADMIN_USER: admin
+            LISTMONK_ADMIN_PASSWORD: ${generate:password:24}
+        volumes:
+            - uploads:/listmonk/uploads
+        depends_on: [db]
+        healthcheck:
+            test: ['CMD', 'wget', '-qO-', 'http://localhost:9000/health']
+            start_period: 60s
+        x-launchroom:
+            name: Listmonk
+            logo: listmonk
+            domain: ${input.domain}
+    db:
+        x-launchroom:
+            name: Postgres
+            database: { engine: postgres, version: '17' }

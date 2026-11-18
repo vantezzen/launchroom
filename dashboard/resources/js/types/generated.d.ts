@@ -4828,6 +4828,9 @@ path: string | null,
 target: string | null,
 note: string | null,
 };
+export type AddWafExclusionsData = {
+exclusions: App.Data.Security.AddWafExclusionData[],
+};
 export type AdvisoryCursorData = {
 after: string[] | null,
 };
@@ -5187,11 +5190,16 @@ addedBy: string | null,
 addedAt: string,
 };
 export type WafExclusionDraftData = {
-rule: number,
+rules: App.Data.Security.WafExclusionDraftRuleData[],
 path: string | null,
-target: string | null,
+uncovered: number[],
 settingsHref: string,
-exclusionsUrl: string,
+allowUrl: string,
+};
+export type WafExclusionDraftRuleData = {
+rule: number,
+message: string,
+target: string | null,
 };
 export type WafOverviewData = {
 range: string,

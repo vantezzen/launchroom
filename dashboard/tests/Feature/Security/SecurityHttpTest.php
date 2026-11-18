@@ -125,6 +125,27 @@ test('the service firewall: members read, developers change it', function (): vo
     $this->actingAs($this->developer)->deleteJson("{$this->base}/firewall/exclusions/{$exclusion->public_id}")->assertNoContent();
 });
 
+test('allow requests like this adds an exception for every rule that scored, all or none', function (): void {
+    $allow = "{$this->base}/firewall/exclusions/allow";
+    $both = ['exclusions' => [['rule' => 911100, 'path' => '/v1/orders'], ['rule' => 920420, 'path' => '/v1/orders']]];
+
+    $this->actingAs($this->viewer)->postJson($allow, $both)->assertForbidden();
+    // One bad entry refuses the whole request.
+    $this->actingAs($this->developer)->postJson($allow, ['exclusions' => [['rule' => 911100], ['rule' => 949110]]])->assertUnprocessable();
+    $this->actingAs($this->developer)->postJson($allow, ['exclusions' => []])->assertUnprocessable();
+    expect(WafExclusion::query()->count())->toBe(0);
+
+    // The earlier one-rule exception stays; only the missing one is added.
+    $this->actingAs($this->developer)->postJson("{$this->base}/firewall/exclusions", ['rule' => 911100, 'path' => '/v1/orders'])->assertCreated();
+    $this->actingAs($this->developer)->postJson($allow, $both)->assertCreated()->assertJsonCount(1, 'added');
+    $this->actingAs($this->developer)->postJson($allow, $both)->assertCreated()->assertJsonCount(0, 'added');
+
+    expect(WafExclusion::query()->orderBy('rule_id')->get(['rule_id', 'path_prefix', 'target'])->toArray())->toBe([
+        ['rule_id' => 911100, 'path_prefix' => '/v1/orders', 'target' => null],
+        ['rule_id' => 920420, 'path_prefix' => '/v1/orders', 'target' => null],
+    ]);
+});
+
 test('check now is for owners and admins, once per 10 minutes', function (): void {
     $this->actingAs($this->developer)->postJson('/security/check')->assertForbidden();
     $this->actingAs($this->admin)->postJson('/security/check')->assertStatus(202);
