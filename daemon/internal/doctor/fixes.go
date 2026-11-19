@@ -32,6 +32,9 @@ const (
 	FixClearScheduleLocks FixID = "clear-schedule-locks"
 	// FixRestartWorkers lets Horizon's workers finish and start again.
 	FixRestartWorkers FixID = "restart-workers"
+	// FixCancelUpdate cancels a dashboard update that has made no progress
+	// and hasn't changed anything yet (docs/11 §4.3).
+	FixCancelUpdate FixID = "cancel-update"
 	// FixUpdateRollback finishes a rollback that failed half-way.
 	FixUpdateRollback FixID = "update-rollback"
 	// FixRepairValkeyAOF repairs Valkey's damaged append-only file (after
@@ -42,7 +45,7 @@ const (
 )
 
 // AllFixes lists every fix id.
-var AllFixes = []FixID{FixStart, FixRestart, FixClearScheduleLocks, FixRestartWorkers, FixUpdateRollback, FixRepairValkeyAOF, FixFreeDisk}
+var AllFixes = []FixID{FixStart, FixRestart, FixClearScheduleLocks, FixRestartWorkers, FixCancelUpdate, FixUpdateRollback, FixRepairValkeyAOF, FixFreeDisk}
 
 // Hooks are the fixes that need more than the Engine interface (compose
 // and the update supervisor's rollback); the command wires them.
@@ -153,6 +156,8 @@ func (r *run) apply(ctx context.Context, h Hooks, f FixRef) (string, error) {
 		return r.artisan(ctx, "scheduler", "Cleared the schedule's locks.", "schedule:clear-cache")
 	case FixRestartWorkers:
 		return r.artisan(ctx, "horizon", "The workers restart after their current job.", "horizon:terminate")
+	case FixCancelUpdate:
+		return r.artisan(ctx, "scheduler", "Cancelled the update. Nothing was changed; try it again on Settings → Updates.", "launchroom:updates:cancel", "--stalled")
 	case FixUpdateRollback:
 		if h.FinishRollback == nil {
 			return "", errors.New("the update rollback isn't available here")

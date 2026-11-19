@@ -181,7 +181,7 @@ Rules other than `service_crashed` and `cron_failed` are on by default (`AlertRu
 | `certificate_failed` | the service's Settings → Domains at the domain |
 | `service_crashed`, `cron_failed` | the service's Logs tab |
 | `control_plane_degraded`, `queue_backlog` | Settings → System |
-| `backup_failed` (control plane), `certificate_expiring` (dashboard) | Settings → Backups, Settings → Dashboard domain |
+| `backup_failed` (control plane), `certificate_expiring` (dashboard) | the Backups page (`/backups`), Settings → Dashboard domain |
 
 The evaluator (`App\Actions\Alerts\EvaluateAlertConditions`, `launchroom:alerts:evaluate` every minute, without overlapping) runs one condition class per condition rule (`App\Services\Alerts\Conditions`, which owns the rule's evaluation and resolve text; thresholds and durations come from the team's resolved rule, defaults from `AlertRule::threshold()`/`duration()`), computes the failing subjects per team, raises them and resolves the rule's firing alerts whose subject is no longer failing. It reads only recent rows (≤ 30 min) and is idempotent. Thresholds (CPU %, memory %, error rate %, disk %, certificate days) and durations (minutes) are validated per rule (`AlertRule::thresholdRange()`).
 

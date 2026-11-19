@@ -10,8 +10,10 @@ use App\Models\Backups\BackupDestination;
 use App\Models\Backups\BackupSchedule;
 use App\Models\Backups\DeletionRequest;
 use App\Models\Backups\RestoreRun;
+use App\Models\User;
 use App\Services\Backups\ControlPlaneDatabase;
 use App\Services\Backups\Process\ResticCli;
+use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Support\ServiceProvider;
 
 /**
@@ -36,6 +38,16 @@ final class BackupsServiceProvider extends ServiceProvider
             'backupDestination' => BackupDestination::class,
             'backupSchedule' => BackupSchedule::class,
         ]);
+        // Current or removed storage (removed storage keeps its repository password).
+        TeamScopedBindings::define('anyBackupDestination', BackupDestination::class, static function (Builder $query, User $user): void {
+            $query->withTrashed()->where(static function (Builder $query) use ($user): void {
+                $query->whereIn('team_id', $user->teamIdsQuery());
+
+                if ($user->is_instance_owner) {
+                    $query->orWhereNull('team_id');
+                }
+            });
+        });
 
         $this->loadRoutesFrom(base_path('routes/backups.php'));
     }

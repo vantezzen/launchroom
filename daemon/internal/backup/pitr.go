@@ -68,9 +68,8 @@ func PostgresTargetFromEnv(env map[string]secret.Secret) (PostgresTarget, error)
 // The dashboard holds the database (and its dependents) out of the
 // NodeState while this runs; in place, a safety snapshot was taken first.
 func (e *Engine) RestorePointInTime(ctx context.Context, spec *state.RestoreSpec, creds Credentials, target PostgresTarget, logf Logf) (*state.RestoreResult, error) {
-	if logf == nil {
-		logf = nopLog
-	}
+	tr := e.track(ctx, "restore", logf)
+	logf = tr.logf
 	if spec.Kind != state.BackupBaseBackup || spec.Runtime == nil {
 		return nil, errors.New("backup: not a point-in-time restore")
 	}
@@ -90,6 +89,7 @@ func (e *Engine) RestorePointInTime(ctx context.Context, spec *state.RestoreSpec
 		return nil, err
 	}
 	start := e.o.Now()
+	tr.phase(PhasePreparing, nil, 0)
 	base, wal, err := e.replaySnapshots(ctx, r, spec.Snapshot, spec.WalTags, spec.PointInTime)
 	if err != nil {
 		return nil, err
@@ -98,6 +98,7 @@ func (e *Engine) RestorePointInTime(ctx context.Context, spec *state.RestoreSpec
 		return nil, err
 	}
 	e.sweepThrowaways(ctx, helperReplay)
+	tr.phase(PhaseRestoring, nil, base.size())
 	logf("Restoring base backup %s with %d WAL snapshot(s) into volume %s", short(base.ID), len(wal), spec.Target.Volume)
 	if err := e.o.Volumes.RemoveVolume(ctx, vol.Name); err != nil {
 		return nil, fmt.Errorf("backup: emptying the volume: %w", err)
@@ -134,6 +135,7 @@ func (e *Engine) RestorePointInTime(ctx context.Context, spec *state.RestoreSpec
 	if restoredTo != nil {
 		logf("Restored to %s", restoredTo.UTC().Format(time.RFC3339))
 	}
+	tr.finish(size)
 	return &state.RestoreResult{SizeBytes: size, DurationMs: e.o.Now().Sub(start).Milliseconds(), RestoredTo: restoredTo}, nil
 }
 

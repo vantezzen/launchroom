@@ -15,6 +15,7 @@ export type BroadcastPayloads = Exhaustive<{
     'server.metrics': App.Data.Broadcasts.ServerMetricsData;
     'service.activity': App.Data.Broadcasts.ServiceActivityData;
     'security.changed': App.Data.Broadcasts.SecurityChangedData;
+    'backups.changed': App.Data.Broadcasts.BackupsChangedData;
 }>;
 
 export type BroadcastPayload<E extends BroadcastName> = BroadcastPayloads[E];

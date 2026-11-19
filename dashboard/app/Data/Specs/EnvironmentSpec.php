@@ -41,7 +41,7 @@ final class EnvironmentSpec extends Data
      */
     public function inheritedConnectionVariables(ServiceSpec $service): array
     {
-        $parent = $service->kind->requiresParent() && $service->parentId !== null ? $this->service($service->parentId) : null;
+        $parent = $this->parentOf($service);
 
         if (! $parent instanceof ServiceSpec) {
             return [];
@@ -50,6 +50,85 @@ final class EnvironmentSpec extends Data
         $own = array_flip(array_map(static fn (VariableSpec $variable): string => $variable->key, $service->connectionVariables));
 
         return array_filter($parent->connectionVariables, static fn (VariableSpec $variable): bool => ! isset($own[$variable->key]));
+    }
+
+    /**
+     * The app a worker or cron runs the code of, or null.
+     */
+    public function parentOf(ServiceSpec $service): ?ServiceSpec
+    {
+        return $service->kind->requiresParent() && $service->parentId !== null ? $this->service($service->parentId) : null;
+    }
+
+    /**
+     * The app's own variables a worker or cron takes (docs/06 §3.2): per key
+     * the row whose value applies to the app (a branch override over the
+     * environment's), when it is available at runtime. The process runs the
+     * app's image, so build-only rows don't apply. Keys the process sets
+     * itself are included; precedence leaves them to the process.
+     *
+     * @return array<string, VariableSpec> keyed by variable public id
+     */
+    public function parentVariables(ServiceSpec $service): array
+    {
+        $parent = $this->parentOf($service);
+
+        if (! $parent instanceof ServiceSpec) {
+            return [];
+        }
+
+        $winners = [];
+
+        foreach (VariableLayer::cases() as $layer) {
+            foreach ($parent->variables as $variable) {
+                if ($variable->layer === $layer) {
+                    $winners[$variable->key] = $variable;
+                }
+            }
+        }
+
+        $inherited = [];
+
+        foreach ($winners as $variable) {
+            if ($variable->exposure->includesRuntime()) {
+                $inherited[$variable->id] = $variable;
+            }
+        }
+
+        return $inherited;
+    }
+
+    /**
+     * The app's variables that reach a worker or cron: parentVariables()
+     * without the keys the process sets itself (its own variables and what
+     * its own connections inject win).
+     *
+     * @return array<string, VariableSpec> keyed by variable public id
+     */
+    public function inheritedVariables(ServiceSpec $service): array
+    {
+        $inherited = $this->parentVariables($service);
+
+        if ($inherited === []) {
+            return [];
+        }
+
+        $own = [];
+
+        foreach ([...$service->variables, ...$service->connectionVariables] as $variable) {
+            $own[$variable->key] = true;
+        }
+
+        return array_filter($inherited, static fn (VariableSpec $variable): bool => ! isset($own[$variable->key]));
+    }
+
+    /**
+     * Whether $variable reaches $service as one of its app's variables
+     * (inheritedVariables()): its value resolves in the app's scope.
+     */
+    public function isInheritedVariable(ServiceSpec $service, VariableSpec $variable): bool
+    {
+        return isset($this->parentOf($service)?->variables[$variable->id]);
     }
 
     /**
@@ -64,9 +143,11 @@ final class EnvironmentSpec extends Data
 
     /**
      * The variables $service gets, lowest precedence first (docs/06 §3.1):
-     * opted-in shared < connection-injected (the app's, then its own) <
-     * environment-targeted < branch override. System variables sit below
-     * all of them and aren't variable rows. Folding by key gives the winner.
+     * opted-in shared < connection-injected (the app's) < the app's own
+     * variables (workers and crons, isInheritedVariable()) < connection-
+     * injected (its own) < environment-targeted < branch override. System
+     * variables sit below all of them and aren't variable rows. Folding by
+     * key gives the winner.
      *
      * @return list<VariableSpec>
      */
@@ -80,7 +161,15 @@ final class EnvironmentSpec extends Data
             }
         }
 
-        foreach ($this->connectionVariablesOf($service) as $variable) {
+        foreach ($this->inheritedConnectionVariables($service) as $variable) {
+            $ordered[] = $variable;
+        }
+
+        foreach ($this->inheritedVariables($service) as $variable) {
+            $ordered[] = $variable;
+        }
+
+        foreach ($service->connectionVariables as $variable) {
             $ordered[] = $variable;
         }
 

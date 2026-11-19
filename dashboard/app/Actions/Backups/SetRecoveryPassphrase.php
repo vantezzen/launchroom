@@ -48,12 +48,11 @@ final readonly class SetRecoveryPassphrase
             $settings = InstanceSettings::lockedForUpdate();
             $rotated = $settings->recovery_public_key !== null;
 
-            $settings->forceFill([
+            $settings->forgetRecoveryKit('passphrase_changed', downloaded: false)->forceFill([
                 'recovery_kdf' => $kdf,
                 'recovery_public_key' => $publicKey,
                 'recovery_mac_key' => $macKey,
                 'recovery_passphrase_set_at' => now(),
-                'recovery_kit_confirmed_at' => null,
             ])->save();
 
             $this->audit->handle(new AuditEntryData(

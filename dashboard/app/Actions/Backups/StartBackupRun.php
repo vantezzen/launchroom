@@ -57,16 +57,16 @@ final readonly class StartBackupRun
         private RecordAuditEvent $audit,
     ) {}
 
-    public function handle(ServiceInstance $instance, ?Volume $volume, BackupReason $reason, ?User $user, AuditActor $actor, ?BackupSchedule $schedule = null): BackupRun|Refusal
+    public function handle(ServiceInstance $instance, ?Volume $volume, BackupReason $reason, ?User $user, AuditActor $actor, ?BackupSchedule $schedule = null, ?string $batch = null): BackupRun|Refusal
     {
         return $volume instanceof Volume
-            ? $this->volume($instance, $volume, $reason, $user, $actor, $schedule)
-            : $this->database($instance, $reason, $user, $actor, $schedule);
+            ? $this->volume($instance, $volume, $reason, $user, $actor, $schedule, $batch)
+            : $this->database($instance, $reason, $user, $actor, $schedule, $batch);
     }
 
-    private function database(ServiceInstance $instance, BackupReason $reason, ?User $user, AuditActor $actor, ?BackupSchedule $schedule): BackupRun|Refusal
+    private function database(ServiceInstance $instance, BackupReason $reason, ?User $user, AuditActor $actor, ?BackupSchedule $schedule, ?string $batch): BackupRun|Refusal
     {
-        return DB::transaction(function () use ($instance, $reason, $user, $actor, $schedule): BackupRun|Refusal {
+        return DB::transaction(function () use ($instance, $reason, $user, $actor, $schedule, $batch): BackupRun|Refusal {
             $instance = ServiceInstance::query()->whereKey($instance->id)->with(['service.project.team', 'environment.project'])->lockForUpdate()->firstOrFail();
             $inFlight = $this->inFlight($instance, null);
 
@@ -108,13 +108,13 @@ final readonly class StartBackupRun
                 SnapshotTags::forDatabase($instance, $placement->server, $engine, $reason),
             );
 
-            return $this->record($instance, BackupSubject::Database, null, $reason, $destination, $schedule, $task, $placement->server_id, $user, $actor);
+            return $this->record($instance, BackupSubject::Database, null, $reason, $destination, $schedule, $task, $placement->server_id, $user, $actor, $batch);
         });
     }
 
-    private function volume(ServiceInstance $instance, Volume $volume, BackupReason $reason, ?User $user, AuditActor $actor, ?BackupSchedule $schedule): BackupRun|Refusal
+    private function volume(ServiceInstance $instance, Volume $volume, BackupReason $reason, ?User $user, AuditActor $actor, ?BackupSchedule $schedule, ?string $batch): BackupRun|Refusal
     {
-        return DB::transaction(function () use ($instance, $volume, $reason, $user, $actor, $schedule): BackupRun|Refusal {
+        return DB::transaction(function () use ($instance, $volume, $reason, $user, $actor, $schedule, $batch): BackupRun|Refusal {
             $instance = ServiceInstance::query()->whereKey($instance->id)->with(['service.project.team', 'environment.project', 'volumes'])->lockForUpdate()->firstOrFail();
             $volume = Volume::query()->whereKey($volume->id)->where('service_instance_id', $instance->id)->with('server')->firstOrFail();
             $inFlight = $this->inFlight($instance, $volume);
@@ -125,6 +125,11 @@ final readonly class StartBackupRun
 
             if (BackupSubjects::for($instance) !== BackupSubject::Volume) {
                 return Refusal::on('service', 'Databases are backed up as dumps, not volume snapshots.');
+            }
+
+            // A restore into it still takes its safety copy: that is the user's undo.
+            if (BackupSubjects::excluded($volume) && $reason !== BackupReason::PreRestore) {
+                return Refusal::on('volume', "Backups of {$volume->mount_path} are turned off. Turn them on to back it up.");
             }
 
             $schedule ??= BackupSchedule::ofInstance($instance);
@@ -153,13 +158,13 @@ final readonly class StartBackupRun
                 SnapshotTags::forVolume($instance, $volume, $server, $reason),
             );
 
-            return $this->record($instance, BackupSubject::Volume, $volume, $reason, $destination, $schedule, $task, $server->id, $user, $actor);
+            return $this->record($instance, BackupSubject::Volume, $volume, $reason, $destination, $schedule, $task, $server->id, $user, $actor, $batch);
         });
     }
 
     private function noDestination(): Refusal
     {
-        return Refusal::on('destination', 'Add a backup destination in Settings → Backups first.');
+        return Refusal::on('destination', 'Connect backup storage on the Backups page first.');
     }
 
     private function inFlight(ServiceInstance $instance, ?Volume $volume): ?BackupRun
@@ -169,7 +174,7 @@ final readonly class StartBackupRun
         return ($volume instanceof Volume ? $query->where('volume_id', $volume->id) : $query->where('subject', BackupSubject::Database->value))->first();
     }
 
-    private function record(ServiceInstance $instance, BackupSubject $subject, ?Volume $volume, BackupReason $reason, BackupDestination $destination, ?BackupSchedule $schedule, DaemonTask $task, int $serverId, ?User $user, AuditActor $actor): BackupRun
+    private function record(ServiceInstance $instance, BackupSubject $subject, ?Volume $volume, BackupReason $reason, BackupDestination $destination, ?BackupSchedule $schedule, DaemonTask $task, int $serverId, ?User $user, AuditActor $actor, ?string $batch): BackupRun
     {
         $run = BackupRun::query()->create([
             'team_id' => $instance->team_id,
@@ -182,6 +187,7 @@ final readonly class StartBackupRun
             'daemon_task_id' => $task->id,
             'server_id' => $serverId,
             'actor_id' => $user?->id,
+            'batch_id' => $batch,
         ]);
 
         if ($reason !== BackupReason::Scheduled) {

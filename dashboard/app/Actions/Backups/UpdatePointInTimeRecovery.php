@@ -50,7 +50,7 @@ final readonly class UpdatePointInTimeRecovery
 
             if (! $archive instanceof WalArchive) {
                 if (! $destination instanceof BackupDestination) {
-                    throw DomainRuleViolation::on('destination', 'Add a backup destination in Settings → Backups first.');
+                    throw DomainRuleViolation::on('destination', 'Connect backup storage on the Backups page first.');
                 }
 
                 $hash = crc32($instance->public_id.'|base');
@@ -64,6 +64,11 @@ final readonly class UpdatePointInTimeRecovery
             }
 
             $turningOn = $enabled && (! $archive->exists || ! $archive->enabled);
+
+            // Turned on again after its storage was removed: archive to the current storage.
+            if ($turningOn && $destination instanceof BackupDestination && $archive->destination_id !== $destination->id) {
+                $archive->destination_id = $destination->id;
+            }
             $archive->forceFill([
                 'enabled' => $enabled,
                 'keep_days' => $keepDays,

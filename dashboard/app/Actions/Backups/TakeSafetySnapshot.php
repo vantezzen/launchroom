@@ -21,8 +21,9 @@ use App\Support\Refusal;
  * (docs/14 §3): an import, a server move, deleting or restoring into it. It
  * never blocks the operation it protects: whatever can't be backed up (no
  * data, no destination, not running) is skipped, and the outcome says why.
- * Databases get a dump, other services one snapshot per volume on a server
- * (or only $volume). The destination is the one its backups use: the
+ * Databases get a dump, other services one snapshot per backed-up volume on
+ * a server (or only $volume); volumes whose backups are turned off are
+ * skipped. The destination is the one its backups use: the
  * schedule's, else the team's default.
  *
  * Callers that must wait for the snapshot watch the runs' status. A restore
@@ -50,9 +51,13 @@ final readonly class TakeSafetySnapshot
             return new SafetySnapshot(skipped: [Refusal::on('destination', 'There is no backup destination.')]);
         }
 
+        if ($volume instanceof Volume && BackupSubjects::excluded($volume)) {
+            return new SafetySnapshot(skipped: [Refusal::on('volume', "Backups of {$volume->mount_path} are turned off.")]);
+        }
+
         $results = $subject === BackupSubject::Database
             ? [$this->runs->handle($instance, null, $reason, $user, $actor)]
-            : array_map(fn (Volume $each): BackupRun|Refusal => $this->runs->handle($instance, $each, $reason, $user, $actor), $volume instanceof Volume ? [$volume] : BackupSubjects::placedVolumes($instance));
+            : array_map(fn (Volume $each): BackupRun|Refusal => $this->runs->handle($instance, $each, $reason, $user, $actor), $volume instanceof Volume ? [$volume] : BackupSubjects::backedUpVolumes($instance));
 
         return new SafetySnapshot(
             array_values(array_filter($results, static fn (mixed $result): bool => ! $result instanceof Refusal)),

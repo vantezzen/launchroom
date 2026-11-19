@@ -56,8 +56,13 @@ final class SecretTaint
         foreach ($spec->services as $service) {
             $values = [];
 
+            $parent = $spec->parentOf($service);
+
             foreach ($spec->variablesInPrecedence($service) as $variable) {
-                $values[$variable->key] = $meta($variable);
+                // Inherited app variables resolve in the app's scope (docs/06 §3.2).
+                $values[$variable->key] = $parent instanceof ServiceSpec && $spec->isInheritedVariable($service, $variable)
+                    ? ['secret' => $variable->type === VariableType::Secret, 'references' => [$parent->slug.'.'.$variable->key]]
+                    : $meta($variable);
             }
 
             $scopes[$service->slug] = $values;

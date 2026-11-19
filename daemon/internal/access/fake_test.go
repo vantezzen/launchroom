@@ -8,6 +8,7 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
+	"slices"
 	"strconv"
 	"strings"
 	"sync"
@@ -139,7 +140,11 @@ func (b *toolBox) Run(_ context.Context, argv []string, stdin io.Reader, stdout 
 		return 0, "", nil
 	case "dd":
 		p := strings.TrimPrefix(argv[1], "of=")
-		f, err := os.Create(b.host(p))
+		flags := os.O_CREATE | os.O_WRONLY | os.O_TRUNC
+		if slices.Contains(argv, "conv=notrunc") {
+			flags &^= os.O_TRUNC
+		}
+		f, err := os.OpenFile(b.host(p), flags, 0o600)
 		if err != nil {
 			return fail(err)
 		}

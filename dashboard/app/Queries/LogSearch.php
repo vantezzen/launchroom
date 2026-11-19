@@ -238,6 +238,9 @@ final class LogSearch
             ]);
         }
 
+        // launchroomd's machine-readable backup progress lines are for the Backups page, not for people.
+        $q->whereRaw("coalesce(l.e->>'text', '') NOT LIKE '::progress:: %'");
+
         foreach ($search->text as $term) {
             $q->whereRaw("l.e->>'text' ILIKE ?", ['%'.self::escapeLike($term).'%']);
         }

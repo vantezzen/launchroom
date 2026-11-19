@@ -47,7 +47,7 @@ Placement rules that named the dead server, its zone or its labels keep working.
 ### 2. Data
 
 Every database and volume that lived there is listed with its latest backup and the backup's age. Each one is restored
-from that backup on the replacement. A service without a backup is marked **No backup: it starts empty**.
+from that backup on the replacement. A service without a backup is marked **No backup: it starts empty**. A service whose volume backups are turned off starts empty too, and the page says so.
 
 Anything written after the latest backup is lost, so keep backup schedules short for busy databases. See
 [Backups](/docs/databases/backups).

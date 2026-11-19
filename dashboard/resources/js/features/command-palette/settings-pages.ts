@@ -1,6 +1,5 @@
 import { index as editApiTokens } from '@/routes/api-tokens';
 import { edit as editAppearance } from '@/routes/appearance';
-import { settings as editBackups } from '@/routes/backups';
 import { edit as editDashboardDomain } from '@/routes/dashboard-domain';
 import { edit as editDockerfileGeneration } from '@/routes/dockerfile-generation';
 import { edit as editGit } from '@/routes/git';
@@ -66,12 +65,6 @@ export const SETTINGS_PAGES: SettingsPageEntry[] = [
         group: 'Team',
         url: () => editGit().url,
         keywords: 'github gitlab forgejo repository',
-    },
-    {
-        label: 'Backups',
-        group: 'Team',
-        url: () => editBackups().url,
-        keywords: 's3 destination snapshot restore',
     },
     {
         label: 'Notifications',

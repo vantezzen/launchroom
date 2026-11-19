@@ -22,7 +22,7 @@ use Illuminate\Database\Eloquent\Collection;
  * environment, a project or a preview, or deploying a staged service
  * removal, first backs up every database (dump) and every other service's
  * volumes (snapshots) that have backups configured (an enabled schedule or a
- * successful backup), while their workloads still run. The deletion waits
+ * successful backup) and aren't turned off, while their workloads still run. The deletion waits
  * for them; if one fails (or can't start, e.g. a database that isn't
  * running), the deletion is blocked with the reason until an owner/admin
  * retries it or chooses "delete without final backup" (authorized,
@@ -77,7 +77,8 @@ final readonly class FinalBackups
             $subject = BackupSubjects::for($instance);
             $exists = match ($subject) {
                 BackupSubject::Database => $instance->active_deployment_id !== null,
-                BackupSubject::Volume => BackupSubjects::placedVolumes($instance) !== [],
+                // Volumes whose backups are turned off get no final backup.
+                BackupSubject::Volume => BackupSubjects::backedUpVolumes($instance) !== [],
                 default => false,
             };
 

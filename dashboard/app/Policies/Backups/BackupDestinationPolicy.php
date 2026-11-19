@@ -49,6 +49,19 @@ final class BackupDestinationPolicy
     }
 
     /**
+     * Show the restic repository password (docs/14 §3), also of removed
+     * storage: whoever manages the storage and may reveal secrets (owners
+     * and admins), instance owners for launchroom's own.
+     */
+    public function revealRepositoryPassword(User $user, BackupDestination $destination): bool
+    {
+        return $destination->team_id === null
+            ? $user->is_instance_owner
+            : $user->hasTeamPermission($destination->team_id, Permission::ManageBackups)
+                && $user->hasTeamPermission($destination->team_id, Permission::RevealSecrets);
+    }
+
+    /**
      * Control-plane backups, recovery passphrase and recovery kit.
      */
     public function manageInstance(User $user): bool

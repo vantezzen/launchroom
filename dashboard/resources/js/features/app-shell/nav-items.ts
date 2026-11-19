@@ -1,6 +1,7 @@
 import {
     Activity,
     ChartColumnStacked,
+    DatabaseBackup,
     FolderKanban,
     ListChecks,
     ScrollText,
@@ -11,6 +12,7 @@ import {
 } from 'lucide-react';
 import { index as activity } from '@/routes/activity';
 import { index as analytics } from '@/routes/analytics';
+import { index as backups } from '@/routes/backups';
 import { index as teamLogs } from '@/routes/logs';
 import { show as onboarding } from '@/routes/onboarding';
 import { index as projects } from '@/routes/projects';
@@ -86,6 +88,12 @@ export function teamNavItems(signals: Signals): TeamNavItem[] {
             icon: Server,
             keywords: 'machines hosts fleet',
             shortcut: 'g s',
+        },
+        {
+            title: 'Backups',
+            href: backups(),
+            icon: DatabaseBackup,
+            keywords: 'backup restore snapshots storage bucket recovery kit',
         },
         {
             title: 'Analytics',

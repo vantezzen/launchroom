@@ -121,6 +121,10 @@ final readonly class StartVerification
             ->where('service_instance_id', $instance->id)
             ->where('status', BackupRunStatus::Succeeded->value)
             ->whereNotNull('snapshot_id')
+            // Not a volume whose backups were turned off: it is no longer protected.
+            ->ofBackedUpVolumes()
+            // On storage that is still connected (removed storage is history only).
+            ->stored()
             ->with(['server', 'volume.server'])
             ->orderByDesc('finished_at')
             ->orderByDesc('id');

@@ -3,7 +3,7 @@ import { useState } from 'react';
 import InputError from '@/components/input-error';
 import { TimeRangeSelect } from '@/components/charts/time-range-select';
 import { Switch } from '@/components/ui/switch';
-import { settings as backupSettings } from '@/routes/backups';
+import { index as backupSettings } from '@/routes/backups';
 import { preferences as savePreferences } from '@/routes/updates';
 import { SettingsCard, SettingsRow } from '@/components/settings/settings-card';
 

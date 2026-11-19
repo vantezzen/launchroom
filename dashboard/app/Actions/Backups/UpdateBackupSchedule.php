@@ -28,13 +28,14 @@ final readonly class UpdateBackupSchedule
 
     public function handle(BackupSchedule $schedule, BackupScheduleInput $input, AuditActor $actor): BackupSchedule
     {
-        $cron = trim((string) preg_replace('/\s+/', ' ', $input->cron));
+        $cron = trim((string) preg_replace('/\s+/', ' ', $input->cron ?? $schedule->cron));
+        $retention = $input->retention ?? $schedule->retention;
 
         if (count(explode(' ', $cron)) !== 5 || ! CronExpression::isValidExpression($cron)) {
             throw DomainRuleViolation::on('cron', 'Use a 5-field cron expression, for example "15 3 * * *" (daily at 03:15 UTC).');
         }
 
-        if (! $input->retention->keepsSomething()) {
+        if (! $retention->keepsSomething()) {
             throw DomainRuleViolation::on('retention', 'Keep at least one snapshot.');
         }
 
@@ -60,7 +61,7 @@ final readonly class UpdateBackupSchedule
 
         $schedule->forceFill([
             'cron' => $cron,
-            'retention' => $input->retention,
+            'retention' => $retention,
             'enabled' => $input->enabled,
             'destination_id' => $destinationId,
             ...($restart ? ['last_run_at' => now()] : []),
@@ -72,7 +73,7 @@ final readonly class UpdateBackupSchedule
             teamId: $schedule->team_id,
             subjectType: 'backup_schedule',
             subjectId: $schedule->public_id,
-            meta: ['cron' => $cron, 'enabled' => $input->enabled, 'retention' => $input->retention->summary()],
+            meta: ['cron' => $cron, 'enabled' => $input->enabled, 'retention' => $retention->summary()],
         ));
 
         return $schedule;

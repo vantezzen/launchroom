@@ -1,12 +1,9 @@
-import { Link, useForm } from '@inertiajs/react';
-import { Database, HardDrive, Shield } from 'lucide-react';
+import { useForm } from '@inertiajs/react';
 import { useState } from 'react';
 import type { FormEvent, ReactNode } from 'react';
 import InputError from '@/components/input-error';
-import { MetaLine } from '@/components/patterns/meta-line';
 import { SidePanel, SheetSection } from '@/components/patterns/sheet';
 import { Stepper } from '@/components/patterns/stepper';
-import { RunStrip } from '@/components/steps/run-strip';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -19,20 +16,18 @@ import {
 } from '@/components/ui/select';
 import { Spinner } from '@/components/ui/spinner';
 import { Switch } from '@/components/ui/switch';
-import { Status } from '@/components/status';
-import { BackupHealthStatus } from '@/features/backups/backup-health';
-import {
-    firstRunLabel,
-    protectionSummary,
-    sortByStanding,
-    standing,
-} from '@/features/backups/protection';
-import { update } from '@/routes/backups/schedules';
-import { relativeTime, formatBytes } from '@/lib/format';
-import { SettingsCard, SettingsRow } from '@/components/settings/settings-card';
 
-type Schedule = App.Data.Backups.BackupScheduleData;
-type Protection = App.Data.Backups.BackupProtectionData;
+/** What the sheet edits; `updateUrl` null = read only. */
+export type EditableSchedule = {
+    id: string;
+    label: string;
+    destinationName: string;
+    cron: string;
+    retention: App.Data.Backups.RetentionData;
+    retentionLimits: App.Data.Backups.RetentionLimitsData;
+    enabled: boolean;
+    updateUrl: string | null;
+};
 
 type Frequency = 'hourly' | 'every' | 'daily' | 'weekly' | 'custom';
 
@@ -146,18 +141,19 @@ const retentionFields: [keyof App.Data.Backups.RetentionLimitsData, string][] =
  * Edit a schedule as a picker (docs/design/flows.md §14): how often, at
  * what time (UTC), how many snapshots to keep; raw cron only under Custom.
  */
-function ScheduleSheet({
+export function ScheduleSheet({
     schedule,
     open,
     onOpenChange,
     children,
 }: {
-    schedule: Schedule;
+    schedule: EditableSchedule;
     open: boolean;
     onOpenChange: (open: boolean) => void;
-    /** Extra sections (recent runs of launchroom itself). */
+    /** Extra sections (what else shares the schedule). */
     children?: ReactNode;
 }) {
+    const canManage = schedule.updateUrl !== null;
     const initial = parseCron(schedule.cron);
     const [picked, setPicked] = useState<Picked>(initial);
     const form = useForm({
@@ -173,7 +169,7 @@ function ScheduleSheet({
             ...data,
             cron: toCron(picked, data.cron),
         }));
-        form.put(update(schedule.id).url, {
+        form.put(schedule.updateUrl ?? '', {
             preserveScroll: true,
             onSuccess: () => onOpenChange(false),
         });
@@ -189,7 +185,7 @@ function ScheduleSheet({
             title={schedule.label}
             description={`Stored in ${schedule.destinationName}.`}
             footer={
-                schedule.canManage && (
+                canManage && (
                     <div className="flex justify-end gap-2">
                         <Button
                             type="button"
@@ -215,7 +211,7 @@ function ScheduleSheet({
                     title="Back up automatically"
                     description={
                         form.data.enabled
-                            ? 'Backups run on a schedule and before deploys and deletes.'
+                            ? 'Backups run on this schedule, and before restores, updates and deletes.'
                             : 'Paused. Only manual and safety backups run.'
                     }
                     control={
@@ -224,7 +220,7 @@ function ScheduleSheet({
                             onCheckedChange={(checked) =>
                                 form.setData('enabled', checked)
                             }
-                            disabled={!schedule.canManage}
+                            disabled={!canManage}
                             aria-label="Back up automatically"
                         />
                     }
@@ -238,7 +234,7 @@ function ScheduleSheet({
                                 onValueChange={(value) =>
                                     set({ frequency: value as Frequency })
                                 }
-                                disabled={!schedule.canManage}
+                                disabled={!canManage}
                             >
                                 <SelectTrigger
                                     id={`${id}-frequency`}
@@ -376,7 +372,7 @@ function ScheduleSheet({
                                 value={form.data.retention[field]}
                                 min={schedule.retentionLimits[field].min}
                                 max={schedule.retentionLimits[field].max}
-                                disabled={!schedule.canManage}
+                                disabled={!canManage}
                                 onChange={(value) =>
                                     form.setData('retention', {
                                         ...form.data.retention,
@@ -391,198 +387,5 @@ function ScheduleSheet({
             </form>
             {children}
         </SidePanel>
-    );
-}
-
-function dayLabel(
-    date: string,
-    status: App.Data.Backups.BackupDayData['status'],
-) {
-    const day = new Date(`${date}T00:00:00Z`).toLocaleDateString('en-GB', {
-        day: 'numeric',
-        month: 'short',
-        timeZone: 'UTC',
-    });
-    const word =
-        status === 'ok'
-            ? 'backed up'
-            : status === 'failed'
-              ? 'failed'
-              : 'no backup';
-
-    return `${day}: ${word}`;
-}
-
-const icons = {
-    database: Database,
-    volume: HardDrive,
-    control_plane: Shield,
-    base_backup: Database,
-} as const;
-
-/**
- * One protected thing (docs/design/flows.md §14): what it is, its schedule
- * as a sentence, the last 30 days as a run strip, and when it last
- * succeeded. Clicking Edit opens the schedule sheet.
- */
-export function ScheduleRow({
-    schedule,
-    protection,
-    label,
-    description,
-    actions,
-    sheetExtra,
-}: {
-    schedule: Schedule;
-    protection?: Protection;
-    label?: ReactNode;
-    description?: ReactNode;
-    actions?: ReactNode;
-    sheetExtra?: ReactNode;
-}) {
-    const [editing, setEditing] = useState(false);
-    const Icon = icons[schedule.subject];
-    const when = schedule.cronDescription ?? 'Custom schedule';
-    const last = protection?.lastSucceededAt ?? null;
-    const healthy =
-        schedule.health.status === 'ok' || schedule.health.status === 'running';
-    const stand = standing(schedule);
-    const next = schedule.nextRunAt ?? schedule.health.nextRunAt;
-
-    return (
-        <SettingsRow
-            media={
-                <span className="flex size-9 items-center justify-center rounded-md border bg-card text-muted-foreground">
-                    <Icon aria-hidden="true" className="size-4" />
-                </span>
-            }
-            label={
-                label ?? (
-                    <span>
-                        {schedule.label}
-                        {schedule.projectName !== null && (
-                            <span className="font-normal text-muted-foreground">
-                                {' '}
-                                in{' '}
-                                {schedule.href ? (
-                                    <Link
-                                        href={schedule.href}
-                                        className="underline-offset-4 hover:text-foreground hover:underline"
-                                    >
-                                        {schedule.projectName} (
-                                        {schedule.environmentName})
-                                    </Link>
-                                ) : (
-                                    <>
-                                        {schedule.projectName} (
-                                        {schedule.environmentName})
-                                    </>
-                                )}
-                            </span>
-                        )}
-                    </span>
-                )
-            }
-            description={
-                description ??
-                (schedule.enabled ? (
-                    <MetaLine>
-                        {when}
-                        {`Keeps ${schedule.retentionSummary}`}
-                        {(stand === 'healthy' || stand === 'overdue') &&
-                            next !== null &&
-                            `Next ${relativeTime(next)}`}
-                    </MetaLine>
-                ) : (
-                    'Paused'
-                ))
-            }
-        >
-            {protection &&
-                protection.days.some((day) => day.status !== 'none') && (
-                    <RunStrip
-                        runs={protection.days.map((day) => ({
-                            key: day.date,
-                            status: day.status as 'ok' | 'failed' | 'none',
-                            label: dayLabel(day.date, day.status),
-                        }))}
-                        label={`${schedule.label}, last 30 days`}
-                        height={18}
-                        className="hidden w-36 md:block"
-                    />
-                )}
-            <span className="type-small text-muted-foreground tabular-nums sm:min-w-32 sm:text-right">
-                {healthy && last !== null ? (
-                    <MetaLine className="sm:justify-end">
-                        {relativeTime(last)}
-                        {protection?.lastSizeBytes != null &&
-                            formatBytes(protection.lastSizeBytes)}
-                    </MetaLine>
-                ) : stand === 'waiting' && next !== null ? (
-                    <Status
-                        state="idle"
-                        label={`First backup ${firstRunLabel(next)}`}
-                    />
-                ) : stand === 'missed' ? (
-                    <Status state="warning" label="No backup yet" />
-                ) : (
-                    <BackupHealthStatus health={schedule.health} />
-                )}
-            </span>
-            {actions}
-            <Button variant="ghost" size="sm" onClick={() => setEditing(true)}>
-                {schedule.canManage ? 'Edit' : 'View'}
-            </Button>
-            <ScheduleSheet
-                schedule={schedule}
-                open={editing}
-                onOpenChange={setEditing}
-            >
-                {sheetExtra}
-            </ScheduleSheet>
-        </SettingsRow>
-    );
-}
-
-/**
- * What's protected (Settings → Backups): one row per backed-up thing.
- */
-export function SchedulesSection({
-    schedules,
-    protection,
-    leading,
-}: {
-    schedules: Schedule[];
-    protection: Protection[];
-    /** launchroom itself, first (instance owners). */
-    leading?: ReactNode;
-}) {
-    if (schedules.length === 0 && !leading) {
-        return null;
-    }
-
-    return (
-        <SettingsCard
-            title="What’s protected"
-            description={
-                schedules.length > 0 ? protectionSummary(schedules) : undefined
-            }
-            footer={
-                schedules.length === 0
-                    ? 'Databases in production and persistent environments show up here once a destination exists.'
-                    : 'Production and persistent databases are backed up daily. Previews aren’t backed up.'
-            }
-        >
-            {leading}
-            {sortByStanding(schedules).map((schedule) => (
-                <ScheduleRow
-                    key={schedule.id}
-                    schedule={schedule}
-                    protection={protection.find(
-                        (item) => item.scheduleId === schedule.id,
-                    )}
-                />
-            ))}
-        </SettingsCard>
     );
 }

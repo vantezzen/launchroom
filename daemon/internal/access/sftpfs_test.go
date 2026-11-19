@@ -234,7 +234,7 @@ func TestStreamReaderServesOutOfOrderReads(t *testing.T) {
 
 func TestStreamWriterOrdersWrites(t *testing.T) {
 	box := newToolBox(t)
-	w := newStreamWriter(NewFS(context.Background(), box, nil), writeArgv("/out", false))
+	w := newStreamWriter(NewFS(context.Background(), box, nil), writeArgv("/out", false, true))
 	parts := [][]byte{[]byte("hello "), []byte("out of "), []byte("order")}
 	if _, err := w.WriteAt(parts[2], 13); err != nil {
 		t.Fatal(err)
@@ -255,7 +255,7 @@ func TestStreamWriterOrdersWrites(t *testing.T) {
 	if string(got) != "hello out of order" {
 		t.Fatalf("got %q", got)
 	}
-	gap := newStreamWriter(NewFS(context.Background(), box, nil), writeArgv("/gap", false))
+	gap := newStreamWriter(NewFS(context.Background(), box, nil), writeArgv("/gap", false, true))
 	_, _ = gap.WriteAt([]byte("late"), 100)
 	if err := gap.Close(); err == nil {
 		t.Fatal("an upload with a gap must fail")

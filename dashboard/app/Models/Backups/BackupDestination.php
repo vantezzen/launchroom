@@ -5,7 +5,9 @@ declare(strict_types=1);
 namespace App\Models\Backups;
 
 use App\Contracts\Crypto\SealedRow;
+use App\Enums\Backups\DestinationErrorKind;
 use App\Enums\Backups\DestinationStatus;
+use App\Events\Broadcasts\BackupsChanged;
 use App\Models\Concerns\HasPublicId;
 use App\Models\Concerns\HasSealedSecret;
 use App\Models\ServiceInstance;
@@ -17,6 +19,7 @@ use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
+use Illuminate\Database\Eloquent\SoftDeletes;
 use Illuminate\Support\Carbon;
 use InvalidArgumentException;
 
@@ -26,6 +29,14 @@ use InvalidArgumentException;
  *
  * Secrets (S3 credentials, the restic repository password) are envelope
  * encrypted and only ever decrypted by App\Services\Crypto\SealedColumns.
+ *
+ * Removing a destination keeps its row (`removed_at`, soft delete) with its
+ * access keys wiped but its repository password kept: the runs, restores,
+ * point-in-time archives and verifications that used it stay as read-only
+ * history, the backups stay in the bucket, and adding the same bucket and
+ * folder again reconnects them with that password (DeleteBackupDestination,
+ * CreateBackupDestination). Queries see only current
+ * destinations unless they ask for removed ones; history relations include them.
  *
  * @property int $id
  * @property string $public_id
@@ -45,6 +56,9 @@ use InvalidArgumentException;
  * @property DestinationStatus $status
  * @property Carbon|null $last_checked_at
  * @property string|null $last_error
+ * @property DestinationErrorKind|null $error_kind why the last test or backup failed
+ * @property int|null $copied_from_id launchroom's own destination: the team destination it was copied from
+ * @property Carbon|null $removed_at
  * @property int|null $created_by
  * @property Carbon|null $created_at
  * @property Carbon|null $updated_at
@@ -56,6 +70,11 @@ final class BackupDestination extends Model implements SealedRow
 {
     use HasPublicId;
     use HasSealedSecret;
+    use SoftDeletes;
+
+    public const string DELETED_AT = 'removed_at';
+
+    public const string LOCATION_TAKEN = 'Another backup storage already uses this bucket and folder. Choose another folder: two storages can’t share one backup repository.';
 
     /** @var array<string, mixed> */
     protected $attributes = [
@@ -71,6 +90,48 @@ final class BackupDestination extends Model implements SealedRow
         return 'bkd';
     }
 
+    /**
+     * KEK rotation includes removed destinations: they keep their repository
+     * password for reconnecting and disaster recovery.
+     *
+     * @return Builder<self>
+     */
+    public static function sealedRows(): Builder
+    {
+        return self::withTrashed()->whereNotNull('wrapped_dek')->where('wrapped_dek', '!=', '');
+    }
+
+    /**
+     * launchroom still has the repository password (always for current
+     * storage; removed storage keeps it until it is added again).
+     */
+    public function keepsRepositoryPassword(): bool
+    {
+        $dek = $this->getAttribute('wrapped_dek');
+        $password = $this->getAttribute('repository_password');
+
+        return is_string($dek) && $dek !== '' && is_string($password) && $password !== '';
+    }
+
+    /**
+     * Removed storage of the same scope at this bucket and folder whose
+     * repository password launchroom still has (newest removal first):
+     * adding the location again reuses that password.
+     */
+    public static function removedAt(?int $teamId, string $endpoint, string $bucket, string $prefix): ?self
+    {
+        $location = self::location($endpoint, $bucket, $prefix);
+
+        return self::onlyTrashed()
+            ->where('bucket', $bucket)
+            ->when($teamId === null, static fn (Builder $query) => $query->whereNull('team_id'), static fn (Builder $query) => $query->where('team_id', $teamId))
+            ->whereNotNull('repository_password')->where('repository_password', '!=', '')
+            ->where('wrapped_dek', '!=', '')
+            ->latest('removed_at')
+            ->get()
+            ->first(static fn (self $old): bool => self::location($old->endpoint, $old->bucket, $old->prefix) === $location);
+    }
+
     public function isInstanceDestination(): bool
     {
         return $this->team_id === null;
@@ -81,15 +142,21 @@ final class BackupDestination extends Model implements SealedRow
      */
     public function markChecked(DestinationStatus $status, ?string $error = null): void
     {
-        $this->forceFill(['last_error' => $error === null ? null : mb_substr($error, 0, 1024), 'last_checked_at' => now()]);
+        $this->forceFill([
+            'last_error' => $error === null ? null : mb_substr($error, 0, 1024),
+            'error_kind' => $status === DestinationStatus::Failing ? (DestinationErrorKind::classify($error) ?? DestinationErrorKind::Other) : null,
+            'last_checked_at' => now(),
+        ]);
         $this->status = $status;
         $this->save();
+        BackupsChanged::about($this->team_id);
     }
 
     public function markChecking(): void
     {
         $this->status = DestinationStatus::Checking;
         $this->save();
+        BackupsChanged::about($this->team_id);
     }
 
     /**
@@ -112,12 +179,13 @@ final class BackupDestination extends Model implements SealedRow
     /**
      * Where a backup of $instance goes: its schedule's destination (which
      * may be one shared by the whole instance), else the team's default.
+     * Removed destinations are never used.
      */
     public static function forService(ServiceInstance $instance, ?BackupSchedule $schedule = null): ?self
     {
         $schedule ??= BackupSchedule::ofInstance($instance);
 
-        return $schedule?->destination()->first() ?? self::defaultFor($instance->team_id);
+        return self::query()->whereKey($schedule->destination_id ?? 0)->first() ?? self::defaultFor($instance->team_id);
     }
 
     /**
@@ -127,6 +195,34 @@ final class BackupDestination extends Model implements SealedRow
     {
         return self::query()->where('team_id', $teamId)->where('is_default', true)->first()
             ?? self::query()->where('team_id', $teamId)->orderBy('id')->first();
+    }
+
+    /**
+     * The location as compared for "two destinations on one repository":
+     * endpoint without trailing slash, case-insensitive host, the bucket and
+     * the folder without surrounding slashes.
+     *
+     * @return array{string, string, string}
+     */
+    public static function location(string $endpoint, string $bucket, string $prefix): array
+    {
+        return [mb_strtolower(rtrim($endpoint, '/')), $bucket, trim($prefix, '/')];
+    }
+
+    /**
+     * A current destination (any scope, any team) that already uses this
+     * bucket and folder: two repository passwords can't share one restic
+     * repository.
+     */
+    public static function usingLocation(string $endpoint, string $bucket, string $prefix, ?int $except = null): ?self
+    {
+        [$endpoint, $bucket, $prefix] = self::location($endpoint, $bucket, $prefix);
+
+        return self::query()
+            ->where('bucket', $bucket)
+            ->when($except !== null, static fn (Builder $query) => $query->whereKeyNot($except))
+            ->get()
+            ->first(static fn (self $destination): bool => self::location($destination->endpoint, $destination->bucket, $destination->prefix) === [$endpoint, $bucket, $prefix]);
     }
 
     /**
@@ -148,6 +244,16 @@ final class BackupDestination extends Model implements SealedRow
     }
 
     /**
+     * launchroom's own destination: the team destination it was copied from.
+     *
+     * @return BelongsTo<self, $this>
+     */
+    public function copiedFrom(): BelongsTo
+    {
+        return $this->belongsTo(self::class, 'copied_from_id');
+    }
+
+    /**
      * @return HasMany<BackupSchedule, $this>
      */
     public function schedules(): HasMany
@@ -164,7 +270,9 @@ final class BackupDestination extends Model implements SealedRow
             'allow_private_network' => 'boolean',
             'is_default' => 'boolean',
             'status' => DestinationStatus::class,
+            'error_kind' => DestinationErrorKind::class,
             'last_checked_at' => 'datetime',
+            'removed_at' => 'datetime',
         ];
     }
 

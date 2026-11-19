@@ -31,7 +31,7 @@ services:
             [
                 'sh',
                 '-c',
-                "until nc -z \"$$LISTMONK_db__host\" \"$$LISTMONK_db__port\"; do sleep 2; done; ./listmonk --install --idempotent --yes --config '' && ./listmonk --upgrade --yes --config '' && ./listmonk --config ''",
+                'until nc -z "$$LISTMONK_db__host" "$$LISTMONK_db__port"; do sleep 2; done; ./listmonk --install --idempotent --yes --config= && ./listmonk --upgrade --yes --config= && ./listmonk --config=',
             ]
         ports: ['9000']
         environment:

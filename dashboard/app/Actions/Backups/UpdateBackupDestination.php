@@ -50,6 +50,10 @@ final readonly class UpdateBackupDestination
         $destination = DB::transaction(function () use ($destination, $input, $actor, $endpoint, $region, $prefix): BackupDestination {
             $destination = BackupDestination::query()->whereKey($destination->id)->lockForUpdate()->firstOrFail();
             $moved = $destination->endpoint !== $endpoint || $destination->bucket !== $input->bucket || $destination->prefix !== $prefix;
+
+            if ($moved && BackupDestination::usingLocation($endpoint, $input->bucket, $prefix, except: $destination->id) instanceof BackupDestination) {
+                throw DomainRuleViolation::on('prefix', BackupDestination::LOCATION_TAKEN);
+            }
             $privateNewlyAllowed = $input->allowPrivateNetwork && ! $destination->allow_private_network;
 
             $newKeys = $input->accessKeyId !== null && $input->accessKeyId !== '' && $input->secretAccessKey !== null && $input->secretAccessKey !== '';
@@ -86,7 +90,7 @@ final readonly class UpdateBackupDestination
             $destination->save();
 
             if ($destination->team_id === null && ($moved || $input->repositoryPassword !== null)) {
-                InstanceSettings::lockedForUpdate()->forceFill(['recovery_kit_confirmed_at' => null, 'recovery_kit_downloaded_at' => null])->save();
+                InstanceSettings::lockedForUpdate()->forgetRecoveryKit('storage_changed')->save();
             }
 
             $this->audit->handle(new AuditEntryData(

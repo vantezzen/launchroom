@@ -38,8 +38,10 @@ use App\Support\Variables\GeneratedValues;
  * - Each one becomes an ordinary secret variable of the service, targeted at
  *   the deployment's environment, with its generator as the value
  *   (`${{ secret(32) }}`), so copies to other environments get a fresh one.
- *   A worker or cron whose app has the key gets a reference to the app's
- *   (`${{api.APP_KEY}}`): both run the same code and must share it.
+ *   A worker or cron inherits the app's key (docs/06 §3.2): both run the
+ *   same code and must share it. Only when the app sees the key in a way a
+ *   process doesn't inherit (a shared opt-in) does the process get a
+ *   reference to the app's (`${{api.APP_KEY}}`).
  * - A variable the service already sees wins (its own, shared, connection
  *   or branch rows, in the deployment's env or in the current intent); a
  *   secret withheld from a fork preview counts as missing.

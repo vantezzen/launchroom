@@ -27,7 +27,7 @@ import type { GuidedStepStatus } from '@/components/steps/step-card';
 import { TwoFactorRecommendation } from '@/features/onboarding/two-factor-recommendation';
 import { SmallServerHint } from '@/features/servers/small-server-hint';
 import { cn } from '@/lib/utils';
-import { settings as backupSettings } from '@/routes/backups';
+import { index as backupSettings } from '@/routes/backups';
 import { edit as gitSettings } from '@/routes/git';
 import { store as startManifest } from '@/routes/git/github/manifest';
 import onboardingRoutes from '@/routes/onboarding';
@@ -500,11 +500,14 @@ function projectView(data: Onboarding, step: Step): StepView {
 
 function backupsView(data: Onboarding, step: Step): StepView {
     const kit = data.recoveryKit;
+    // One setup connects the storage for your data and for launchroom itself.
     const items: [boolean, string][] = [
-        [kit.destinationConfigured, 'Storage for launchroom itself'],
+        [
+            data.teamBackupsConfigured && kit.destinationConfigured,
+            'Backup storage',
+        ],
         [kit.passphraseSet, 'Recovery passphrase'],
         [kit.kitConfirmedAt !== null, 'Recovery kit saved'],
-        [data.teamBackupsConfigured, 'Storage for your databases'],
     ];
     const optional = (
         <span className="rounded-full border px-2 py-0.5 type-small text-muted-foreground">
@@ -557,7 +560,9 @@ function backupsView(data: Onboarding, step: Step): StepView {
                 {step.status !== 'done' && (
                     <div>
                         <Button asChild variant="outline">
-                            <Link href={backupSettings()}>Set up backups</Link>
+                            <Link href={`${backupSettings().url}#setup`}>
+                                Connect storage
+                            </Link>
                         </Button>
                     </div>
                 )}

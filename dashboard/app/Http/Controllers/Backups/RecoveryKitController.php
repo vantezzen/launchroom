@@ -41,6 +41,8 @@ final class RecoveryKitController extends Controller
         $document = $download->handle($this->auditActor($request, $user));
 
         return response($document, 200, [
+            // The page marks the kit downloaded without a reload (the "Keep it safe" step).
+            'X-Kit-Downloaded-At' => now()->toIso8601ZuluString(),
             'Content-Type' => 'text/plain; charset=utf-8',
             'Content-Disposition' => 'attachment; filename="launchroom-recovery-kit.txt"',
             'Cache-Control' => 'no-store, private',
@@ -54,7 +56,7 @@ final class RecoveryKitController extends Controller
 
         $confirm->handle($this->auditActor($request, $user));
 
-        Toast::success('Recovery kit confirmed.');
+        Toast::success('Recovery kit saved.');
 
         return back();
     }

@@ -66,7 +66,7 @@ test('admins add a destination; secrets are envelope-encrypted, hidden and never
     expect($credentials->secretAccessKey)->toBe('super-secret-access-key-value')
         ->and(print_r($credentials, true))->not->toContain('super-secret');
 
-    $page = $this->actingAs($admin)->get(route('backups.settings'))->assertOk();
+    $page = $this->actingAs($admin)->get(route('backups.index'))->assertOk();
     expect($page->getContent())->not->toContain('super-secret-access-key-value')
         ->not->toContain('AKIATESTKEY000001')
         ->not->toContain($credentials->repositoryPassword);
@@ -217,7 +217,7 @@ test('developers and viewers cannot manage destinations; other teams cannot see 
             ->post(route('backups.destinations.store'), destinationForm())->assertForbidden();
         $this->actingAs($member)
             ->delete(route('backups.destinations.destroy', $destination))->assertForbidden();
-        $this->actingAs($member)->get(route('backups.settings'))->assertOk();
+        $this->actingAs($member)->get(route('backups.index'))->assertOk();
     }
 
     $stranger = memberOf(Team::factory()->create(), TeamRole::Owner);
@@ -298,20 +298,20 @@ test('the recovery kit flow: passphrase, audited download, confirmation', functi
     expect(InstanceSettings::current()->recovery_kit_confirmed_at)->toBeNull();
 });
 
-test('the settings page lists destinations and schedules', function (): void {
+test('the Backups page lists storage and the database it protects', function (): void {
     [$team, , , $instance] = Backups::runningPostgres();
     $owner = memberOf($team, TeamRole::Owner);
     Backups::destination($team, $owner);
 
-    $this->actingAs($owner)->get(route('backups.settings'))
+    $this->actingAs($owner)->get(route('backups.index'))
         ->assertOk()
         ->assertInertia(fn ($page) => $page
-            ->component('settings/backups')
-            ->has('destinations', 1)
-            ->has('schedules', 1)
-            ->where('schedules.0.serviceId', $instance->service->public_id)
-            ->where('instance', null)
-            ->where('canManage', true));
+            ->component('backups/index')
+            ->has('page.storage.destinations', 1)
+            ->has('page.groups', 2)
+            ->where('page.groups.1.items.0.serviceInstanceId', $instance->public_id)
+            ->where('page.launchroom.isOwner', false)
+            ->where('page.storage.canManage', true));
 });
 
 test('a schedule can be edited with cron and retention, validated', function (): void {
@@ -342,7 +342,7 @@ test('a user without a team membership is never shown another team destination',
     $this->actingAs($user)->post(route('backups.destinations.test', $destination))->assertNotFound();
 });
 
-test('the settings page shows a 30-day strip per schedule and what each destination holds', function (): void {
+test('the Backups page shows a 30-day strip per item and what each storage holds', function (): void {
     [$team, , , $instance] = Backups::runningPostgres();
     $owner = memberOf($team, TeamRole::Owner);
     $destination = Backups::destination($team, $owner);
@@ -362,19 +362,17 @@ test('the settings page shows a 30-day strip per schedule and what each destinat
     $run(BackupRunStatus::Failed, 0, today()->subHours(12)->toDateTimeString());
     $run(BackupRunStatus::Succeeded, 2000, today()->toDateTimeString());
 
-    $this->actingAs($owner)->get(route('backups.settings'))
+    $this->actingAs($owner)->get(route('backups.index'))
         ->assertOk()
         ->assertInertia(fn ($page) => $page
-            ->component('settings/backups')
-            ->has('protection', 1)
-            ->where('protection.0.scheduleId', $schedule->public_id)
-            ->has('protection.0.days', 30)
-            ->where('protection.0.days.29.status', 'ok')
-            ->where('protection.0.days.28.status', 'failed')
-            ->where('protection.0.lastSizeBytes', 2000)
-            ->where('schedules.0.cronDescription', fn (?string $sentence): bool => $sentence !== null && str_starts_with($sentence, 'Daily at'))
-            ->has('usage', 1)
-            ->where('usage.0.destinationId', $destination->public_id)
-            ->where('usage.0.databaseBytes', 2000)
-            ->where('usage.0.volumeBytes', 0));
+            ->component('backups/index')
+            ->where('page.groups.1.items.0.schedule.id', $schedule->public_id)
+            ->has('page.groups.1.items.0.days', 30)
+            ->where('page.groups.1.items.0.days.29.status', 'ok')
+            ->where('page.groups.1.items.0.days.28.status', 'failed')
+            ->where('page.groups.1.items.0.lastSizeBytes', 2000)
+            ->where('page.groups.1.items.0.schedule.cronDescription', fn (?string $sentence): bool => $sentence !== null && str_starts_with($sentence, 'Daily at'))
+            ->where('page.storage.destinations.0.id', $destination->public_id)
+            ->where('page.storage.destinations.0.usage.databaseBytes', 2000)
+            ->where('page.storage.destinations.0.usage.volumeBytes', 0));
 });

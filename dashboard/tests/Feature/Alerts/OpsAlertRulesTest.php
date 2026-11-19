@@ -25,6 +25,7 @@ use App\Models\Alerts\AlertRuleSetting;
 use App\Models\Backups\BackupRun;
 use App\Models\Backups\BackupSchedule;
 use App\Models\Domain;
+use App\Models\InstanceSettings;
 use App\Models\Placement;
 use App\Models\Service;
 use App\Models\ServiceInstance;
@@ -204,6 +205,8 @@ test('queue_backlog fires when the oldest waiting job is older than 5 minutes', 
 
 test('a failed launchroom backup alerts without touching service backup alerts', function (): void {
     Backups::fakeEnvironment();
+    // Before the passphrase exists launchroom's backup doesn't run, so it can't fail.
+    InstanceSettings::current()->forceFill(['recovery_public_key' => base64_encode(random_bytes(32)), 'recovery_passphrase_set_at' => now()->subDays(2)])->save();
     $destination = Backups::destination(null, $this->owner);
     $schedule = BackupSchedule::query()->where('subject', BackupSubject::ControlPlane->value)->first()
         ?? BackupSchedule::query()->create(['subject' => BackupSubject::ControlPlane, 'destination_id' => $destination->id, 'cron' => '0 3 * * *', 'retention' => RetentionData::controlPlane(), 'enabled' => true]);

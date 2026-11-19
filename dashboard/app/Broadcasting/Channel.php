@@ -22,6 +22,8 @@ enum Channel: string
     case TeamServers = 'servers';
     /** Security findings nudges of one team. */
     case TeamSecurity = 'security';
+    /** Backup runs and destinations of one team (and launchroom's own backups, for instance owners). */
+    case TeamBackups = 'backups';
     /** One member's own nudges (the deployments they started), keyed by the membership's public id. */
     case Member = 'members';
     case Daemon = 'daemon';
@@ -63,7 +65,7 @@ enum Channel: string
         return match ($this) {
             self::Environment => 'environment',
             self::Deployment => 'deployment',
-            self::TeamServers, self::TeamSecurity => 'team',
+            self::TeamServers, self::TeamSecurity, self::TeamBackups => 'team',
             self::Member => 'member',
             self::Daemon, self::Session => 'id',
         };

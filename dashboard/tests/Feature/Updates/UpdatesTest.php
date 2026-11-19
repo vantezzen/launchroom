@@ -3,8 +3,14 @@
 declare(strict_types=1);
 
 use App\Actions\Updates\RunAutomaticUpdate;
+use App\Actions\Updates\StartControlPlaneUpdate;
 use App\Contracts\DnsResolver;
+use App\Data\Audit\AuditActor;
+use App\Data\Updates\StartControlPlaneUpdateInput;
 use App\Enums\AuditAction;
+use App\Enums\Backups\BackupReason;
+use App\Enums\Backups\BackupRunStatus;
+use App\Enums\Backups\BackupSubject;
 use App\Enums\DaemonTaskStatus;
 use App\Enums\DaemonTaskType;
 use App\Enums\ServerRole;
@@ -13,6 +19,7 @@ use App\Enums\Updates\ControlPlaneUpdateStatus;
 use App\Enums\Updates\FleetUpdateStatus;
 use App\Enums\Updates\FleetUpdateStepStatus;
 use App\Models\AuditEvent;
+use App\Models\Backups\BackupDestination;
 use App\Models\Backups\BackupRun;
 use App\Models\DaemonTask;
 use App\Models\InstanceSettings;
@@ -23,6 +30,7 @@ use App\Models\Updates\FleetUpdate;
 use App\Models\User;
 use App\Services\Updates\AutoUpdateWindow;
 use App\Services\Updates\ReleaseChecker;
+use Carbon\CarbonInterface;
 use Illuminate\Http\Client\Request;
 use Illuminate\Routing\Middleware\ThrottleRequests;
 use Illuminate\Support\Facades\Http;
@@ -668,3 +676,174 @@ test('a release with a manifest needs every image it lists; one without needs th
     'unreadable manifest' => ['{"requiredImages":"LR_DAEMON_IMAGE"}', null, 'The release’s manifest (manifest.json) couldn’t be read.'],
     'old release without manifest' => [null, null, null],
 ]);
+
+/**
+ * A backup run in the given state, as the backup actions leave it.
+ */
+function backupRunOn(BackupDestination $destination, BackupRunStatus $status, ?CarbonInterface $finishedAt = null, BackupSubject $subject = BackupSubject::ControlPlane): BackupRun
+{
+    $run = BackupRun::query()->create(['team_id' => $destination->team_id, 'destination_id' => $destination->id, 'subject' => $subject, 'reason' => BackupReason::Manual]);
+    $run->forceFill([
+        'status' => $status,
+        'started_at' => ($finishedAt ?? now())->copy()->subMinutes(2),
+        'finished_at' => $status->isTerminal() ? $finishedAt ?? now() : null,
+        'snapshot_id' => $status === BackupRunStatus::Succeeded ? str_repeat('c', 64) : null,
+        'size_bytes' => $status === BackupRunStatus::Succeeded ? 1_288_490_189 : null,
+        'created_at' => ($finishedAt ?? now())->copy()->subMinutes(2),
+    ])->save();
+
+    return $run;
+}
+
+function updateStartedMeta(): array
+{
+    return AuditEvent::query()->where('action', AuditAction::ControlPlaneUpdateStarted->value)->latest('id')->firstOrFail()->meta;
+}
+
+test('an update can use the latest control-plane backup, at any age, instead of taking a new one', function (): void {
+    Backups::fakeEnvironment();
+    fakeGitHub([release('v0.2.0')]);
+    $destination = Backups::destination(null, $this->owner, 'Control plane');
+    $latest = backupRunOn($destination, BackupRunStatus::Succeeded, now()->subDays(3));
+    // A newer failed attempt doesn't hide it.
+    backupRunOn($destination, BackupRunStatus::Failed, now()->subDay());
+
+    $this->actingAs($this->owner)->get(route('updates.edit'))
+        ->assertInertia(fn (AssertableInertia $page): AssertableInertia => $page
+            ->where('latestBackup.id', $latest->public_id)
+            ->where('latestBackup.sizeBytes', 1_288_490_189)
+            ->where('runningBackup', null));
+
+    $this->actingAs($this->owner)
+        ->post(route('updates.control-plane'), ['version' => '0.2.0', 'backupRunId' => $latest->public_id])
+        ->assertSessionHasNoErrors();
+
+    $update = ControlPlaneUpdate::query()->sole();
+
+    expect($update->status)->toBe(ControlPlaneUpdateStatus::Updating)
+        ->and($update->skip_backup)->toBeFalse()
+        ->and($update->backup_run_id)->toBe($latest->id)
+        ->and($update->daemon_task_id)->not->toBeNull()
+        ->and(BackupRun::query()->where('reason', BackupReason::PreUpgrade->value)->exists())->toBeFalse()
+        ->and(updateStartedMeta())->toMatchArray(['backup' => 'existing', 'backupRun' => $latest->public_id, 'backupFinishedAt' => $latest->finished_at?->toIso8601String()]);
+
+    $this->actingAs($this->owner)->get(route('updates.edit'))
+        ->assertInertia(fn (AssertableInertia $page): AssertableInertia => $page->where('controlPlaneUpdate.existingBackup', true));
+});
+
+test('an update with a destination can go ahead without a new backup', function (): void {
+    Backups::fakeEnvironment();
+    fakeGitHub([release('v0.2.0')]);
+    Backups::destination(null, $this->owner, 'Control plane');
+
+    $this->actingAs($this->owner)
+        ->post(route('updates.control-plane'), ['version' => '0.2.0', 'skipBackup' => true])
+        ->assertSessionHasNoErrors();
+
+    $update = ControlPlaneUpdate::query()->sole();
+
+    expect($update->status)->toBe(ControlPlaneUpdateStatus::Updating)
+        ->and($update->skip_backup)->toBeTrue()
+        ->and($update->backup_run_id)->toBeNull()
+        ->and(BackupRun::query()->count())->toBe(0)
+        ->and(updateStartedMeta())->toMatchArray(['backup' => 'none']);
+});
+
+test('only a succeeded or running control-plane backup on the current destination can stand in', function (string $case): void {
+    Backups::fakeEnvironment();
+    fakeGitHub([release('v0.2.0')]);
+    $destination = Backups::destination(null, $this->owner, 'Control plane');
+    $teamDestination = Backups::destination($this->team, $this->owner);
+
+    $run = match ($case) {
+        'failed' => backupRunOn($destination, BackupRunStatus::Failed, now()->subMinutes(5)),
+        'other kind' => backupRunOn($teamDestination, BackupRunStatus::Succeeded, now()->subMinutes(5), BackupSubject::Database),
+        'other destination' => backupRunOn($teamDestination, BackupRunStatus::Succeeded, now()->subMinutes(5)),
+        'stopped running' => backupRunOn($destination, BackupRunStatus::Running, now()->subDay()),
+    };
+
+    $this->actingAs($this->owner)
+        ->post(route('updates.control-plane'), ['version' => '0.2.0', 'backupRunId' => $run->public_id])
+        ->assertSessionHasErrors('backupRunId');
+
+    $this->actingAs($this->owner)
+        ->post(route('updates.control-plane'), ['version' => '0.2.0', 'backupRunId' => 'bkr_01JB7Z6X9Q3T8M5N2P4R6S8V0W'])
+        ->assertSessionHasErrors('backupRunId');
+
+    expect(ControlPlaneUpdate::query()->count())->toBe(0);
+})->with(['failed', 'other kind', 'other destination', 'stopped running']);
+
+test('an update waits for a running control-plane backup and then uses it', function (BackupRunStatus $outcome, ControlPlaneUpdateStatus $expected): void {
+    Backups::fakeEnvironment();
+    fakeGitHub([release('v0.2.0')]);
+    $destination = Backups::destination(null, $this->owner, 'Control plane');
+    $running = backupRunOn($destination, BackupRunStatus::Running);
+
+    $this->actingAs($this->owner)->get(route('updates.edit'))
+        ->assertInertia(fn (AssertableInertia $page): AssertableInertia => $page->where('runningBackup.id', $running->public_id)->where('latestBackup', null));
+
+    $this->actingAs($this->owner)
+        ->post(route('updates.control-plane'), ['version' => '0.2.0', 'backupRunId' => $running->public_id])
+        ->assertSessionHasNoErrors();
+
+    $update = ControlPlaneUpdate::query()->sole();
+    expect($update->status)->toBe(ControlPlaneUpdateStatus::BackingUp)
+        ->and($update->backup_run_id)->toBe($running->id)
+        ->and($update->daemon_task_id)->toBeNull()
+        ->and(updateStartedMeta())->toMatchArray(['backup' => 'existing', 'backupRun' => $running->public_id, 'backupFinishedAt' => null]);
+
+    // Still running: the scheduler leaves it alone.
+    $this->artisan('launchroom:updates:advance')->assertSuccessful();
+    expect($update->refresh()->status)->toBe(ControlPlaneUpdateStatus::BackingUp);
+
+    $running->transitionTo($outcome, $outcome === BackupRunStatus::Failed ? 'bucket not found' : null);
+    $this->artisan('launchroom:updates:advance')->assertSuccessful();
+    $update->refresh();
+
+    expect($update->status)->toBe($expected)
+        ->and($update->daemon_task_id !== null)->toBe($expected === ControlPlaneUpdateStatus::Updating)
+        ->and(BackupRun::query()->count())->toBe(1);
+
+    if ($expected === ControlPlaneUpdateStatus::Failed) {
+        expect($update->error)->toContain('bucket not found');
+    }
+})->with([
+    'succeeded' => [BackupRunStatus::Succeeded, ControlPlaneUpdateStatus::Updating],
+    'failed' => [BackupRunStatus::Failed, ControlPlaneUpdateStatus::Failed],
+]);
+
+test('a new backup asked for while one is running waits for that one instead of failing', function (): void {
+    Backups::fakeEnvironment();
+    fakeGitHub([release('v0.2.0')]);
+    $destination = Backups::destination(null, $this->owner, 'Control plane');
+    InstanceSettings::current()->forceFill(['recovery_public_key' => 'x25519:'.base64_encode(random_bytes(32)), 'recovery_kdf' => ['salt' => 'x']])->save();
+    $running = backupRunOn($destination, BackupRunStatus::Running);
+
+    $this->actingAs($this->owner)
+        ->post(route('updates.control-plane'), ['version' => '0.2.0'])
+        ->assertSessionHasNoErrors();
+
+    $update = ControlPlaneUpdate::query()->sole();
+    expect($update->status)->toBe(ControlPlaneUpdateStatus::BackingUp)
+        ->and($update->backup_run_id)->toBe($running->id)
+        ->and(updateStartedMeta())->toMatchArray(['backup' => 'new']);
+
+    $running->transitionTo(BackupRunStatus::Succeeded);
+    $this->artisan('launchroom:updates:advance')->assertSuccessful();
+
+    expect($update->refresh()->status)->toBe(ControlPlaneUpdateStatus::Updating)
+        ->and($update->daemon_task_id)->not->toBeNull();
+});
+
+test('automatic updates always take a new backup', function (): void {
+    Queue::fake();
+    fakeGitHub([release('v0.2.0')]);
+    $destination = Backups::destination(null, $this->owner, 'Control plane');
+    $latest = backupRunOn($destination, BackupRunStatus::Succeeded, now()->subMinutes(5));
+
+    $update = resolve(StartControlPlaneUpdate::class)->handle($this->owner, new StartControlPlaneUpdateInput('0.2.0', skipBackup: true, backupRunId: $latest->public_id), AuditActor::system(), automatic: true);
+
+    expect($update->skip_backup)->toBeFalse()
+        ->and($update->backup_run_id)->toBeNull()
+        ->and(updateStartedMeta())->toMatchArray(['backup' => 'new']);
+});

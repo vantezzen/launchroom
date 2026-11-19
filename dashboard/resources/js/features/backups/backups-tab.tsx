@@ -45,6 +45,10 @@ import { BackupHealthStatus } from '@/features/backups/backup-health';
 import { BackupTrend } from '@/features/backups/backup-trend';
 import { PointInTimeCard, pointLabel } from '@/features/backups/point-in-time';
 import { reasonLabel, zonedTime } from '@/features/backups/format';
+import { groupByDay } from '@/features/backups/timeline';
+import { ActionReason } from '@/features/backups/action-reason';
+import { runButtonLabel } from '@/features/backups/overview-model';
+import { RunProgress } from '@/features/backups/run-progress';
 import {
     backupsKey,
     useServiceBackups,
@@ -55,7 +59,7 @@ import { PendingDeletion } from '@/features/backups/pending-deletion';
 import { MoveDataSection } from '@/features/data-transfer/move-data-section';
 import type { SnapshotDownload } from '@/features/data-transfer/move-data-section';
 import servicePanel from '@/routes/projects/services';
-import { settings as backupSettings } from '@/routes/backups';
+import { index as backupSettings } from '@/routes/backups';
 import { formatBytes } from '@/lib/format';
 import { useQueryClient } from '@tanstack/react-query';
 import { ServiceActivityEvents } from '@/components/channel-events';
@@ -90,7 +94,7 @@ const subjectLabels: Record<App.Enums.Backups.BackupSubject, string> = {
 };
 
 const restoreLabels: Record<App.Enums.Backups.RestoreRunStatus, string> = {
-    waiting_for_safety_backup: 'Taking a safety snapshot',
+    waiting_for_safety_backup: 'Backing up the current data first',
     waiting_for_target: 'Waiting for the service to run',
     restoring: 'Restoring',
     succeeded: 'Restored',
@@ -244,7 +248,7 @@ export function ServiceBackups({
                 onBackup={() =>
                     void act(
                         'backup',
-                        data.urls.backup,
+                        data.backUp?.url ?? data.urls.backup,
                         undefined,
                         'Backup started.',
                     )
@@ -612,7 +616,7 @@ export function ServiceBackups({
                               },
                         restoring.mode === 'new_service'
                             ? 'Restore started: a new service is being created.'
-                            : 'Restore started: taking a safety snapshot first.',
+                            : 'Restore started: backing up the current data first.',
                     );
 
                     if (ok) {
@@ -699,7 +703,13 @@ function RestoreDialog({
     ];
     const steps: { text: string; warn?: boolean }[] = inPlace
         ? [
-              { text: `A safety snapshot of ${name} is taken first.` },
+              ...(data.inPlaceTakesSafetyCopy
+                  ? [
+                        {
+                            text: `A backup of ${name} as it is now is taken first, so you can go back.`,
+                        },
+                    ]
+                  : []),
               {
                   text: volume
                       ? `${name} stops while the files in its volume are replaced.`
@@ -1113,11 +1123,15 @@ function ProtectionCard({
             <div className="flex flex-col gap-3 rounded-xl border border-dashed p-5">
                 <BackupHealthStatus health={data.status} />
                 <p className="type-body text-muted-foreground">
-                    Add a backup destination to back up this database daily.
+                    {data.subject === 'volume'
+                        ? 'Connect storage to back up these files daily.'
+                        : 'Connect storage to back up this database daily.'}
                 </p>
                 <div>
                     <Button asChild size="sm" variant="outline">
-                        <Link href={backupSettings()}>Set up backups</Link>
+                        <Link href={`${backupSettings().url}#setup`}>
+                            Connect storage
+                        </Link>
                     </Button>
                 </div>
             </div>
@@ -1172,18 +1186,54 @@ function ProtectionCard({
                               )}
                     </p>
                 </div>
-                {data.canBackup && (
+                {data.inFlight.length > 0 ? (
+                    // The button is the progress while a run is queued or
+                    // in flight, so it can't be started twice.
                     <Button
                         size="sm"
                         variant="outline"
-                        disabled={busy}
-                        onClick={onBackup}
+                        disabled
+                        className="disabled:opacity-100"
                     >
-                        {backingUp && <Spinner />}
-                        Back up now
+                        <Spinner />
+                        {runButtonLabel(data.inFlight[0])}
                     </Button>
+                ) : (
+                    data.backUp !== null &&
+                    data.backUp.url !== null && (
+                        <Button
+                            size="sm"
+                            variant="outline"
+                            disabled={busy}
+                            onClick={onBackup}
+                        >
+                            {backingUp && <Spinner />}
+                            Back up now
+                        </Button>
+                    )
                 )}
             </div>
+            {(data.inFlight.length > 0 ||
+                (data.backUp?.disabled != null &&
+                    data.backUp.disabled.code !== 'running')) && (
+                <div className="flex flex-col gap-2 border-t px-5 py-3">
+                    {data.inFlight.map((run) => (
+                        <RunProgress
+                            key={run.runId}
+                            kind={
+                                data.subject === 'volume'
+                                    ? 'volume'
+                                    : 'database'
+                            }
+                            run={run}
+                        />
+                    ))}
+                    {data.inFlight.length === 0 &&
+                        data.backUp?.disabled != null && (
+                            <ActionReason reason={data.backUp.disabled} />
+                        )}
+                </div>
+            )}
             {data.status.lastError !== null && (
                 <p className="border-t px-5 py-3 type-mono-small break-words text-status-error">
                     {data.status.lastError}
@@ -1316,10 +1366,19 @@ function VerificationItem({ verification }: { verification: Verification }) {
     );
 }
 
+/** "05:08": a restore point's time inside its day group. */
+function clockTime(iso: string): string {
+    return new Date(iso).toLocaleTimeString([], {
+        hour: '2-digit',
+        minute: '2-digit',
+    });
+}
+
 /**
- * Snapshots as a vertical timeline: a dot on a hairline rail, when, why,
- * how big, and the snapshot's own Restore… (and download) at the end of
- * its row, so restoring starts from the thing restored from (DAT-1).
+ * Snapshots as a vertical timeline grouped by day (Today, Yesterday,
+ * Monday 3 November): a dot on a hairline rail, when, why, how big, and
+ * the snapshot's own Restore… (and download) at the end of its row, so
+ * restoring starts from the thing restored from (DAT-1).
  */
 function SnapshotTimeline({
     snapshots,
@@ -1334,65 +1393,80 @@ function SnapshotTimeline({
     more: number;
     onShowAll: () => void;
 }) {
+    const days = groupByDay(snapshots, (snapshot) => snapshot.time);
+
     return (
-        <div className="flex flex-col gap-2">
-            <ul aria-label="Snapshots" className="relative flex flex-col">
-                <span
-                    aria-hidden="true"
-                    className="absolute top-4 bottom-4 left-[19px] w-px bg-border"
-                />
-                {snapshots.map((snapshot) => (
-                    <li
-                        key={snapshot.id}
-                        className="flex items-center gap-4 rounded-lg px-3.5 py-2 transition-colors duration-fast hover:bg-hover/60"
-                    >
+        <div className="flex flex-col gap-4">
+            {days.map((day) => (
+                <section
+                    key={day.key}
+                    aria-label={day.label}
+                    className="flex flex-col gap-1"
+                >
+                    <h4 className="px-3.5 type-label text-muted-foreground">
+                        {day.label}
+                    </h4>
+                    <ul className="relative flex flex-col">
                         <span
                             aria-hidden="true"
-                            className="relative z-10 size-2.5 shrink-0 rounded-full border-2 border-border-strong bg-card"
+                            className="absolute top-4 bottom-4 left-[19px] w-px bg-border"
                         />
-                        <span className="flex min-w-0 flex-1 flex-col">
-                            <span className="type-body">
-                                {capitalise(snapshotTime(snapshot.time))}
-                            </span>
-                            <MetaLine className="type-small text-muted-foreground">
-                                {reasonLabel(snapshot.reason)}
-                                {snapshot.mountPath}
-                                <span className="type-mono-small">
-                                    {snapshot.shortId}
-                                </span>
-                                {snapshot.sizeBytes !== null && (
-                                    <span className="tabular-nums">
-                                        {formatBytes(snapshot.sizeBytes)}
+                        {day.items.map((snapshot) => (
+                            <li
+                                key={snapshot.id}
+                                className="flex items-center gap-4 rounded-lg px-3.5 py-2 transition-colors duration-fast hover:bg-hover/60"
+                            >
+                                <span
+                                    aria-hidden="true"
+                                    className="relative z-10 size-2.5 shrink-0 rounded-full border-2 border-border-strong bg-card"
+                                />
+                                <span className="flex min-w-0 flex-1 flex-col">
+                                    <span className="type-body tabular-nums">
+                                        {clockTime(snapshot.time)}
                                     </span>
-                                )}
-                            </MetaLine>
-                        </span>
-                        <span className="flex shrink-0 items-center gap-1">
-                            {onDownload && (
-                                <Button
-                                    variant="ghost"
-                                    size="icon-sm"
-                                    aria-label={`Download the snapshot from ${snapshotTime(snapshot.time)}`}
-                                    title="Download this backup"
-                                    onClick={() => onDownload(snapshot)}
-                                >
-                                    <Download />
-                                </Button>
-                            )}
-                            {onRestore && (
-                                <Button
-                                    variant="outline"
-                                    size="sm"
-                                    aria-label={`Restore the snapshot from ${snapshotTime(snapshot.time)}`}
-                                    onClick={() => onRestore(snapshot)}
-                                >
-                                    Restore…
-                                </Button>
-                            )}
-                        </span>
-                    </li>
-                ))}
-            </ul>
+                                    <MetaLine className="type-small text-muted-foreground">
+                                        {reasonLabel(snapshot.reason)}
+                                        {snapshot.mountPath}
+                                        <span className="type-mono-small">
+                                            {snapshot.shortId}
+                                        </span>
+                                        {snapshot.sizeBytes !== null && (
+                                            <span className="tabular-nums">
+                                                {formatBytes(
+                                                    snapshot.sizeBytes,
+                                                )}
+                                            </span>
+                                        )}
+                                    </MetaLine>
+                                </span>
+                                <span className="flex shrink-0 items-center gap-1">
+                                    {onDownload && (
+                                        <Button
+                                            variant="ghost"
+                                            size="icon-sm"
+                                            aria-label={`Download the snapshot from ${snapshotTime(snapshot.time)}`}
+                                            title="Download this backup"
+                                            onClick={() => onDownload(snapshot)}
+                                        >
+                                            <Download />
+                                        </Button>
+                                    )}
+                                    {onRestore && (
+                                        <Button
+                                            variant="outline"
+                                            size="sm"
+                                            aria-label={`Restore the snapshot from ${snapshotTime(snapshot.time)}`}
+                                            onClick={() => onRestore(snapshot)}
+                                        >
+                                            Restore…
+                                        </Button>
+                                    )}
+                                </span>
+                            </li>
+                        ))}
+                    </ul>
+                </section>
+            ))}
             {more > 0 && (
                 <div>
                     <Button variant="ghost" size="sm" onClick={onShowAll}>

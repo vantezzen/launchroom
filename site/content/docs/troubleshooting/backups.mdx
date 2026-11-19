@@ -9,9 +9,9 @@ launchroom backs up databases, volumes and itself with restic into S3-compatible
 
 ## Where to look
 
-- **On the canvas**, every database shows its backup state under its status: "Backed up 3 hours ago", **Last backup** with a stale time, **Last backup failed**, **No backup yet** or **Backups off**.
-- **The database’s Backups page** (Settings → Backups) shows the schedule, the destination, **Last verified**, point-in-time recovery, the snapshot list and **History** with every run and its error. **Back up now** and **Verify now** start a run at once.
-- **Settings → Backups** lists destinations with their state (**Connected**, **Unreachable**, **Not tested yet**), every protected database, and the recovery kit for launchroom itself.
+- **On the canvas**, every database and every service with volumes shows its backup state under its status: "Backed up 3 hours ago", **Last backup** with a stale time, **Last backup failed**, **No backup yet** or **Backups off**.
+- **The database’s Settings → Backups** shows the schedule, the destination, **Last verified**, point-in-time recovery, the snapshot list and **History** with every run and its error. **Back up now** and **Verify now** start a run at once.
+- **Backups** in the sidebar lists every protected database and volume and launchroom itself, with failures first and what isn't backed up and why. Its storage cards show the state by cause (**Connected**, **Wrong keys**, **Wrong repository password**, **Bucket not found**, **Unreachable**, **Not tested yet**) with the fix, and instance owners find the recovery kit there.
 - **Alerts**: failed backups, failed verifications, backups overdue for 36 hours and lagging point-in-time recovery each raise an alert, sent to the channels under Settings → Notifications and listed on the Activity page. See [Alerts](/docs/observability/alerts).
 
 ## Last backup failed
@@ -20,15 +20,15 @@ Open the database's **Settings → Backups**. The failed run in **History** show
 
 | Error or symptom | Cause | Fix |
 |---|---|---|
-| Access denied, invalid access key, signature mismatch | Wrong or revoked S3 credentials, or a key without write access to the bucket. | Create a key with read and write access to this bucket and update the destination under Settings → Backups. |
+| Access denied, invalid access key, signature mismatch | Wrong or revoked S3 credentials, or a key without write access to the bucket. | Create a key with read and write access to this bucket and update the storage with **Change the connection** on the Backups page. |
 | The bucket doesn't exist, or a region error | Bucket name, endpoint or region don't match. The endpoint is the S3 API address without the bucket name. | Correct the destination. The provider guides list the exact values: [Cloudflare R2](/docs/databases/backups-cloudflare-r2), [Hetzner](/docs/databases/backups-hetzner). |
 | "the repository is locked by another operation; try again later" | Another backup, cleanup or check of the same repository is running. | Wait a few minutes and run **Back up now** again. |
-| "wrong repository password" | The repository at this destination was created by another launchroom, or with another password. | Point the destination at an empty bucket or a new prefix. Moving the endpoint, bucket or prefix starts a new repository there. |
+| "wrong repository password" | The repository at this destination was created by another launchroom, by restic by hand, or with another password. | Choose **Enter the password** on the storage card and enter the password the backups were made with. For launchroom's own folder it is in the recovery kit; for storage this launchroom made, an owner or admin finds it under **Repository password…**. To start fresh instead, point the storage at an empty bucket or a new folder. |
 | Request time too skewed, or similar time errors | The server's clock is far off, and S3 refuses signed requests with a wrong time. | Turn on time sync on the server that ran the backup (`sudo timedatectl set-ntp true`). Its **Clock** health check shows the difference. |
 | The database wasn't running | A scheduled backup can't dump a database that is stopped or crashed. | Fix the database first. See [Health check problems](/docs/troubleshooting/health-checks). |
 | "Update launchroomd on … to back up MongoDB" | MongoDB and ClickHouse backups need a recent launchroomd on the database's server. | Update the servers under Settings → Updates. |
 
-The destination test on Settings → Backups opens the repository and lists its snapshots, so it catches most credential and bucket problems before the next scheduled run.
+**Test connection** on the Backups page opens the repository and lists its snapshots, so it catches most credential and bucket problems before the next scheduled run.
 
 ### Object Lock and lifecycle rules
 
@@ -36,7 +36,7 @@ Don't turn on Object Lock (or a retention policy that blocks deletes) on a bucke
 
 ## Verification failed
 
-The Backups page’shows **Last verified** with ✕, and **History** says what was restored and what the checks found.
+The database's **Settings → Backups** shows **Last verified** with ✕, and **History** says what was restored and what the checks found.
 
 **Cause.** Once a week, launchroom restores the newest backup into a throwaway container without network access and checks it: for Postgres a full restore with table and row counts and `pg_amcheck`, for MySQL `CHECK TABLE` on every table, for Redis and Valkey the RDB file check, for volumes a full read of every file. A failure means one of two things:
 
@@ -86,7 +86,7 @@ The recovery kit is a text file with the backup destination, its credentials and
 
 <Screenshot id="backup-settings" />
 
-**While the dashboard runs**, losing the kit is not a problem: download it again under **Settings → Backups → Recovery kit** (instance owners), store it somewhere outside your servers, and confirm that you did.
+**While the dashboard runs**, losing the kit is not a problem: choose **Download again** in the **Recovery kit** card on the Backups page (instance owners), store it somewhere outside your servers, and choose **I've put both away**.
 
 **If the control-plane server is gone too**, the installer's `--restore` can take the destination, credentials and repository password typed in by hand instead of the kit file. The repository password was generated by launchroom and exists only in the kit and inside launchroom itself. Without it, launchroom's own backups can't be opened. For this reason the dashboard reminds instance owners until they confirm the kit is stored safely.
 
@@ -94,9 +94,9 @@ The recovery kit is a text file with the backup destination, its credentials and
 
 The passphrase encrypts launchroom's keys inside every backup of launchroom itself. launchroom never stores it, so nobody can recover it for you.
 
-**While the dashboard runs**: set a new passphrase under **Settings → Backups → Recovery kit**, download the new kit and confirm it. From the next backup of launchroom itself on, the keys are encrypted with the new passphrase. Older backups stay locked to the old one, so let a new backup run before you rely on it.
+**While the dashboard runs**: choose **Change passphrase…** in the **Recovery kit** card on the Backups page, set a new one and confirm that you put it away. The kit file itself doesn't change. From the next backup of launchroom itself on, the keys are encrypted with the new passphrase. Older backups stay locked to the old one, so let a new backup run before you rely on it.
 
-**If the control-plane server is gone and the passphrase is lost**, launchroom can't be restored from its backups: without the passphrase the keys in them can't be decrypted, and without the keys nothing launchroom stored encrypted can be read (variables, credentials and the repository passwords of your other backup destinations). Your apps' database and volume backups are encrypted with those repository passwords, which launchroom generated, so they can't be opened either. You would have to set up launchroom again from the start.
+**If the control-plane server is gone and the passphrase is lost**, launchroom can't be restored from its backups: without the passphrase the keys in them can't be decrypted, and without the keys nothing launchroom stored encrypted can be read (variables, credentials and the repository passwords of your other backup destinations). Your apps' database and volume backups are encrypted with those repository passwords, so they can be opened only if you saved the passwords beforehand (**Repository password…** in each storage card's menu). Then plain restic reads them, see [Read backups without launchroom](/docs/databases/backups#read-backups-without-launchroom). launchroom itself has to be set up again from the start.
 
 <Callout type="warn" title="Before you need it">
 Store the recovery kit and the passphrase in two different places outside your servers, for example a password manager and a printed copy. Test that you can find both.

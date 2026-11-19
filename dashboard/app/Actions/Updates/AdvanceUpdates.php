@@ -5,7 +5,9 @@ declare(strict_types=1);
 namespace App\Actions\Updates;
 
 use App\Actions\Audit\RecordAuditEvent;
+use App\Actions\Backups\FailAbandonedControlPlaneBackups;
 use App\Data\Audit\AuditActor;
+use App\Enums\Backups\BackupRunStatus;
 use App\Enums\DaemonTaskStatus;
 use App\Enums\ServerStatus;
 use App\Enums\Updates\ControlPlaneUpdateStatus;
@@ -13,6 +15,7 @@ use App\Enums\Updates\FleetUpdateStatus;
 use App\Enums\Updates\FleetUpdateStepStatus;
 use App\Enums\Updates\UpdateScope;
 use App\Jobs\Updates\RunControlPlaneUpdateJob;
+use App\Models\Backups\BackupRun;
 use App\Models\DaemonTask;
 use App\Models\Server;
 use App\Models\Updates\ControlPlaneUpdate;
@@ -32,25 +35,38 @@ use Illuminate\Support\Facades\Log;
  *
  * - Control plane: task succeeded → succeeded; failed with
  *   `result.selfUpdate.rolledBack` → rolled_back; any other end → failed.
- *   A pending update whose job got lost is dispatched again; a backup that
- *   never finished fails the update (nothing was changed yet).
+ *   Nothing waits silently (docs/11 §4.3): control-plane backups whose
+ *   worker died are given up first ({@see FailAbandonedControlPlaneBackups});
+ *   an update whose job may have died (no progress for
+ *   `redispatch_seconds`: queued, between steps, after a finished or given
+ *   up backup, before its task exists) is dispatched again, and its job
+ *   continues where it stopped; a self_update task that launchroomd
+ *   doesn't take within `task_start_seconds` is withdrawn and the update
+ *   cancelled (nothing was changed yet).
  * - Then servers: a succeeded control-plane update with `update_servers`
  *   starts the rolling server update once the new dashboard runs (its
  *   version is the update's target), at most once (`fleet_update_id`).
  * - Servers: strictly one step at a time. A finished step decides; the
  *   first failure skips the remaining steps and fails the run; otherwise
- *   the next server gets its task. No steps left → succeeded.
+ *   the next server gets its task. A task the server doesn't take within
+ *   `task_start_seconds` (offline) fails its step. No steps left →
+ *   succeeded, or cancelled when the owner stopped it ({@see CancelFleetUpdate}).
  */
 final readonly class AdvanceUpdates
 {
+    public const string NOT_STARTED = 'The main server didn’t start the update within 30 minutes (it may be offline), so it was cancelled. Nothing was changed.';
+
     public function __construct(
         private SelfUpdateTasks $tasks,
         private RecordAuditEvent $audit,
         private StartFleetUpdate $startFleet,
+        private FailAbandonedControlPlaneBackups $abandonedBackups,
+        private CancelControlPlaneUpdate $cancel,
     ) {}
 
     public function handle(): void
     {
+        $this->abandonedBackups->handle();
         $this->controlPlane();
         $this->serversAfterControlPlane();
 
@@ -63,7 +79,10 @@ final readonly class AdvanceUpdates
 
     private function controlPlane(): void
     {
-        $finished = DB::transaction(function (): ?ControlPlaneUpdate {
+        $redispatch = false;
+        $withdraw = null;
+
+        $finished = DB::transaction(function () use (&$redispatch, &$withdraw): ?ControlPlaneUpdate {
             $update = ControlPlaneUpdate::query()
                 ->whereIn('status', ControlPlaneUpdateStatus::nonTerminal())
                 ->lockForUpdate()
@@ -73,34 +92,61 @@ final readonly class AdvanceUpdates
                 return null;
             }
 
+            $quiet = now()->subSeconds(config()->integer('launchroom.updates.redispatch_seconds'));
+
             if ($update->status === ControlPlaneUpdateStatus::Pending) {
                 // The job was lost (worker restart): start it again.
-                if ($update->created_at?->lt(now()->subMinutes(5)) ?? false) {
-                    dispatch(new RunControlPlaneUpdateJob($update->id));
-                }
+                $redispatch = $update->created_at?->lt($quiet) ?? false;
 
                 return null;
             }
 
             if ($update->status === ControlPlaneUpdateStatus::BackingUp) {
-                // The worker running the backup died; nothing was changed yet.
-                if ($update->updated_at?->lt(now()->subHours(3)) ?? false) {
-                    $update->transitionTo(ControlPlaneUpdateStatus::Failed, 'The pre-upgrade backup did not finish, so nothing was changed.');
+                $backup = $update->backup_run_id === null ? null : BackupRun::query()->find($update->backup_run_id);
 
-                    return $update;
+                // The backup finished (or was given up): continue. Otherwise
+                // the job died before the backup started, or the backup is
+                // queued and nobody took it: the job takes it over.
+                if ($backup instanceof BackupRun && $backup->status->isTerminal()) {
+                    $redispatch = true;
+                } elseif (! $backup instanceof BackupRun || $backup->status === BackupRunStatus::Pending) {
+                    $redispatch = ($update->updated_at?->lt($quiet) ?? false) && ($backup?->created_at?->lt($quiet) ?? true);
                 }
 
+                // A running backup beats until it ends; one that stops is
+                // given up above, and this continues next minute.
                 return null;
             }
 
             $task = $update->daemon_task_id === null ? null : DaemonTask::query()->find($update->daemon_task_id);
+
+            // The job died before it created the task: nothing changed yet
+            // (this dashboard still runs the old version).
+            if ($task === null && config()->string('launchroom.version') === $update->from_version) {
+                if ($update->updated_at?->lt(now()->subSeconds(config()->integer('launchroom.updates.task_start_seconds'))) ?? false) {
+                    $update->transitionTo(ControlPlaneUpdateStatus::Failed, 'The update could not be handed to the main server, so nothing was changed. Check Settings → System, then try again.');
+
+                    return $update;
+                }
+
+                $redispatch = $update->updated_at?->lt($quiet) ?? false;
+
+                return null;
+            }
+
+            if ($task instanceof DaemonTask && $task->status === DaemonTaskStatus::Pending
+                && ($task->updated_at?->lt(now()->subSeconds(config()->integer('launchroom.updates.task_start_seconds'))) ?? false)) {
+                $withdraw = $update;
+
+                return null;
+            }
 
             if ($task instanceof DaemonTask && ! $task->status->isTerminal()) {
                 return null;
             }
 
             if ($task === null && ($update->updated_at?->gt(now()->subMinutes(10)) ?? true)) {
-                return null; // The task is being created.
+                return null; // The new version runs; its task record may still be on its way.
             }
 
             [$status, $error] = $this->outcome($task);
@@ -121,6 +167,18 @@ final readonly class AdvanceUpdates
 
         if ($finished instanceof ControlPlaneUpdate) {
             $this->audit->handle($finished->finishedAuditEntry());
+        }
+
+        if ($withdraw instanceof ControlPlaneUpdate) {
+            $this->cancel->handle($withdraw, AuditActor::system(), self::NOT_STARTED);
+        }
+
+        if ($redispatch && $finished === null) {
+            $update = ControlPlaneUpdate::query()->whereIn('status', ControlPlaneUpdateStatus::nonTerminal())->first();
+
+            if ($update instanceof ControlPlaneUpdate) {
+                dispatch(new RunControlPlaneUpdateJob($update->id));
+            }
         }
     }
 
@@ -174,12 +232,22 @@ final readonly class AdvanceUpdates
 
             if ($current instanceof FleetUpdateStep) {
                 $task = $current->daemon_task_id === null ? null : DaemonTask::query()->find($current->daemon_task_id);
+                $notStarted = $task instanceof DaemonTask && $task->status === DaemonTaskStatus::Pending
+                    && ($task->updated_at?->lt(now()->subSeconds(config()->integer('launchroom.updates.task_start_seconds'))) ?? false);
 
-                if ($task instanceof DaemonTask && ! $task->status->isTerminal()) {
+                if ($task instanceof DaemonTask && ! $task->status->isTerminal() && ! $notStarted) {
                     return null;
                 }
 
-                [$status, $error] = $this->outcome($task);
+                if ($notStarted) {
+                    // The server never took it (offline): withdrawn, nothing changed there.
+                    $task->forceFill(['error' => 'The server did not start the update.']);
+                    $task->transitionTo(DaemonTaskStatus::Cancelled);
+                }
+
+                [$status, $error] = $notStarted
+                    ? [FleetUpdateStepStatus::Failed, 'The server didn’t start the update within 30 minutes. It may be offline; nothing was changed on it.']
+                    : $this->outcome($task);
                 $current->transitionTo($status, $error);
 
                 if ($status !== FleetUpdateStepStatus::Succeeded) {
@@ -215,7 +283,8 @@ final readonly class AdvanceUpdates
                 return null;
             }
 
-            $update->transitionTo(FleetUpdateStatus::Succeeded);
+            $cancelled = $steps->contains(static fn (FleetUpdateStep $step): bool => $step->status === FleetUpdateStepStatus::Skipped && $step->error === CancelFleetUpdate::SKIPPED);
+            $update->transitionTo($cancelled ? FleetUpdateStatus::Cancelled : FleetUpdateStatus::Succeeded, $cancelled ? 'Cancelled.' : null);
 
             return $update;
         });

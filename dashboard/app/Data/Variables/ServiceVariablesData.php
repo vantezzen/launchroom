@@ -17,6 +17,7 @@ final class ServiceVariablesData extends Data
      * @param  list<SystemVariableData>  $system
      * @param  list<ReferenceScopeData>  $scopes
      * @param  list<EnvironmentOptionData>  $environments
+     * @param  list<string>  $usedBy  an app's workers and crons, which take its runtime variables (docs/06 §3.2)
      */
     public function __construct(
         public string $serviceSlug,
@@ -29,5 +30,6 @@ final class ServiceVariablesData extends Data
         public bool $canWrite,
         public bool $canRevealSecrets,
         public string $secretPlaceholder,
+        public array $usedBy = [],
     ) {}
 }

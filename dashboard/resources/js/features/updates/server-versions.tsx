@@ -21,6 +21,7 @@ import type { UpdatesPageProps } from '@/features/updates/update-status';
 import { fleetSteps } from '@/features/updates/update-steps';
 import { vocabulary } from '@/lib/vocabulary';
 import { servers as updateServers } from '@/routes/updates';
+import { cancel as cancelServers } from '@/routes/updates/servers';
 
 function serverState(server: App.Data.Updates.FleetServerData): {
     state: StatusState;
@@ -96,6 +97,28 @@ function ConfirmServers({
                 </Form>
             </DialogContent>
         </Dialog>
+    );
+}
+
+/** Stops a rolling update: servers that haven't started keep their version (docs/11 §4.3). */
+function StopServers({ fleet }: { fleet: App.Data.Updates.FleetUpdateData }) {
+    return (
+        <Form
+            {...cancelServers.form({ fleet: fleet.id })}
+            options={{ preserveScroll: true }}
+        >
+            {({ processing }) => (
+                <Button
+                    type="submit"
+                    variant="outline"
+                    size="sm"
+                    disabled={processing}
+                >
+                    {processing && <Spinner />}
+                    Stop updating servers
+                </Button>
+            )}
+        </Form>
     );
 }
 
@@ -177,13 +200,32 @@ export function ServerVersions({
                 fleetUpdate.status === 'running' &&
                 !partOfControlPlane && (
                     <div className="flex flex-col gap-3">
-                        <Status
-                            state="progress"
-                            label={`Updating servers to ${fleetUpdate.toVersion}`}
-                        />
+                        <div className="flex flex-wrap items-center justify-between gap-2">
+                            <Status
+                                state="progress"
+                                label={`Updating servers to ${fleetUpdate.toVersion}`}
+                            />
+                            <StopServers fleet={fleetUpdate} />
+                        </div>
                         <StepList steps={fleetSteps(fleetUpdate)} />
                     </div>
                 )}
+
+            {fleetUpdate !== null &&
+                fleetUpdate.status === 'running' &&
+                partOfControlPlane && (
+                    <div>
+                        <StopServers fleet={fleetUpdate} />
+                    </div>
+                )}
+
+            {fleetUpdate !== null && fleetUpdate.status === 'cancelled' && (
+                <p className="type-small text-muted-foreground">
+                    The server update to {fleetUpdate.toVersion} was stopped{' '}
+                    <TimeAgo value={fleetUpdate.finishedAt} />. Servers that
+                    weren’t updated keep their version.
+                </p>
+            )}
 
             {failed && (
                 <div className="flex flex-col gap-4 rounded-xl border bg-card p-5 shadow-card">

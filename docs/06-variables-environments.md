@@ -79,10 +79,13 @@ Code: `App\Support\Variables`, `App\Services\Variables`.
 final env for (service instance S in environment E, branch B) =
      system variables                       (LAUNCHROOM_*, PORT, generated URLs, framework variables)
    < project shared variables               (only those S opted into)
-   < connection-injected references         (from canvas edges)
+   < connection-injected references         (from canvas edges; a worker's or cron's app's edges first)
+   < the app's own variables                (workers and crons only, runtime ones, §3.2)
    < service variables targeted at E
    < service variables targeted at "Previews, branch B"   (branch override)
 ```
+
+A key a worker or cron sets itself, as a variable or through its own connection, is never taken from its app.
 
 - One **variable row** = key + value + type + **targets**. Targets are a set of environments: specific persistent environments, `production`, and/or "All previews" with an optional branch pattern. Targeting is described in §3.6.
 - **Types**:
@@ -106,7 +109,7 @@ final env for (service instance S in environment E, branch B) =
 - `${{ uuid() }}`: UUID v4.
 - `${{ jwt("anon", JWT_SECRET) }}` (D65): an HS256 JWT `{"role": "anon", "iss": "supabase", "iat", "exp": iat + 10 years}` signed with the plaintext of `JWT_SECRET`, the row of the same key and service (or shared, without a service) that applies to every target of the new row. The role is a Postgres role name; the signing value has at least 32 characters; a `jwt()` is the whole value, never part of a longer one. Without its signing variable the save fails ("create JWT_SECRET … first"), it never stores an unsigned value. These are Supabase's `anon` and `service_role` API keys.
 - n is 8–1024. The resolver treats a leftover function as a broken expression.
-- **Secrets a framework needs** (D86): when a build's preset declares one (`summary.generatedSecrets`: Laravel `APP_KEY`, Django `SECRET_KEY`, Rails and Phoenix `SECRET_KEY_BASE`, Symfony `APP_SECRET`, Auth.js `AUTH_SECRET`/`NEXTAUTH_SECRET`) and the service has none in the deployment's environment, the deployment creates it as a secret service variable `${{ secret(n) }}` targeted at that environment (workers and crons reference their app's), applied at once and audited ([04](04-build-and-deploy.md) §13 "Generated secrets"). A variable the user set wins; a deleted one is generated again on the next deploy unless the preset decision is removed. Build-scoped keys (`scope: build`, Next.js `NEXT_SERVER_ACTIONS_ENCRYPTION_KEY`) are created for the next build and, with `shared: service`, hold one value per service across its non-fork environments, stored as a literal so copies keep it ([04](04-build-and-deploy.md) §13).
+- **Secrets a framework needs** (D86): when a build's preset declares one (`summary.generatedSecrets`: Laravel `APP_KEY`, Django `SECRET_KEY`, Rails and Phoenix `SECRET_KEY_BASE`, Symfony `APP_SECRET`, Auth.js `AUTH_SECRET`/`NEXTAUTH_SECRET`) and the service has none in the deployment's environment, the deployment creates it as a secret service variable `${{ secret(n) }}` targeted at that environment, applied at once and audited ([04](04-build-and-deploy.md) §13 "Generated secrets"). Workers and crons inherit the app's (§3.2). A variable the user set wins; a deleted one is generated again on the next deploy unless the preset decision is removed. Build-scoped keys (`scope: build`, Next.js `NEXT_SERVER_ACTIONS_ENCRYPTION_KEY`) are created for the next build and, with `shared: service`, hold one value per service across its non-fork environments, stored as a literal so copies keep it ([04](04-build-and-deploy.md) §13).
 - `variables.generator` keeps the generator of a value that was exactly one generator expression; copies into another environment re-evaluate it, so generated values are fresh per environment. Rows without a recorded generator are copied as they are. Generators signed with another variable are evaluated after it: environment copies order them last, blueprints create them after the service's other variables, and Compare & promote makes such an item depend on its signing variable and applies it after it. A copy without secrets (fork previews) gets an empty value for them, like the secret they are signed with.
 
 **System variables** (read-only, shown collapsed in the editor):
@@ -153,6 +156,18 @@ A service can say itself what a connection to it injects (`services.connection_v
 Accepting stores a **connection** row plus the injected references. These are ordinary reference variables, marked as connection-owned (deleting the edge removes them, after confirmation). An app → app edge (`web` → `api`) offers `API_URL` as private (`http://api:8000`) or public (`https://api…`). Browser-facing (`NEXT_PUBLIC_*`) variables are forced to public, with a warning explaining why.
 
 **Workers and crons inherit their app's connections**: they run the app's code, so the variables the app's connections inject apply to them too (`SpecVariableResolver` through `EnvironmentSpec::connectionVariablesOf`), between the system/shared layers and their own variables. A key a process's own connection also injects is left to that connection (own edge wins). The rows stay owned by the app's connection: the canvas draws a quieter dashed **inherited** edge from the process to the target (none when the process has its own edge there; the popover says to change it on the app), and the process's Variables tab lists them read-only ("From api"). When the app's connections change, its processes restart with the next deploy (§4.1). Rejected: copying the connection to each process (two edges to keep in sync, and new processes would miss existing connections).
+
+**Workers and crons inherit their app's variables** (D101): the same reasoning applies to the variables set on the app (`MAIL_HOST`, `STRIPE_SECRET`). A process gets the app's own rows in the same environment, per key the one that applies to the app (a branch override over the environment's), above the inherited connections and below its own variables (§3.1). Code: `EnvironmentSpec::inheritedVariables`, `SpecVariableResolver`.
+- **Own wins**: a key the process sets as a variable or through its own connection is left to the process. An app variable also wins over the app's connection variable of the same key, as it does for the app.
+- **Resolved as for the app**: an inherited key is a reference to the app's value (`${{api.KEY}}`), so `${{APP_NAME}}`, `${{PUBLIC_URL}}` or `${{postgres.PASSWORD}}` inside the app's variable resolve exactly as they do for the app. The code expects the app's values; the process's own variables don't change them.
+- **Runtime only**: the process runs the app's image and never builds, so rows available only at build time are left out. Build keys don't change.
+- **Secrets stay secrets**: an inherited secret is masked in the process's Variables tab, taints what references it (§3.3) and is masked in logs.
+- **Never copied**: inherited values aren't rows of the process. Environment copies, previews, Compare & promote and `launchroom.json` only handle the app's rows; the process follows. Framework secrets a deployment generates (§3.1, D86) reach processes the same way, so new processes no longer get a `${{api.APP_KEY}}` row of their own (a process still gets one when the app has the key from a shared variable).
+- **Restarts**: when a runtime variable of the app changes, its processes restart with the next deploy and the staged changes list them (§4.1). A key the process overrides doesn't restart it.
+- **UI**: the process's Variables tab lists the app's rows read-only as "From api" (secrets masked), with **Override**, which adds the process's own variable with that key. Overridden app rows stay listed as replaced. The app's Variables tab says "Also used by queue, scheduler".
+- **Before D101** processes got only the app's connections, system values and generated secrets. Existing processes get the app's variables with their next deploy. A process row with the same key keeps winning, so duplicates copied by hand keep working and can be removed.
+
+Rejected: copying variables to each process (they drift) and an opt-in per process (the common case is the same code needing the same configuration).
 
 ### 3.3 Build vs runtime (automatic)
 
@@ -234,7 +249,7 @@ Code: `App\Support\Changes\SpecDiff`, `App\Queries\CurrentEnvironmentSpec`.
   - `restart`: runtime fields, runtime variables, volumes, connections, shared-variable usage
   - `route`: domains (applied immediately by their own revision, see the exceptions above; still listed for new services and never-deployed environments)
   - `none`: name, icon, watch paths, seed command, triggers
-- Never-built kinds turn `rebuild` into `restart`. A worker or cron whose inherited connection variables changed (§3.2) gets at least `restart`. Services whose variables reference a changed service (`${{postgres.X}}`) or a changed shared variable get at least `restart` (`rebuild` if the referencing variable is build-scoped), transitively.
+- Never-built kinds turn `rebuild` into `restart`. A worker or cron whose inherited connection variables or inherited app variables changed (§3.2) gets at least `restart`. Services whose variables reference a changed service (`${{postgres.X}}`) or a changed shared variable get at least `restart` (`rebuild` if the referencing variable is build-scoped), transitively.
 - Item paths: `services.<svc>`, `services.<svc>.<field>`, `services.<svc>.(build|deploy|scaling).<property>`, `services.<svc>.(variables|connectionVariables|sharedVariables).<var>`, `services.<svc>.domains.<hostname>`, `services.<svc>.volumes.<vol>`, `connections.<con>`, `sharedVariables.<var>`, `environment.(name|triggers)`. Items never carry variable values.
 - **Removing a service** is staged (`service_instances.removed_at`); applying tears it down (workloads gone, volumes kept).
 - **Discard** restores rows with their recorded ids (variables with their recorded version and ciphertext). A removed variable is restored targeted at this environment only (the revision records how it applied here, not all its targets).

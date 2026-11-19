@@ -7,6 +7,7 @@ namespace App\Policies\Backups;
 use App\Enums\Permission;
 use App\Models\Backups\BackupRun;
 use App\Models\ServiceInstance;
+use App\Models\Team;
 use App\Models\User;
 
 /**
@@ -28,13 +29,21 @@ final class BackupRunPolicy
             : $user->hasTeamPermission($run->team_id, Permission::View);
     }
 
+    /**
+     * "Back up everything now" and the Backups page's per-row actions for a team.
+     */
+    public function createAny(User $user, Team $team): bool
+    {
+        return $user->hasTeamPermission($team, Permission::Deploy);
+    }
+
     public function create(User $user, ServiceInstance $instance): bool
     {
         return $user->hasTeamPermission($instance->team_id, Permission::Deploy);
     }
 
     /**
-     * Per-volume backup settings (consistency): owners and admins.
+     * Per-volume backup settings (consistency, "Back up this volume"): owners and admins.
      */
     public function configure(User $user, ServiceInstance $instance): bool
     {

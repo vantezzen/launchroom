@@ -163,3 +163,26 @@ test('with Redis the routes pick the lane’s connection; without it only the qu
     expect($sync->getConnection($job))->toBeNull()
         ->and($sync->getQueue($job))->toBe('long');
 });
+
+test('each Horizon supervisor lets a worker it scales away finish its longest job (the v0.1.5-rc.1 update incident)', function (): void {
+    // Horizon's auto-balancing scales a pool down by sending SIGTERM to its
+    // oldest workers and kills any still running `timeout` seconds later,
+    // busy or not. With the 60 s default a 6-hour backup was killed about a
+    // minute in, and its job came back after retry_after as "attempted too
+    // many times" while the update waited for it forever.
+    $routes = (array) config('queue.routes');
+    $supervisors = (array) config('horizon.defaults');
+    $checked = 0;
+
+    foreach (jobClasses() as $class) {
+        [$connection, $queue] = is_array($routes[$class] ?? null) ? $routes[$class] : ['redis', 'default'];
+        $supervisor = collect($supervisors)->first(static fn (array $s): bool => $s['connection'] === $connection && in_array($queue, (array) $s['queue'], true));
+
+        expect($supervisor)->not->toBeNull("{$class}: no supervisor works {$connection}/{$queue}");
+        expect((int) $supervisor['timeout'])->toBeGreaterThanOrEqual(jobTimeout($class) ?? 0, "{$class} ({$connection}/{$queue})")
+            ->and((int) $supervisor['timeout'])->toBeLessThan(config()->integer("queue.connections.{$connection}.retry_after"));
+        $checked++;
+    }
+
+    expect($checked)->toBeGreaterThan(30);
+});

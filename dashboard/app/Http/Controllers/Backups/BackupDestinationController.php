@@ -6,6 +6,7 @@ namespace App\Http\Controllers\Backups;
 
 use App\Actions\Backups\CreateBackupDestination;
 use App\Actions\Backups\DeleteBackupDestination;
+use App\Actions\Backups\RevealRepositoryPassword;
 use App\Actions\Backups\UpdateBackupDestination;
 use App\Data\Backups\BackupDestinationInput;
 use App\Http\Controllers\Controller;
@@ -15,6 +16,7 @@ use App\Jobs\Backups\TestBackupDestinationJob;
 use App\Models\Backups\BackupDestination;
 use App\Models\User;
 use Illuminate\Container\Attributes\CurrentUser;
+use Illuminate\Http\JsonResponse;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Gate;
@@ -57,6 +59,20 @@ final class BackupDestinationController extends Controller
         Toast::success('Destination removed. Its snapshots stay in the bucket.');
 
         return back();
+    }
+
+    /**
+     * The repository password, for reading the backups with plain restic
+     * (docs/14 §3). Audited by RevealRepositoryPassword; the value is the
+     * response body only, never cached.
+     */
+    public function repositoryPassword(Request $request, BackupDestination $anyBackupDestination, #[CurrentUser] User $user, RevealRepositoryPassword $reveal): JsonResponse
+    {
+        Gate::authorize('revealRepositoryPassword', $anyBackupDestination);
+
+        return response()
+            ->json(['value' => $reveal->handle($anyBackupDestination, $this->auditActor($request, $user))])
+            ->header('Cache-Control', 'no-store, private');
     }
 
     public function test(BackupDestination $backupDestination): RedirectResponse

@@ -3,7 +3,9 @@ title: Backups
 description: Scheduled backups, encrypted on your servers with restic, stored in any S3-compatible bucket and verified every week. launchroom backs up its own state too.
 ---
 
-Backups turn on as soon as you add a destination. Databases and volumes in production and persistent environments are backed up every day, and launchroom itself every six hours. Everything is encrypted on your servers before upload. Every week launchroom restores each backup into a throwaway container to check that it works.
+Backups turn on as soon as you connect storage. Databases and volumes in production and persistent environments are backed up every day, and launchroom itself every six hours. Everything is encrypted on your servers before upload. Every week launchroom restores each backup into a throwaway container to check that it works.
+
+**Backups** in the sidebar shows everything in one place: what is protected, what isn't and why, your storage and the recovery kit.
 
 <Screenshot id="database-backups" />
 
@@ -14,10 +16,10 @@ Backups turn on as soon as you add a destination. Databases and volumes in produ
 | launchroom itself (database, keys, settings) | A database dump plus a key bundle sealed with your recovery passphrase | Every 6 hours, and before every update | 7 daily, 4 weekly, 6 monthly |
 | Databases in production | The engine's own dump tool | Daily at a staggered time | 7 daily, 4 weekly, 3 monthly |
 | Databases in other persistent environments | Same | Daily | 7 daily |
-| Volumes of app and image services | A snapshot of the volume's files | Daily | 7 daily, 4 weekly |
+| Volumes of app and image services (each volume, unless you turn it off) | A snapshot of the volume's files | Daily | 7 daily, 4 weekly |
 | Previews | Not backed up | | |
 
-Schedules, retention and on/off are editable per service in its **Settings → Backups**, with an hourly option and custom cron expressions. Daily backups start at a staggered time between 01:00 and 07:00 UTC so they don't all run at once. Each server runs at most one heavy backup at a time, at lower CPU and IO priority than your apps. When a scheduled time passes while launchroom is down or being updated, the backup runs once as soon as it is back, never once for every missed time. This also applies to the base backups of point-in-time recovery. Changing a schedule, or turning it on again, counts from that moment and doesn't start a backup.
+Schedules, retention and on/off are editable per service with **Change schedule…** in the row's menu on the Backups page, or in the service's **Settings → Backups**, with an hourly option and custom cron expressions. A service with several volumes has one schedule for all of them. Daily backups start at a staggered time between 01:00 and 07:00 UTC so they don't all run at once. Each server runs at most one heavy backup at a time, at lower CPU and IO priority than your apps. When a scheduled time passes while launchroom is down or being updated, the backup runs once as soon as it is back, never once for every missed time. This also applies to the base backups of point-in-time recovery. Changing a schedule, or turning it on again, counts from that moment and doesn't start a backup.
 
 launchroom doesn't back up what it can recreate:
 
@@ -28,6 +30,19 @@ launchroom doesn't back up what it can recreate:
 
 To keep images through a disaster as well, an instance owner can move the registry's storage to S3 in **Settings → Registry**.
 
+## The Backups page
+
+Open **Backups** in the sidebar. Every team member can see it.
+
+- The top line says how things stand: everything backed up, what needs you, or what is running.
+- **Back up everything now** starts a backup of every protected database and volume, and of launchroom itself for an instance owner. Each server runs one backup at a time, so the rest wait for their turn. You can leave the page.
+- **What's protected** has one row per database, per volume and for launchroom itself, grouped by project, with the schedule, the last 30 days, the size and **Back up now**. While a backup runs, the row shows its steps and progress ("Uploading 412 MB of about 1.2 GB"), or the server it waits for.
+- **Not backed up** lists what launchroom leaves out and why: volumes someone turned off, paused schedules and previews. **Turn on** brings them back.
+- **Where backups go** shows your storage and whether launchroom can reach it.
+- **Recovery kit** is for instance owners (see below).
+
+A button you can't use says why under it, with a link to the fix. Restoring stays in each database's or service's own **Settings → Backups**.
+
 ## How it works
 
 launchroom uses **restic**. Backups run on the server that holds the data. launchroomd streams the database's dump (`pg_dump`, `mysqldump`, a Redis or Valkey RDB file, `mongodump`, or ClickHouse's native `BACKUP`) straight into restic without writing it to local disk first, so a full disk doesn't break a backup. Both the dump and the upload must succeed. A failed dump never leaves a valid-looking empty snapshot.
@@ -36,7 +51,7 @@ restic encrypts everything on the client, so your storage provider sees only enc
 
 ## Destinations
 
-A destination is any S3-compatible bucket: Amazon S3, Cloudflare R2, Backblaze B2, Hetzner Object Storage, DigitalOcean Spaces, Scaleway or another S3 service. Team owners and admins add them in **Settings → Backups → Add destination**:
+A destination ("storage" on the Backups page) is any S3-compatible bucket: Amazon S3, Cloudflare R2, Backblaze B2, Hetzner Object Storage, DigitalOcean Spaces, Scaleway or another S3 service. Team owners and admins add one with **Connect storage** on the Backups page. Choose the provider, then fill in:
 
 | Field | Notes |
 |---|---|
@@ -45,14 +60,35 @@ A destination is any S3-compatible bucket: Amazon S3, Cloudflare R2, Backblaze B
 | Endpoint | The S3 API URL without the bucket name, `https://…` |
 | Bucket | The bucket's name |
 | Region | The provider's region, or `auto` |
-| Folder (optional) | A prefix inside the bucket, so several teams or instances can share one bucket. Up to 200 characters, without `..` |
+| Folder (optional) | A prefix inside the bucket, so several teams or instances can share one bucket. Up to 200 characters, without `..`. Two storages can't use the same bucket and folder |
 | Access key ID, Secret access key | Credentials that can read, write, list and delete in the bucket |
 
-launchroom tests the destination right away by opening (and on first use, creating) the restic repository, then shows "Connected". Credentials and the generated repository password are encrypted at rest and handed to a server only for the backup task that needs them.
+launchroom tests the destination right away by opening (and on first use, creating) the restic repository, then shows "Connected". When the test fails, it names the cause and the fix: wrong keys, wrong repository password, bucket not found, or not reachable. Credentials and the generated repository password are encrypted at rest and handed to a server only for the backup task that needs them.
 
 Step-by-step guides: [Cloudflare R2](/docs/databases/backups-cloudflare-r2) and [Hetzner Object Storage](/docs/databases/backups-hetzner).
 
 Endpoints must be public `https://` addresses. An instance owner can allow a destination on a private network (a NAS or a MinIO on your LAN), which also allows plain `http://`. The override is audited. Moving the endpoint, bucket or folder later starts a new backup repository there.
+
+### Remove storage
+
+**Remove** in the storage card's menu stops new backups to it. The backups already in the bucket stay there, and launchroom keeps their history, marked "Storage removed". launchroom never deletes files in your bucket; delete them yourself if you want them gone. Schedules move to your next storage, or wait until you add one. Point-in-time recovery to the removed storage stops.
+
+Removing storage deletes its access keys from launchroom but keeps its repository password, encrypted like before. To pick the backups up again, choose **Add again** on the removed storage, or add the same bucket and folder in the same team. launchroom reuses the password it kept, so you only enter access keys. If the storage was removed before launchroom kept passwords, **Add again** also asks for the repository password.
+
+A folder with backups made elsewhere (another launchroom, or restic by hand) needs the password they were made with: open **Advanced**, tick **Use an existing repository password** and enter it.
+
+### Read backups without launchroom
+
+Your backups are plain [restic](https://restic.net) repositories, so you can read them even if launchroom itself is gone. Choose **Repository password…** in a storage card's menu (or **Repository password** on removed storage), then **Show password**. Team owners and admins can do this for their team's storage; the password of launchroom's own folder is in the recovery kit. Every time the password is shown, it's recorded in the audit log.
+
+Keep the password outside launchroom, for example in your password manager. With it and an access key for the bucket, restic lists and restores the backups:
+
+```bash
+export RESTIC_REPOSITORY="s3:https://fsn1.your-objectstorage.com/team-backups/prod"
+export RESTIC_PASSWORD="<repository password>"
+export AWS_ACCESS_KEY_ID="<access key>" AWS_SECRET_ACCESS_KEY="<secret key>"
+restic snapshots
+```
 
 <Callout type="warn" title="Don't turn on object lock">
 launchroom deletes old snapshots itself to apply retention. A bucket with object lock or a deletion-blocking lifecycle rule makes pruning fail.
@@ -62,7 +98,9 @@ launchroom deletes old snapshots itself to apply retention. A bucket with object
 
 <Screenshot id="backup-settings" />
 
-The dashboard's own database holds every project, service, variable and setting. Instance owners set up its backups in **Settings → Backups → Back up launchroom itself**: pick a destination (preferably a separate bucket or folder), then set a recovery passphrase and save the recovery kit.
+The dashboard's own database holds every project, service, variable and setting. Instance owners protect it while connecting storage: **Also protect launchroom itself** is ticked in the setup. launchroom then keeps its own backups in the same bucket, in a `launchroom` folder with its own repository password. Afterwards, you set a recovery passphrase and save the recovery kit in the same setup. If you skipped it, **Set up** on the "launchroom itself" row of the Backups page does the same later.
+
+Changing or removing the team's storage doesn't change launchroom's own copy. launchroom's own backups start once the recovery passphrase is set.
 
 ### The recovery passphrase
 
@@ -70,13 +108,17 @@ Each control-plane backup contains launchroom's keys: the keys that decrypt your
 
 ### The recovery kit
 
-The **recovery kit** is a small text file with everything needed to find your backups on a new server: the destination, bucket, folder, region, the S3 credentials and the repository password. It does not contain the passphrase. Download it, store it outside launchroom and confirm. Until you do, instance owners see a reminder. A new passphrase or a moved destination needs a new kit.
+The **recovery kit** is a small text file with everything needed to find your backups on a new server: the destination, bucket, folder, region, the S3 credentials and the repository password. It does not contain the passphrase. Download it, then put it somewhere outside launchroom, for example in your password manager, and choose **I've put both away**. Until you do, instance owners see a reminder. New storage for launchroom needs a new kit download; a new passphrase needs a new confirmation.
 
 Keep the kit and the passphrase in different places. The kit opens the backups, and the passphrase opens the keys inside them. Together they bring everything back with [one command](/docs/databases/restore-and-disaster-recovery#when-the-main-server-is-gone).
 
 ## Volume backups
 
-App and image services with volumes (uploads, SQLite files, any other mounted data) are backed up as a snapshot of the volume's files. Each volume has a consistency setting on the Backups page:
+App and image services with volumes (uploads, SQLite files, any other mounted data) are backed up as a snapshot of the volume's files. Every volume is backed up by default.
+
+To leave one out, for example a large cache, turn off **Back up this volume** in the service's **Settings → Volumes**, or choose **Stop backing up…** in the volume's menu on the Backups page. Owners and admins can change it. launchroom then takes no new backups of that volume, also none before a restore or a delete, and doesn't check or alert on it. Its existing backups stay until they expire. The volume shows under **Not backed up** with who turned it off and when. Volumes whose path looks like a cache (`/tmp`, `cache`, `node_modules`) get a hint, but stay backed up until you turn them off.
+
+Each volume has a consistency setting in the service's **Settings → Backups**:
 
 - **Live** (default): files are read while the service runs. Use it for uploads and other files that are written once.
 - **Pauses while reading**: the service's containers are frozen until the volume has been read, then resume. Use it for files written in place, like SQLite.
@@ -108,11 +150,11 @@ Every week launchroom restores the newest backup of each protected database and 
 | ClickHouse | Restore, table and row counts, `CHECK TABLE` |
 | Volumes | Every file read back and its integrity checked |
 
-The Backups page’shows "Last verified" with the result, and **Verify now** runs one immediately. Restores and verification run from the backup alone, so they also confirm that your destination still holds everything.
+The service's **Settings → Backups** shows "Last verified" with the result, and **Verify now** runs one immediately. Restores and verification run from the backup alone, so they also confirm that your destination still holds everything.
 
 ## Download a backup
 
-In **Settings → Backups**, the download button on a snapshot's row gives you the decrypted backup in the engine's own format: a `pg_dump -Fc` file, gzipped SQL for MySQL, a `mongodump` archive, ClickHouse's backup zip, a Redis or Valkey RDB file, or a `.tar.gz` of a volume. **Download now** gives you the current data without making a backup first. Downloads need the Owner or Admin role, and each link works once. See [Import and export](/docs/databases/import-and-export#download).
+In the service's **Settings → Backups**, the download button on a snapshot's row gives you the decrypted backup in the engine's own format: a `pg_dump -Fc` file, gzipped SQL for MySQL, a `mongodump` archive, ClickHouse's backup zip, a Redis or Valkey RDB file, or a `.tar.gz` of a volume. **Download now** gives you the current data without making a backup first. Downloads need the Owner or Admin role, and each link works once. See [Import and export](/docs/databases/import-and-export#download).
 
 ## Retention and maintenance
 
@@ -120,7 +162,7 @@ Each day launchroom forgets snapshots outside the retention policy and prunes th
 
 ## Status and alerts
 
-Every database node on the canvas shows when it was last backed up, with a warning when the backup is stale or failing. The Backups page also shows a trend of recent runs (sizes, how many succeeded, the usual duration) and the snapshot list.
+Every database node, and every node of a service with volumes, shows on the canvas when it was last backed up, with a warning when the backup is stale or failing. The service's **Settings → Backups** also shows a trend of recent runs (sizes, how many succeeded, the usual duration) and the snapshot list.
 
 The **A backup fails** [alert rule](/docs/observability/alerts) fires when:
 

@@ -82,6 +82,8 @@ enum AuditAction: string
     case BackupDestinationUpdated = 'backup.destination_updated';
     case BackupDestinationDeleted = 'backup.destination_deleted';
     case BackupDestinationPrivateNetworkAllowed = 'backup.destination_private_network_allowed';
+    /** A destination's restic repository password was shown (disaster recovery with plain restic, docs/14 §3). */
+    case BackupRepositoryPasswordRevealed = 'backup.repository_password_revealed';
     case BackupScheduleUpdated = 'backup.schedule_updated';
     case BackupStarted = 'backup.started';
     case RestoreStarted = 'backup.restore_started';

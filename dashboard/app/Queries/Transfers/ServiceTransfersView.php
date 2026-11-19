@@ -36,7 +36,9 @@ final class ServiceTransfersView
             ->whereKey(Holds::dependentsOf($instance))
             ->with('service')
             ->get()
+            ->sortBy(static fn (ServiceInstance $dependent): string => $dependent->service->name)
             ->map(static fn (ServiceInstance $dependent): DependentServiceData => new DependentServiceData($dependent->service->public_id, $dependent->service->name))
+            ->values()
             ->all() : [];
 
         $imports = DataImportRun::query()->where('service_instance_id', $instance->id)->latest('id')->limit(5)->get()

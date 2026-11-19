@@ -9,7 +9,7 @@ Restoring a database takes a few clicks. By default the restore goes next to the
 
 ## Restore a database
 
-Open the database's **Settings → Backups**. Each snapshot in the list shows its time, the reason it was taken (scheduled, before a deploy, before a delete and so on), its id and its size. Choose **Restore…** on the snapshot's row. For PostgreSQL with [point-in-time recovery](/docs/databases/point-in-time-recovery), you can restore to any second from the point-in-time card instead.
+Open the database's **Settings → Backups**, or choose **Restore…** in the database's menu on the **Backups** page. Restore points are grouped by day (Today, Yesterday, then the date). Each one shows its time, the reason it was taken (scheduled, manual, before an update, before a restore, before a delete and so on), its id and its size. Choose **Restore…** on the snapshot's row. For PostgreSQL with [point-in-time recovery](/docs/databases/point-in-time-recovery), you can restore to any second from the point-in-time card instead.
 
 The restore dialog shows the facts (the snapshot's time with its time zone, the size and the name of the new service, or the service it restores into) and a short list of what will happen. Then choose how to restore.
 
@@ -33,7 +33,7 @@ All of this lands as [staged changes](/docs/projects/canvas-and-services). Nothi
 
 This replaces the data of the existing database. Owners and admins can do this, and you confirm by typing the service's name.
 
-1. A safety snapshot is taken first. If it fails, nothing changes.
+1. A backup of the database as it is now is taken first, so you can go back. If it fails, nothing changes.
 2. The services connected to the database in that environment are stopped, so nothing writes during the restore. Web services among them return errors meanwhile, so plan it as a maintenance window.
 3. The database is restored:
    - PostgreSQL drops and recreates its objects in a single transaction.

@@ -17,12 +17,14 @@ enum FleetUpdateStatus: string implements HasTransitionTable
     case Running = 'running';
     case Succeeded = 'succeeded';
     case Failed = 'failed';
+    // Stopped by the owner: servers not yet updated were skipped.
+    case Cancelled = 'cancelled';
 
     public function allowedTransitions(): array
     {
         return match ($this) {
-            self::Running => [self::Succeeded, self::Failed],
-            self::Succeeded, self::Failed => [],
+            self::Running => [self::Succeeded, self::Failed, self::Cancelled],
+            self::Succeeded, self::Failed, self::Cancelled => [],
         };
     }
 }

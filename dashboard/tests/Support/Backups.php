@@ -45,12 +45,17 @@ final class Backups
 
     public static function destination(?Team $team, User $user, string $name = 'Primary', bool $makeDefault = false): BackupDestination
     {
+        // Two destinations can't share a bucket and folder: the first one
+        // gets `team-a` (launchroom's own `control-plane`), others their own.
+        $prefix = $team instanceof Team ? 'team-a' : 'control-plane';
+        $prefix = BackupDestination::usingLocation('https://s3.example.com', 'launchroom-backups', $prefix) instanceof BackupDestination ? $prefix.'-'.bin2hex(random_bytes(3)) : $prefix;
+
         return resolve(CreateBackupDestination::class)->handle($team, BackupDestinationInput::from([
             'name' => $name,
             'endpoint' => 'https://s3.example.com',
             'bucket' => 'launchroom-backups',
             'region' => 'us-east-1',
-            'prefix' => 'team-a',
+            'prefix' => $prefix,
             'accessKeyId' => 'AKIATESTKEY000001',
             'secretAccessKey' => 'super-secret-access-key-value',
             'makeDefault' => $makeDefault,

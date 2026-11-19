@@ -59,4 +59,47 @@ final readonly class DestinationSecrets
             $this->sealed->reveal($destination, 'repository_password') ?? throw DecryptionFailed::malformed(),
         );
     }
+
+    /**
+     * Only the repository password: removed storage keeps it after its access
+     * keys are wiped (reconnecting, disaster recovery with plain restic).
+     *
+     * @throws DecryptionFailed
+     */
+    public function repositoryPassword(BackupDestination $destination): string
+    {
+        return $this->sealed->reveal($destination, 'repository_password') ?? throw DecryptionFailed::malformed();
+    }
+
+    /**
+     * The repository password for new storage ($destination, not saved yet):
+     * the one given (a repository created elsewhere), else the one removed
+     * storage of the same scope at the same bucket and folder kept (adding
+     * it again reconnects its backups; the removed row hands the password
+     * over and keeps no copy), else a fresh one. Callers own the transaction.
+     *
+     * @return array{string, 'given'|'kept'|'generated'}
+     */
+    public function adoptRepositoryPassword(BackupDestination $destination, #[SensitiveParameter] ?string $given): array
+    {
+        if ($given !== null && $given !== '') {
+            return [$given, 'given'];
+        }
+
+        $removed = BackupDestination::removedAt($destination->team_id, $destination->endpoint, $destination->bucket, $destination->prefix);
+
+        if ($removed instanceof BackupDestination) {
+            try {
+                $password = $this->repositoryPassword($removed);
+            } catch (DecryptionFailed) {
+                return [self::generateRepositoryPassword(), 'generated'];
+            }
+
+            $removed->forceFill(['wrapped_dek' => '', 'repository_password' => ''])->save();
+
+            return [$password, 'kept'];
+        }
+
+        return [self::generateRepositoryPassword(), 'generated'];
+    }
 }

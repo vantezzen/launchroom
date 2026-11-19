@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Services\Backups\Process;
 
 use App\Support\Protocol\Grammar;
+use Closure;
 use Illuminate\Contracts\Cache\LockTimeoutException;
 use Illuminate\Support\Facades\Cache;
 use JsonException;
@@ -141,12 +142,15 @@ final readonly class ResticCli
      * Streams $producer's stdout into `restic backup --stdin` and checks BOTH
      * exit codes: a failed producer fails the backup even if restic stored a
      * (tiny, useless) snapshot, which is then forgotten (docs/14 §2).
+     * $progress is called with the bytes streamed so far, on every chunk and
+     * every restic status line (it may throw to stop the backup).
      *
      * @param  list<string>  $tags
+     * @param  (Closure(int): void)|null  $progress
      *
      * @throws ProcessFailed
      */
-    public function backupFromProcess(ResticTarget $target, Process $producer, string $filename, array $tags, int $producerTimeout): BackupOutcome
+    public function backupFromProcess(ResticTarget $target, Process $producer, string $filename, array $tags, int $producerTimeout, ?Closure $progress = null): BackupOutcome
     {
         $args = ['backup', '--stdin', '--stdin-filename', $filename, '--host', 'launchroom', '--json'];
 
@@ -160,14 +164,22 @@ final readonly class ResticCli
         $producer->start();
 
         $bytes = 0;
-        $restic->setInput((function () use ($producer, &$bytes): \Generator {
+        $restic->setInput((function () use ($producer, $progress, &$bytes): \Generator {
             foreach ($producer->getIterator(Process::ITER_SKIP_ERR) as $chunk) {
                 $bytes += strlen($chunk);
+
+                if ($progress instanceof Closure) {
+                    $progress($bytes);
+                }
 
                 yield $chunk;
             }
         })());
-        $restic->run();
+        // restic's status lines (every 5 s, RESTIC_PROGRESS_FPS) keep the
+        // progress going while it uploads after the dump has ended.
+        $restic->run($progress instanceof Closure ? static function () use ($progress, &$bytes): void {
+            $progress($bytes);
+        } : null);
         $producer->wait();
 
         $outcome = ProcessOutcome::from($restic, $target->credentials->secrets());
@@ -330,6 +342,9 @@ final readonly class ResticCli
             'RESTIC_CACHE_DIR' => $this->cacheDir,
             'HOME' => $this->cacheDir,
             'TMPDIR' => sys_get_temp_dir(),
+            // `--json` status lines every 5 s instead of 60 a second: a sign
+            // of life for long backups, and a bounded stdout.
+            'RESTIC_PROGRESS_FPS' => '0.2',
         ];
 
         $process = new Process([$this->binary, ...$args], null, $env, null, $timeoutSeconds ?? $this->timeoutSeconds);

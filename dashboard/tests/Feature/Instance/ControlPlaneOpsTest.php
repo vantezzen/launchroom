@@ -54,7 +54,7 @@ test('launchroom:doctor --json prints checks in the format ./launchroom doctor r
     foreach ($doc['checks'] as $check) {
         expect($check['id'])->toMatch('/^[a-z0-9][a-z0-9.-]{0,63}$/')
             ->and($check['status'])->toBeIn(['ok', 'warn', 'fail', 'skip'])
-            ->and($check['fix'])->toBeIn([null, 'clear-schedule-locks', 'restart-workers'])
+            ->and($check['fix'])->toBeIn([null, 'clear-schedule-locks', 'restart-workers', 'cancel-update'])
             ->and($check['summary'])->not->toBe('')
             ->and(array_keys($check))->toBe(['id', 'title', 'status', 'summary', 'detail', 'fix']);
     }

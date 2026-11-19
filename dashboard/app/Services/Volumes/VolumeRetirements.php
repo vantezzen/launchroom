@@ -27,7 +27,7 @@ use Illuminate\Support\Facades\DB;
  *    VolumeRetirement, retained for `launchroom.volumes.retention_hours`
  *    (`preview_retention_hours` for previews; 0 = next sweep). A volume
  *    whose service had backups (a successful run or an enabled schedule)
- *    is only deleted once its final backup exists (taken before the
+ *    and whose own backups aren't turned off is only deleted once its final backup exists (taken before the
  *    teardown, docs/14 §9.13: `final_backup_snapshot`) or the deletion was
  *    overridden ("delete without final backup", recorded as
  *    `confirmed_at/by`; the server page's "Allow deletion" is the same
@@ -75,7 +75,9 @@ final readonly class VolumeRetirements
             $environment = $instance->environment;
             $preview = $environment->kind === EnvironmentKind::Preview;
             $hours = config()->integer($preview ? 'launchroom.volumes.preview_retention_hours' : 'launchroom.volumes.retention_hours');
-            $backups = isset($withBackups[$instance->id]);
+            // A volume whose backups were turned off gets no final backup, so
+            // its deletion doesn't wait for one.
+            $backups = isset($withBackups[$instance->id]) && $volume->backup_enabled;
 
             VolumeRetirement::query()->firstOrCreate(['volume_public_id' => $volume->public_id], [
                 'team_id' => $volume->team_id,

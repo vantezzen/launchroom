@@ -594,15 +594,20 @@ func (f *FS) Filewrite(r *sftp.Request) (io.WriterAt, error) {
 			return nil, fs.ErrExist
 		}
 	}
-	return newStreamWriter(f, writeArgv(p, fl.Append)), nil
+	return newStreamWriter(f, writeArgv(p, fl.Append, fl.Trunc)), nil
 }
 
-// writeArgv is the writer process: dd truncates and writes (its operand
+// writeArgv is the writer process: dd writes from the start (its operand
 // "of=<path>" is parsed by dd itself, so a leading "-" is still a file
-// name); appends go through tee -a.
-func writeArgv(p string, appendTo bool) []string {
+// name) and truncates only when the client asked to: an open without
+// SSH_FXF_TRUNC (a resumed upload, OpenSSH's reput) must not empty the
+// file. Appends go through tee -a.
+func writeArgv(p string, appendTo, trunc bool) []string {
 	if appendTo {
 		return []string{"tee", "-a", "--", p}
+	}
+	if !trunc {
+		return []string{"dd", "of=" + p, "bs=65536", "conv=notrunc"}
 	}
 	return []string{"dd", "of=" + p, "bs=65536"}
 }

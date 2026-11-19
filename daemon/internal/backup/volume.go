@@ -1,7 +1,6 @@
 package backup
 
 import (
-	"bytes"
 	"context"
 	"errors"
 	"fmt"
@@ -124,7 +123,8 @@ func (e *Engine) helper(ctx context.Context, name string, readOnly bool) (id str
 // snapshot (docs/14 §2). With consistency "pause" the containers using the
 // volume are frozen while it is read; "live" reads it while they run.
 // Database volumes are never backed up this way (the dashboard sends dumps).
-func (e *Engine) backupVolume(ctx context.Context, spec *state.BackupSpec, creds Credentials, logf Logf) (*state.BackupResult, error) {
+func (e *Engine) backupVolume(ctx context.Context, spec *state.BackupSpec, creds Credentials, tr *tracker) (*state.BackupResult, error) {
+	logf := tr.logf
 	if e.o.Volumes == nil {
 		return nil, fmt.Errorf("backup: volume backups: %w", ErrUnsupported)
 	}
@@ -137,6 +137,7 @@ func (e *Engine) backupVolume(ctx context.Context, spec *state.BackupSpec, creds
 		return nil, err
 	}
 	start := e.o.Now()
+	tr.phase(PhasePreparing, nil, 0)
 	if created, err := r.ensure(ctx); err != nil {
 		return nil, err
 	} else if created {
@@ -177,6 +178,10 @@ func (e *Engine) backupVolume(ctx context.Context, spec *state.BackupSpec, creds
 	}
 	pr, pw := io.Pipe()
 	counted := &countingWriter{w: pw}
+	out := &resticOutput{}
+	tr.restic = out
+	tr.phase(PhaseStreaming, counted.n.Load, 0)
+	tr.ticking()
 	readDone := make(chan error, 1)
 	go func() {
 		_, err := io.Copy(counted, src)
@@ -187,17 +192,18 @@ func (e *Engine) backupVolume(ctx context.Context, spec *state.BackupSpec, creds
 			_ = pw.CloseWithError(errDumpFailed)
 		} else {
 			_ = pw.Close()
+			tr.phase(PhaseFinishing, counted.n.Load, 0)
 		}
 		readDone <- err
 	}()
 
-	var out bytes.Buffer
-	resticErr := r.run(ctx, "backup", pr, &out, args...)
+	resticErr := r.run(ctx, "backup", pr, out, args...)
 	if resticErr != nil {
 		_ = pr.CloseWithError(errors.New("restic stopped"))
 		cancel()
 	}
 	readErr := <-readDone
+	tr.stopTicker()
 	summary := parseBackupSummary(out.Bytes())
 	switch {
 	case readErr != nil:
@@ -218,6 +224,7 @@ func (e *Engine) backupVolume(ctx context.Context, spec *state.BackupSpec, creds
 	}
 	size := counted.n.Load()
 	logf("Snapshot %s stored (%s, %s added)", short(summary.SnapshotID), humanBytes(size), humanBytes(summary.DataAdded))
+	tr.stored(size, summary.SnapshotID, summary.DataAdded)
 	return &state.BackupResult{
 		SnapshotID: snap, SizeBytes: size, AddedBytes: max(summary.DataAdded, 0),
 		DurationMs: e.o.Now().Sub(start).Milliseconds(),
@@ -256,7 +263,8 @@ func (e *Engine) unpauseAll(ctx context.Context, ids []string) {
 // state while the restore runs; in place, a safety snapshot was taken). The
 // restore waits until no container uses the volume, recreates it empty with
 // the same name and labels, and extracts the snapshot's tar into it.
-func (e *Engine) restoreVolume(ctx context.Context, spec *state.RestoreSpec, creds Credentials, logf Logf) (*state.RestoreResult, error) {
+func (e *Engine) restoreVolume(ctx context.Context, spec *state.RestoreSpec, creds Credentials, tr *tracker) (*state.RestoreResult, error) {
+	logf := tr.logf
 	if e.o.Volumes == nil {
 		return nil, fmt.Errorf("backup: volume restores: %w", ErrUnsupported)
 	}
@@ -269,6 +277,7 @@ func (e *Engine) restoreVolume(ctx context.Context, spec *state.RestoreSpec, cre
 		return nil, err
 	}
 	start := e.o.Now()
+	tr.phase(PhasePreparing, nil, 0)
 	if ok, err := r.exists(ctx); err != nil {
 		return nil, err
 	} else if !ok {
@@ -307,6 +316,8 @@ func (e *Engine) restoreVolume(ctx context.Context, spec *state.RestoreSpec, cre
 	defer cancel()
 	pr, pw := io.Pipe()
 	counted := &countingWriter{w: pw}
+	tr.phase(PhaseRestoring, counted.n.Load, snaps[0].size())
+	tr.ticking()
 	dumpDone := make(chan error, 1)
 	go func() {
 		err := r.run(ctx, "dump", nil, counted, "dump", snaps[0].ID, want)
@@ -351,6 +362,7 @@ func (e *Engine) restoreVolume(ctx context.Context, spec *state.RestoreSpec, cre
 	}
 	size := counted.n.Load()
 	logf("Restored %s", humanBytes(size))
+	tr.finish(size)
 	return &state.RestoreResult{SizeBytes: size, DurationMs: e.o.Now().Sub(start).Milliseconds()}, nil
 }
 

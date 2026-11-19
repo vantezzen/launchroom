@@ -1,6 +1,6 @@
 import { Link, usePage } from '@inertiajs/react';
 import { TriangleAlert } from 'lucide-react';
-import { settings } from '@/routes/backups';
+import { index as backupsPage } from '@/routes/backups';
 
 /**
  * Persistent warning for instance owners until a recovery kit is confirmed
@@ -13,11 +13,23 @@ export function RecoveryKitBanner() {
         return null;
     }
 
-    const message = !recoveryKit.destinationConfigured
-        ? 'The control plane is not backed up. Add a backup destination and save a recovery kit.'
+    const [message, fix, hash] = !recoveryKit.destinationConfigured
+        ? [
+              'launchroom itself isn’t backed up off this server yet.',
+              'Protect launchroom itself',
+              '#setup-launchroom',
+          ]
         : !recoveryKit.passphraseSet
-          ? 'Set a recovery passphrase so control-plane backups can include the keys.'
-          : 'Download the recovery kit and confirm you stored it.';
+          ? [
+                'launchroom’s backups need a recovery passphrase to include its keys.',
+                'Set passphrase',
+                '#recovery-kit',
+            ]
+          : [
+                'Save the recovery kit so launchroom can come back on a new server.',
+                'Save the kit',
+                '#recovery-kit',
+            ];
 
     return (
         <div
@@ -30,10 +42,10 @@ export function RecoveryKitBanner() {
             />
             <span>{message}</span>
             <Link
-                href={settings()}
+                href={`${backupsPage().url}${hash}`}
                 className="font-medium underline underline-offset-4"
             >
-                Open backup settings
+                {fix}
             </Link>
         </div>
     );

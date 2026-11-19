@@ -40,6 +40,7 @@ use Spatie\LaravelData\DataCollection;
  * @property string|null $recovery_mac_key base64 key authenticating key bundles (RecoveryKey::macKey), encrypted with APP_KEY
  * @property Carbon|null $recovery_passphrase_set_at
  * @property Carbon|null $recovery_kit_downloaded_at
+ * @property string|null $recovery_kit_reset_reason passphrase_changed|storage_changed: why a kit saved before must be saved again
  * @property OnboardingStateData|null $onboarding
  * @property MeshMode|null $mesh_mode how servers are connected; null = mesh off (docs/05 §2)
  * @property Carbon|null $mesh_enabled_at
@@ -172,6 +173,23 @@ final class InstanceSettings extends Model
         self::ensureExists();
 
         return self::query()->findOrFail(self::ID);
+    }
+
+    /**
+     * The saved recovery kit no longer matches (docs/14 §4): it has to be
+     * confirmed again ($downloaded: also downloaded again). $reason
+     * (`passphrase_changed`, `storage_changed`) is kept only when a kit had
+     * been saved before, so the page can say why. The caller saves.
+     */
+    public function forgetRecoveryKit(string $reason, bool $downloaded = true): self
+    {
+        $saved = $this->recovery_kit_confirmed_at !== null || $this->recovery_kit_downloaded_at !== null;
+
+        return $this->forceFill([
+            'recovery_kit_confirmed_at' => null,
+            ...($downloaded ? ['recovery_kit_downloaded_at' => null] : []),
+            'recovery_kit_reset_reason' => $saved ? $reason : $this->recovery_kit_reset_reason,
+        ]);
     }
 
     public static function lockedForUpdate(): self

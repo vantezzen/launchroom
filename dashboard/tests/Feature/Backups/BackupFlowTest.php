@@ -172,7 +172,7 @@ test('a backup needs a destination and a running database', function (): void {
     $owner = memberOf($team, TeamRole::Owner);
 
     expect(fn () => resolve(StartDatabaseBackup::class)->handle($instance, BackupReason::Manual, $owner, AuditActor::user($owner)))
-        ->toThrow(DomainRuleViolation::class, 'Add a backup destination');
+        ->toThrow(DomainRuleViolation::class, 'Connect backup storage');
 
     $snapshot = resolve(TakeSafetySnapshot::class)->handle($instance, BackupReason::PreDelete, $owner, AuditActor::user($owner));
     expect($snapshot->runs)->toBe([])

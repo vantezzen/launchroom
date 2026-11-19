@@ -35,7 +35,7 @@ https://<account id>.r2.cloudflarestorage.com
 <Step>
 ### Add the destination in launchroom
 
-Open **Settings → Backups → Add destination**, choose **Cloudflare R2** as the storage provider, and fill in:
+Open **Backups** in the sidebar and choose **Connect storage** (**Add storage** when you already have one). Choose **Cloudflare R2** as the storage provider and fill in:
 
 | Field | Value |
 |---|---|
@@ -46,13 +46,13 @@ Open **Settings → Backups → Add destination**, choose **Cloudflare R2** as t
 | Folder (optional) | for example `team-acme`. One folder per team keeps repositories apart. |
 | Access key ID, Secret access key | From step 2 |
 
-Save. launchroom tests the destination right away and shows "Connected". Daily database backups start at a staggered time between 01:00 and 07:00 UTC.
+launchroom tests the connection right away and shows "Connected", or the cause and its fix when it fails. Daily backups start at a staggered time between 01:00 and 07:00 UTC.
 </Step>
 </Steps>
 
 ## Back up launchroom itself
 
-If you are an instance owner, use a separate bucket or folder in the same page's **Back up launchroom itself** section for the control plane, for example the `launchroom-backups` bucket with the folder `control-plane`. Then set the recovery passphrase and download the recovery kit. See [backing up launchroom itself](/docs/databases/backups#backing-up-launchroom-itself).
+If you are an instance owner, leave **Also protect launchroom itself** ticked in the same setup. launchroom keeps its own backups in the same bucket, in a `launchroom` folder (inside the folder you chose, if any), with its own repository password. The setup then asks for the recovery passphrase and the recovery kit. See [backing up launchroom itself](/docs/databases/backups#backing-up-launchroom-itself).
 
 ## Tips
 

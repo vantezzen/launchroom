@@ -340,6 +340,39 @@ func TestArtisanChecks(t *testing.T) {
 	}
 }
 
+func TestStalledUpdateOffersCancel(t *testing.T) {
+	f := newFixture(t)
+	base := f.eng.exec
+	var ran []string
+	f.eng.exec = func(c Container, argv []string) (int, string) {
+		switch strings.Join(argv, " ") {
+		case "php artisan list --raw":
+			return 0, "launchroom:doctor   Checks\n"
+		case "php artisan launchroom:doctor --json":
+			return 1, `{"checks":[{"id":"update","title":"Update","status":"fail","summary":"The update to 0.2.0 has made no progress for 25 minutes.","detail":["Backing up"],"fix":"cancel-update"}]}`
+		case "php artisan launchroom:updates:cancel --stalled":
+			ran = append(ran, c.Service)
+			return 0, "The update to 0.2.0 was cancelled.\n"
+		}
+		return base(c, argv)
+	}
+	rep := Run(t.Context(), f.o)
+	u := result(t, rep, "dashboard.update")
+	if u.Status != StatusFail || u.Fix == nil || u.Fix.ID != FixCancelUpdate {
+		t.Fatalf("update = %+v", u)
+	}
+	var out bytes.Buffer
+	if err := Apply(t.Context(), f.o, Hooks{}, rep, FixCancelUpdate, "", func(FixRef) bool { return true }, &out); err != nil {
+		t.Fatal(err, out.String())
+	}
+	if !slices.Equal(ran, []string{"scheduler"}) || !strings.Contains(out.String(), "Cancelled the update") {
+		t.Errorf("ran in %v, output %q", ran, out.String())
+	}
+	if id, _, err := ParseFix("cancel-update"); err != nil || id != FixCancelUpdate {
+		t.Errorf("ParseFix = %v, %v", id, err)
+	}
+}
+
 func TestFailedRollbackOffersFix(t *testing.T) {
 	f := newFixture(t)
 	task := "tsk_01J9Z8X7W6V5T4S3R2Q1P0N9P7"

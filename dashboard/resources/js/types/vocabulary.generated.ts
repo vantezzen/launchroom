@@ -550,11 +550,13 @@ export const vocabulary = {
             succeeded: { label: 'Updated', tone: 'active', isTerminal: true, isFailed: false },
             failed: { label: 'Failed', tone: 'failed', isTerminal: true, isFailed: true },
             rolled_back: { label: 'Rolled back', tone: 'warning', isTerminal: true, isFailed: true },
+            cancelled: { label: 'Cancelled', tone: 'idle', isTerminal: true, isFailed: false },
         },
         FleetUpdateStatus: {
             running: { isTerminal: false },
             succeeded: { isTerminal: true },
             failed: { isTerminal: true },
+            cancelled: { isTerminal: true },
         },
         FleetUpdateStepStatus: {
             pending: { isTerminal: false, isFailed: false },

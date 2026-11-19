@@ -4,10 +4,11 @@ declare(strict_types=1);
 
 use App\Http\Controllers\Backups\BackupDestinationController;
 use App\Http\Controllers\Backups\BackupScheduleController;
-use App\Http\Controllers\Backups\BackupSettingsController;
+use App\Http\Controllers\Backups\BackupsController;
 use App\Http\Controllers\Backups\DeletionRequestController;
 use App\Http\Controllers\Backups\RecoveryKitController;
 use App\Http\Controllers\Backups\ServiceBackupsController;
+use Illuminate\Routing\RedirectController;
 use Illuminate\Support\Facades\Route;
 
 /*
@@ -17,7 +18,29 @@ use Illuminate\Support\Facades\Route;
 */
 
 Route::middleware(['web', 'auth', 'verified'])->group(function (): void {
-    Route::get('settings/backups', [BackupSettingsController::class, 'edit'])->name('backups.settings');
+    // The Backups page (team sidebar).
+    Route::get('backups', [BackupsController::class, 'index'])->name('backups.index');
+    // Settings → Backups moved to the Backups page. GET only (Route::redirect
+    // would register every verb).
+    Route::get('settings/backups', RedirectController::class)
+        ->defaults('destination', '/backups')
+        ->defaults('status', 302)
+        ->name('backups.settings');
+    Route::post('backups/everything', [BackupsController::class, 'everything'])
+        ->middleware('throttle:6,1')
+        ->name('backups.everything');
+    Route::post('backups/services/{serviceInstance}/run', [BackupsController::class, 'service'])
+        ->middleware('throttle:20,1')
+        ->name('backups.services.run');
+    Route::post('backups/services/{serviceInstance}/volumes/{volume}/run', [BackupsController::class, 'volume'])
+        ->middleware('throttle:20,1')
+        ->name('backups.services.volumes.run');
+    Route::put('backups/services/{serviceInstance}/volumes/{volume}/backup', [BackupsController::class, 'volumeBackup'])
+        ->middleware('throttle:30,1')
+        ->name('backups.services.volumes.backup');
+    Route::post('backups/launchroom/storage', [BackupsController::class, 'launchroomStorage'])
+        ->middleware('throttle:10,1')
+        ->name('backups.control-plane.storage');
 
     Route::post('settings/backups/destinations', [BackupDestinationController::class, 'store'])
         ->middleware('throttle:20,1')
@@ -31,6 +54,9 @@ Route::middleware(['web', 'auth', 'verified'])->group(function (): void {
     Route::post('settings/backups/destinations/{backupDestination}/test', [BackupDestinationController::class, 'test'])
         ->middleware('throttle:10,1')
         ->name('backups.destinations.test');
+    Route::post('backups/storage/{anyBackupDestination}/repository-password', [BackupDestinationController::class, 'repositoryPassword'])
+        ->middleware('throttle:secret-reveal')
+        ->name('backups.destinations.repository-password');
 
     Route::put('settings/backups/schedules/{backupSchedule}', [BackupScheduleController::class, 'update'])->name('backups.schedules.update');
     Route::post('settings/backups/control-plane/run', [BackupScheduleController::class, 'runControlPlane'])

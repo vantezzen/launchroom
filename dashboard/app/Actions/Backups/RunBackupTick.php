@@ -11,8 +11,10 @@ use App\Enums\Backups\BackupRunStatus;
 use App\Enums\Backups\BackupSubject;
 use App\Exceptions\DomainRuleViolation;
 use App\Jobs\Backups\RunBackupMaintenanceJob;
+use App\Models\Backups\BackupDestination;
 use App\Models\Backups\BackupRun;
 use App\Models\Backups\BackupSchedule;
+use App\Models\InstanceSettings;
 use App\Support\Refusal;
 use Carbon\CarbonImmutable;
 use Illuminate\Contracts\Database\Query\Builder;
@@ -62,8 +64,11 @@ final readonly class RunBackupTick
         $started = 0;
         $maintained = 0;
 
+        // Removed storage stops its schedules until storage is added again
+        // (CreateBackupDestination moves them over); nothing is recorded.
         $due = BackupSchedule::query()
             ->where('enabled', true)
+            ->whereIn('destination_id', BackupDestination::query()->select('id'))
             ->where(static fn (Builder $query) => $query->whereNull('last_run_at')->orWhere('last_run_at', '<', $minute))
             ->with(['serviceInstance.service', 'destination'])
             ->orderBy('id')
@@ -71,6 +76,14 @@ final readonly class RunBackupTick
 
         foreach ($due as $schedule) {
             if (! $schedule->owedRun($now) instanceof CarbonImmutable) {
+                continue;
+            }
+
+            // launchroom's own backup waits for the recovery passphrase: a
+            // backup whose keys can't be opened is no backup, and failing
+            // every 6 hours during setup would only raise alerts. The owed
+            // slot runs once the passphrase is set (CatchUp).
+            if ($schedule->subject === BackupSubject::ControlPlane && InstanceSettings::current()->recovery_public_key === null) {
                 continue;
             }
 
@@ -98,6 +111,7 @@ final readonly class RunBackupTick
 
         $maintenance = BackupSchedule::query()
             ->where('enabled', true)
+            ->whereIn('destination_id', BackupDestination::query()->select('id'))
             ->where(static fn (Builder $query) => $query->whereNull('last_maintenance_at')->orWhere('last_maintenance_at', '<', $now->subDay()))
             ->whereHas('runs', static fn (Builder $query) => $query->where('status', BackupRunStatus::Succeeded->value))
             ->orderBy('id')

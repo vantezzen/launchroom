@@ -18,6 +18,15 @@ When a release is available, Settings → Updates shows **launchroom x.y.z is re
 ### Backup
 
 launchroom backs up the control plane (database, settings and keys) to your off-site backup destination before anything changes. If the backup fails, the update stops and nothing changes.
+
+The update dialog lets you pick the backup:
+
+- **Use the latest backup** shows when the latest control-plane backup finished and its size. The update then starts without a new backup. This is preselected when the latest backup is less than a day old.
+- **Take a new backup first** backs up launchroom before the update.
+- **Wait for the running backup** replaces the new backup while a control-plane backup is running. The update starts within a minute after it finished and uses it.
+- **Update without a new backup** is offered when launchroom has never been backed up.
+
+The local database copy for the rollback is taken in every case.
 </Step>
 <Step>
 ### Control plane
@@ -31,11 +40,27 @@ The control plane's launchroomd downloads the release bundle, verifies its signa
 </Step>
 </Steps>
 
-You can leave the page while it runs. The step list shows Queued, Backing up, Updating, Updated, Failed or Rolled back, with the latest progress line.
+You can leave the page while it runs. The step list shows Queued, Backing up, Updating, Updated, Failed, Rolled back or Cancelled, with the latest progress line. While the backup runs, it shows how much is stored so far.
 
 ### Without an off-site backup
 
 If you haven't set up a control-plane backup destination, the update dialog asks you to tick **Update without an off-site backup**. A local database dump is still taken on the control-plane server for the rollback, but there is no copy elsewhere. Set up a destination under [Backups](/docs/databases/backups) to make updates safer.
+
+## When an update stops making progress
+
+Before the new version is installed, every step reports that it is alive. When a step stops, launchroom first tries again by itself: a backup that stopped is started again (up to two times), and a step that was interrupted continues where it stopped. If there is still no progress after three minutes, the page says so. **Cancel update** is available until launchroom starts installing. Nothing has changed until then, so cancelling is safe. Then use **Try again**, which installs the same release.
+
+- If the main server doesn't start the update within 30 minutes, for example because it is offline, the update is cancelled by itself.
+- Once launchroom installs the new version, the update can't be cancelled. If the new version doesn't start, launchroom goes back to the old one.
+- **Stop updating servers** stops a rollout. A server that is installing finishes, the others keep their version. A server that doesn't start its update within 30 minutes fails its step and stops the rollout, with **Try again**.
+
+When the dashboard doesn't load, cancel the update on the main server:
+
+```sh title="On the control-plane server, in the launchroom folder"
+./launchroom doctor --fix cancel-update
+```
+
+It only cancels an update that has made no progress.
 
 ## When something fails
 
@@ -49,7 +74,7 @@ The Updates page then shows an amber card with what happened, step by step, and 
 | Outcome | What to do |
 |---|---|
 | Rolled back | Nothing to fix. You're on the previous version. **Try again** when you're ready, or wait for the next release |
-| Backup failed | Nothing changed. Check Settings → Backups, then try again |
+| Backup failed | Nothing changed. Open **Backups** in the sidebar to see why, then try again |
 | Failed | Run `./launchroom doctor` on the control-plane server and keep the pre-update backup at hand. See [When the dashboard is down](/docs/operations/when-the-dashboard-is-down) |
 | The rollback didn't finish | In the launchroom folder on the main server, run `./launchroom doctor`. It offers `--fix update-rollback`, which finishes going back to the previous version. Then try the update again |
 
@@ -85,7 +110,7 @@ Turn on **Install updates automatically** to have launchroom update itself at ni
 
 - Start only between **02:00 and 05:00** in the control-plane server's time zone (UTC if it can't tell).
 - Need an off-site backup destination. Without one, the switch is disabled with a link to set one up.
-- Run the same flow as Update now, backup first, servers included.
+- Run the same flow as Update now, always with a new backup first, servers included.
 - Install only releases that haven't been tried before. A version that failed or was rolled back waits for a person.
 - Don't start while something else is running or while launchroom is in recovery mode.
 

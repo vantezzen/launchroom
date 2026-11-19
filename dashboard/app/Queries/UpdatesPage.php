@@ -7,10 +7,12 @@ namespace App\Queries;
 use App\Data\Updates\ControlPlaneUpdateData;
 use App\Data\Updates\FleetServerData;
 use App\Data\Updates\FleetUpdateData;
+use App\Data\Updates\PreUpgradeBackupData;
 use App\Data\Updates\ReleaseData;
 use App\Data\Updates\UpdatePreferencesData;
 use App\Enums\Updates\ControlPlaneUpdateStatus;
 use App\Models\Backups\BackupDestination;
+use App\Models\Backups\BackupRun;
 use App\Models\InstanceSettings;
 use App\Models\Server;
 use App\Models\Updates\ControlPlaneUpdate;
@@ -32,6 +34,7 @@ final readonly class UpdatesPage
         private ReleaseChecker $releases,
         private FleetUpdateCandidates $candidates,
         private AutoUpdateWindow $window,
+        private PreUpgradeBackups $backups,
     ) {}
 
     /**
@@ -57,6 +60,8 @@ final readonly class UpdatesPage
         $settings = InstanceSettings::current();
         [$windowStart, $windowEnd] = $this->window->hours();
         $available = $check->available;
+        $latestBackup = $destination instanceof BackupDestination ? $this->backups->latest($destination) : null;
+        $runningBackup = $destination instanceof BackupDestination ? $this->backups->running($destination) : null;
 
         return [
             'currentVersion' => $version,
@@ -65,6 +70,9 @@ final readonly class UpdatesPage
             'highlights' => $check->available instanceof ReleaseData ? ReleaseHighlights::from($check->available->notes) : [],
             'hasBackupDestination' => $destination instanceof BackupDestination,
             'backupDestinationName' => $destination?->name,
+            // What the update dialog offers instead of a new backup (docs/11 §4.1).
+            'latestBackup' => $latestBackup instanceof BackupRun ? PreUpgradeBackupData::fromRun($latestBackup) : null,
+            'runningBackup' => $runningBackup instanceof BackupRun ? PreUpgradeBackupData::fromRun($runningBackup) : null,
             // Servers that the guided flow brings to the new release after the control plane.
             'serversBehindRelease' => $available instanceof ReleaseData
                 ? $servers->filter(static fn (Server $server): bool => ! $server->is_control_plane && $server->daemon_version !== null && Semver::newer($available->version, $server->daemon_version))->count()

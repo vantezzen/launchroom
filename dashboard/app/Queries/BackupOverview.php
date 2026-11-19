@@ -4,84 +4,21 @@ declare(strict_types=1);
 
 namespace App\Queries;
 
-use App\Data\Backups\BackupDayData;
-use App\Data\Backups\BackupProtectionData;
 use App\Data\Backups\DestinationUsageData;
 use App\Enums\Backups\BackupRunStatus;
 use App\Enums\Backups\BackupSubject;
 use App\Models\Backups\BackupDestination;
 use App\Models\Backups\BackupRun;
-use App\Models\Backups\BackupSchedule;
-use Carbon\CarbonImmutable;
 use Illuminate\Support\Facades\DB;
 
 /**
- * Settings → Backups at a glance (docs/design/flows.md §14): a 30-day run
- * strip per schedule and, per destination, the newest snapshot of
- * everything stored there by kind.
+ * What each destination holds (the Backups page's storage card,
+ * docs/design/flows.md §14): the newest snapshot of everything stored there
+ * by kind. DAYS is the run strip's length (App\Queries\Backups\BackupsPage).
  */
 final class BackupOverview
 {
     public const int DAYS = 30;
-
-    /**
-     * @param  list<BackupSchedule>  $schedules
-     * @return list<BackupProtectionData>
-     */
-    public function protection(array $schedules): array
-    {
-        if ($schedules === []) {
-            return [];
-        }
-
-        $today = CarbonImmutable::now('UTC')->startOfDay();
-        $since = $today->subDays(self::DAYS - 1);
-
-        $runs = BackupRun::query()
-            ->whereIn('schedule_id', array_map(static fn (BackupSchedule $schedule): int => $schedule->id, $schedules))
-            ->whereIn('status', BackupRunStatus::terminal())
-            ->where('created_at', '>=', $since)
-            ->orderBy('id')
-            ->get(['id', 'schedule_id', 'status', 'size_bytes', 'created_at', 'finished_at']);
-
-        /** @var array<int, array<string, string>> $byDay */
-        $byDay = [];
-        /** @var array<int, BackupRun> $latest */
-        $latest = [];
-
-        foreach ($runs as $run) {
-            $scheduleId = (int) $run->schedule_id;
-            $day = ($run->created_at ?? $today)->copy()->utc()->format('Y-m-d');
-            $ok = $run->status === BackupRunStatus::Succeeded;
-            $byDay[$scheduleId][$day] = $ok || ($byDay[$scheduleId][$day] ?? null) === 'ok' ? 'ok' : 'failed';
-
-            if ($ok) {
-                $latest[$scheduleId] = $run;
-            }
-        }
-
-        $out = [];
-
-        foreach ($schedules as $schedule) {
-            $days = [];
-
-            for ($i = 0; $i < self::DAYS; $i++) {
-                $date = $since->addDays($i)->format('Y-m-d');
-                $days[] = new BackupDayData($date, $byDay[$schedule->id][$date] ?? 'none');
-            }
-
-            $last = $latest[$schedule->id] ?? $this->lastSucceeded($schedule);
-
-            $out[] = new BackupProtectionData(
-                $schedule->public_id,
-                $days,
-                $last instanceof BackupRun ? ($last->finished_at ?? $last->created_at) : null,
-                $last?->size_bytes,
-            );
-        }
-
-        return $out;
-    }
 
     /**
      * @param  list<BackupDestination>  $destinations
@@ -132,14 +69,5 @@ final class BackupOverview
         }
 
         return $out;
-    }
-
-    private function lastSucceeded(BackupSchedule $schedule): ?BackupRun
-    {
-        return BackupRun::query()
-            ->where('schedule_id', $schedule->id)
-            ->where('status', BackupRunStatus::Succeeded->value)
-            ->latest('id')
-            ->first(['id', 'size_bytes', 'created_at', 'finished_at']);
     }
 }

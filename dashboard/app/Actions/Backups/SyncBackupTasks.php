@@ -7,6 +7,7 @@ namespace App\Actions\Backups;
 use App\Data\Backups\BackupVerificationCheckData;
 use App\Enums\Backups\BackupRunStatus;
 use App\Enums\Backups\BackupSubject;
+use App\Enums\Backups\DestinationErrorKind;
 use App\Enums\Backups\DestinationStatus;
 use App\Enums\Backups\RestoreRunStatus;
 use App\Enums\Backups\VerificationStatus;
@@ -110,6 +111,11 @@ final readonly class SyncBackupTasks
             if ($task->status === DaemonTaskStatus::Failed || $task->status === DaemonTaskStatus::Cancelled) {
                 $run->transitionTo(BackupRunStatus::Failed, $task->error ?? 'The backup task '.$task->status->value.'.');
                 event(new BackupRunFinished($run->id, $run->team_id));
+
+                // The storage refused it (key, repository password, bucket): its card says so too.
+                if (in_array(DestinationErrorKind::classify($task->error), [DestinationErrorKind::WrongCredentials, DestinationErrorKind::WrongRepositoryPassword, DestinationErrorKind::BucketMissing], true)) {
+                    $run->destination()->first()?->markChecked(DestinationStatus::Failing, $task->error);
+                }
             }
         });
     }

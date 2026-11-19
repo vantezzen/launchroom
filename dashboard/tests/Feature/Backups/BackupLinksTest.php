@@ -11,15 +11,15 @@ beforeEach(function (): void {
     Backups::fakeEnvironment();
 });
 
-test('team backup rows link to the service\'s Settings → Backups', function (): void {
+test('Backups page rows link to the service\'s Backups tab, where restoring happens', function (): void {
     [$team, , , $instance] = Backups::runningPostgres();
     $owner = memberOf($team, TeamRole::Owner);
     Backups::destination($team, $owner);
     $instance->loadMissing(['service', 'environment.project']);
 
-    $this->actingAs($owner)->get(route('backups.settings'))
+    $this->actingAs($owner)->get(route('backups.index'))
         ->assertOk()
         ->assertInertia(fn ($page) => $page
-            ->component('settings/backups')
-            ->where('schedules.0.href', "/p/{$instance->environment->project->public_id}/{$instance->environment->public_id}/s/{$instance->service->public_id}/settings/backups"));
+            ->component('backups/index')
+            ->where('page.groups.1.items.0.restoreHref', "/p/{$instance->environment->project->public_id}/{$instance->environment->public_id}/s/{$instance->service->public_id}/settings/backups"));
 });

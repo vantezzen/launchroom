@@ -243,7 +243,8 @@ export const ServiceNode = memo(function ServiceNode({
                             </button>
                         )
                     )}
-                    {data.kind === 'database' && data.backup ? (
+                    {(data.kind === 'database' || data.volume !== null) &&
+                    data.backup ? (
                         <BackupHealthStatus
                             health={data.backup}
                             className="type-small text-muted-foreground [&_svg]:size-3"

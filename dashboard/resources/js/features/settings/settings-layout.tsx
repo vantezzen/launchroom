@@ -2,7 +2,6 @@ import { usePage } from '@inertiajs/react';
 import {
     Bell,
     Container,
-    DatabaseBackup,
     FileCode2,
     Fingerprint,
     Gauge,
@@ -30,7 +29,6 @@ import type { BreadcrumbItem } from '@/types';
 import { accountSettingsIndex } from './settings-index';
 import { index as editApiTokens } from '@/routes/api-tokens';
 import { edit as editAppearance } from '@/routes/appearance';
-import { settings as editBackups } from '@/routes/backups';
 import { edit as editDashboardDomain } from '@/routes/dashboard-domain';
 import { edit as editDockerfileGeneration } from '@/routes/dockerfile-generation';
 import { edit as editGit } from '@/routes/git';
@@ -55,7 +53,6 @@ const routes = {
     appearance: editAppearance,
     team: editTeam,
     git: editGit,
-    backups: editBackups,
     registries: editRegistryCredentials,
     notifications: editNotifications,
     'dockerfile-generation': editDockerfileGeneration,
@@ -78,7 +75,6 @@ const descriptions: Partial<Record<AccountPage, string>> = {
     appearance: 'How the dashboard looks in this browser.',
     team: 'Who is in this team and what they may do.',
     git: 'Where your repositories come from.',
-    backups: 'Where backups go and what they protect.',
     registries: 'Sign-in details for registries that hold your private images.',
     notifications: 'Where launchroom tells you when something needs you.',
     'dockerfile-generation':
@@ -162,13 +158,6 @@ export default function SettingsLayout({ children }: PropsWithChildren) {
                     icon: GitBranch,
                     summary: 'Providers and connections',
                     keywords: ['github', 'gitlab', 'forgejo', 'repository'],
-                },
-                {
-                    id: 'backups',
-                    label: 'Backups',
-                    icon: DatabaseBackup,
-                    summary: 'Destinations and schedules',
-                    keywords: ['s3', 'destination', 'snapshot', 'restore'],
                 },
                 // D91: private images, copied into launchroom's registry on deploy.
                 {
@@ -310,7 +299,7 @@ export default function SettingsLayout({ children }: PropsWithChildren) {
                         id === null ? settingsIndex().url : routes[id]().url
                     }
                     index={accountSettingsIndex(visible)}
-                    emptyHint="Try “password”, “token” or “backups”."
+                    emptyHint="Try “password”, “token” or “domain”."
                 >
                     <SettingsPage
                         title={page?.label ?? 'Settings'}

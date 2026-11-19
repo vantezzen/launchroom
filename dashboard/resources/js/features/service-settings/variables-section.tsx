@@ -4,6 +4,7 @@ import {
     FileCode2,
     Hammer,
     KeyRound,
+    Layers,
     Link2,
     Lock,
     MoreHorizontal,
@@ -152,6 +153,13 @@ function Badges({ row }: { row: Row }) {
                 exposure={row.exposure}
                 browserInlined={row.browserInlined}
             />
+            {row.connection === null && row.inheritedFrom !== null && (
+                <Hint
+                    label={`Set on ${row.inheritedFrom}. This service runs ${row.inheritedFrom}'s code, so it gets the same value. Change it on ${row.inheritedFrom}, or override it here.`}
+                >
+                    <Layers aria-hidden="true" />
+                </Hint>
+            )}
             {row.connection !== null && (
                 <Hint
                     label={
@@ -302,9 +310,13 @@ export function VariablesSection({
         return () => document.removeEventListener('paste', onPaste);
     }, [canWrite, busy]);
 
+    const usedBy =
+        data && data.usedBy.length > 0
+            ? ` Also used by ${data.usedBy.join(', ')}.`
+            : '';
     const description = canWrite
-        ? 'Changes apply with the next deploy. Paste a .env anywhere on this page to import it.'
-        : 'Changes apply with the next deploy.';
+        ? `Changes apply with the next deploy.${usedBy} Paste a .env anywhere on this page to import it.`
+        : `Changes apply with the next deploy.${usedBy}`;
 
     if (isPending) {
         return (
@@ -544,6 +556,25 @@ export function VariablesSection({
                                                 onEdit={() =>
                                                     setDialog({ variable: row })
                                                 }
+                                                onOverride={
+                                                    canWrite
+                                                        ? () =>
+                                                              setDialog({
+                                                                  variable:
+                                                                      null,
+                                                                  preset: {
+                                                                      key: row.key,
+                                                                      value:
+                                                                          row.type ===
+                                                                          'secret'
+                                                                              ? ''
+                                                                              : (row.value ??
+                                                                                ''),
+                                                                      type: row.type,
+                                                                  },
+                                                              })
+                                                        : undefined
+                                                }
                                                 onRemove={() =>
                                                     setDeleting(row)
                                                 }
@@ -776,6 +807,7 @@ function VariableRow({
     project,
     environment,
     onEdit,
+    onOverride,
     onRemove,
 }: {
     row: Row;
@@ -784,8 +816,16 @@ function VariableRow({
     project: string;
     environment: string;
     onEdit: () => void;
+    /** The app's variables on a worker or cron: add this service's own. */
+    onOverride?: () => void;
     onRemove: () => void;
 }) {
+    const canOverride =
+        onOverride !== undefined &&
+        row.inheritedFrom !== null &&
+        row.connection === null &&
+        !row.overridden;
+
     return (
         <tr
             className={cn(
@@ -811,7 +851,9 @@ function VariableRow({
                     )}
                     {row.overridden && (
                         <span className="type-small">
-                            Overridden by a variable of this service
+                            {row.inheritedFrom !== null
+                                ? 'Replaced by a variable with the same key'
+                                : 'Overridden by a variable of this service'}
                         </span>
                     )}
                 </div>
@@ -863,34 +905,54 @@ function VariableRow({
             {showTargets && (
                 <td className="hidden py-3 pr-3 @xl:table-cell">
                     <span className="flex flex-wrap items-center gap-1">
-                        {row.connection !== null
-                            ? row.inheritedFrom !== null && (
-                                  <span className="type-small text-muted-foreground">
-                                      From {row.inheritedFrom}
-                                  </span>
-                              )
-                            : otherTargets(row, environment).length > 0 && (
-                                  <>
-                                      <span className="type-small text-muted-foreground">
-                                          Also
-                                      </span>
-                                      {otherTargets(row, environment).map(
-                                          (target) => (
-                                              <Badge
-                                                  key={`${target.environmentId}-${target.label}`}
-                                                  variant="secondary"
-                                                  className="font-normal"
-                                              >
-                                                  {target.label}
-                                              </Badge>
-                                          ),
-                                      )}
-                                  </>
-                              )}
+                        {row.inheritedFrom !== null ? (
+                            <span className="type-small text-muted-foreground">
+                                From {row.inheritedFrom}
+                            </span>
+                        ) : (
+                            row.connection === null &&
+                            otherTargets(row, environment).length > 0 && (
+                                <>
+                                    <span className="type-small text-muted-foreground">
+                                        Also
+                                    </span>
+                                    {otherTargets(row, environment).map(
+                                        (target) => (
+                                            <Badge
+                                                key={`${target.environmentId}-${target.label}`}
+                                                variant="secondary"
+                                                className="font-normal"
+                                            >
+                                                {target.label}
+                                            </Badge>
+                                        ),
+                                    )}
+                                </>
+                            )
+                        )}
                     </span>
                 </td>
             )}
             <td className="py-2 pr-3 text-right">
+                {canOverride && (
+                    <DropdownMenu>
+                        <DropdownMenuTrigger asChild>
+                            <Button
+                                variant="ghost"
+                                size="icon"
+                                className="size-8"
+                                aria-label={`Actions for ${row.key}`}
+                            >
+                                <MoreHorizontal />
+                            </Button>
+                        </DropdownMenuTrigger>
+                        <DropdownMenuContent align="end">
+                            <DropdownMenuItem onSelect={onOverride}>
+                                Override
+                            </DropdownMenuItem>
+                        </DropdownMenuContent>
+                    </DropdownMenu>
+                )}
                 {row.canEdit && (
                     <DropdownMenu>
                         <DropdownMenuTrigger asChild>

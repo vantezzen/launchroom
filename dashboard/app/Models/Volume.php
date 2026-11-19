@@ -25,11 +25,15 @@ use Illuminate\Support\Carbon;
  * @property int|null $server_id
  * @property int|null $size_bytes
  * @property VolumeConsistency $backup_consistency how backups read it (docs/14 §2)
+ * @property bool $backup_enabled false: "Back up this volume" is off; no new backups of it (existing ones expire)
+ * @property int|null $backup_disabled_by who turned it off
+ * @property Carbon|null $backup_disabled_at
  * @property Carbon|null $removed_at staged removal: leaves the service with the next deploy, then retired (docs/14 §9.12)
  * @property Carbon|null $created_at
  * @property Carbon|null $updated_at
  * @property-read ServiceInstance $serviceInstance
  * @property-read Collection<int, VolumeMount> $mounts
+ * @property-read User|null $backupDisabledBy
  */
 #[Fillable(['team_id', 'service_instance_id', 'mount_path', 'server_id', 'backup_consistency'])]
 final class Volume extends Model
@@ -39,6 +43,7 @@ final class Volume extends Model
     /** @var array<string, mixed> */
     protected $attributes = [
         'backup_consistency' => 'live',
+        'backup_enabled' => true,
     ];
 
     public static function publicIdPrefix(): string
@@ -73,6 +78,14 @@ final class Volume extends Model
     }
 
     /**
+     * @return BelongsTo<User, $this>
+     */
+    public function backupDisabledBy(): BelongsTo
+    {
+        return $this->belongsTo(User::class, 'backup_disabled_by');
+    }
+
+    /**
      * @return BelongsTo<Server, $this>
      */
     public function server(): BelongsTo
@@ -85,6 +98,6 @@ final class Volume extends Model
      */
     protected function casts(): array
     {
-        return ['size_bytes' => 'integer', 'backup_consistency' => VolumeConsistency::class, 'removed_at' => 'datetime'];
+        return ['size_bytes' => 'integer', 'backup_consistency' => VolumeConsistency::class, 'backup_enabled' => 'boolean', 'backup_disabled_at' => 'datetime', 'removed_at' => 'datetime'];
     }
 }

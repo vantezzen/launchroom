@@ -113,26 +113,6 @@ export function accountSettingsIndex(
         },
 
         {
-            target: 'backups',
-            label: 'Destinations',
-            hint: 'Where snapshots are stored',
-            keywords: ['s3', 'bucket', 'storage', 'b2', 'r2'],
-        },
-        {
-            target: 'backups',
-            label: 'Schedules',
-            hint: 'How often each database is backed up',
-            keywords: ['schedule', 'retention', 'cron', 'protected'],
-        },
-        {
-            target: 'backups',
-            label: 'Recovery kit',
-            hint: 'Restore launchroom after losing its server',
-            keywords: ['recovery', 'disaster', 'passphrase'],
-            anchor: 'recovery-kit',
-        },
-
-        {
             target: 'notifications',
             label: 'Channels',
             hint: 'Email, Slack, Discord or a webhook',

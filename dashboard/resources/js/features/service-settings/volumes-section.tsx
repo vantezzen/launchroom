@@ -32,6 +32,8 @@ import {
 } from '@/components/ui/dropdown-menu';
 import { Input } from '@/components/ui/input';
 import { RemoteAccessButton } from '@/features/remote-access/remote-access';
+import { useServiceBackups } from '@/features/backups/use-service-backups';
+import { VolumeBackupSwitch } from '@/features/backups/volume-backup-switch';
 import { deviceStatus } from '@/features/servers/format';
 import { cn } from '@/lib/utils';
 import services from '@/routes/projects/services';
@@ -55,7 +57,7 @@ function protection(backup: App.Data.Backups.ServiceBackupStatusData | null): {
         return {
             icon: <ShieldQuestion className="size-4" />,
             title: 'Not backed up yet',
-            detail: 'Add a backup destination in Settings → Backups.',
+            detail: 'Connect storage on the Backups page.',
             tone: 'text-muted-foreground',
         };
     }
@@ -132,7 +134,25 @@ function VolumeCard({
     onRemove: () => void;
 }) {
     const placed = volume.server !== null;
-    const guard = protection(context.node.backup);
+    const backups = useServiceBackups(
+        {
+            project: context.route[0],
+            environment: context.route[1],
+            service: context.route[2],
+        },
+        placed,
+    );
+    const turnedOff =
+        backups.data?.volumes.find((item) => item.id === volume.id)
+            ?.backupEnabled === false;
+    const guard = turnedOff
+        ? {
+              icon: <ShieldQuestion className="size-4" />,
+              title: 'Not backed up',
+              detail: 'Turned off for this volume',
+              tone: 'text-muted-foreground',
+          }
+        : protection(context.node.backup);
     const backupsHref = services.section({
         project: context.route[0],
         environment: context.route[1],
@@ -234,8 +254,8 @@ function VolumeCard({
                             </dd>
                             <dd className="type-small text-muted-foreground">
                                 {volume.sizeBytes !== null
-                                    ? 'At the last snapshot'
-                                    : 'Measured with the first snapshot'}
+                                    ? 'On the server'
+                                    : 'Measured once the server reports it'}
                             </dd>
                         </div>
                         <div className="flex flex-col gap-1 px-5 py-3.5">
@@ -258,6 +278,16 @@ function VolumeCard({
                             </dd>
                         </div>
                     </dl>
+                    {placed && !volume.removing && (
+                        <VolumeBackupSwitch
+                            serviceRef={{
+                                project: context.route[0],
+                                environment: context.route[1],
+                                service: context.route[2],
+                            }}
+                            volumeId={volume.id}
+                        />
+                    )}
                     <div className="flex flex-wrap items-center justify-between gap-x-3 gap-y-1.5 border-t px-5 py-2.5">
                         <span className="type-small text-muted-foreground">
                             {volume.removing

@@ -208,6 +208,11 @@ return [
     */
 
     'defaults' => [
+        // `timeout` is also how long a worker Horizon scales away may finish
+        // its job before it is killed (ProcessPool::stopTerminatingProcessesThatAreHanging):
+        // it stays at or above the longest job of the lane (300 s here) and
+        // below the lane's retry_after (360 s), or a scale-down kills a
+        // running job, which then fails as attempted too many times.
         'supervisor-1' => [
             'connection' => 'redis',
             'queue' => ['default'],
@@ -218,7 +223,7 @@ return [
             'maxJobs' => 0,
             'memory' => 128,
             'tries' => 1,
-            'timeout' => 60,
+            'timeout' => 330,
             'nice' => 0,
         ],
         // launchroom: job lanes (config/queue.php `routes`). Notifications

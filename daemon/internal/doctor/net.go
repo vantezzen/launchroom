@@ -88,6 +88,7 @@ type artisanCheck struct {
 var artisanFixes = map[string]FixRef{
 	string(FixClearScheduleLocks): {ID: FixClearScheduleLocks, Does: "Clears the schedule's locks, so commands a stopped scheduler left locked run again."},
 	string(FixRestartWorkers):     {ID: FixRestartWorkers, Does: "Lets the background job workers finish their current job and start fresh."},
+	string(FixCancelUpdate):       {ID: FixCancelUpdate, Does: "Cancels the update that made no progress. Nothing has changed yet; try it again from Settings → Updates."},
 }
 
 // checkArtisan runs the dashboard's own checks (queues, schedule, failed

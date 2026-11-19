@@ -1,7 +1,7 @@
 declare namespace App {
 namespace Broadcasting {
-export type BroadcastEvent = 'canvas.changed' | 'deployment.updated' | 'logs.appended' | 'server.metrics' | 'service.activity' | 'security.changed';
-export type Channel = 'environments' | 'deployments' | 'servers' | 'security' | 'members' | 'daemon' | 'session';
+export type BroadcastEvent = 'canvas.changed' | 'deployment.updated' | 'logs.appended' | 'server.metrics' | 'service.activity' | 'security.changed' | 'backups.changed';
+export type Channel = 'environments' | 'deployments' | 'servers' | 'security' | 'backups' | 'members' | 'daemon' | 'session';
 export type ServiceActivityTopic = 'sessions' | 'remote_access' | 'backups' | 'imports';
 }
 namespace Data {
@@ -598,6 +598,33 @@ rotateSecret: boolean,
 };
 }
 namespace Backups {
+export type BackupActionData = {
+url: string | null,
+disabled: App.Data.Backups.BackupDisabledReasonData | null,
+};
+export type BackupAttentionData = {
+id: string,
+name: string,
+};
+export type BackupBatchProgressData = {
+id: string,
+startedAt: string,
+finishedAt: string | null,
+total: number,
+succeeded: number,
+failed: number,
+running: number,
+queued: number,
+refused: {
+name: string,
+message: string,
+}[],
+failures: {
+itemId: string,
+name: string,
+error: string | null,
+}[],
+};
 export type BackupDayData = {
 date: string,
 status: string,
@@ -617,6 +644,14 @@ lastCheckedAt: string | null,
 lastError: string | null,
 scheduleCount: number,
 canManage: boolean,
+errorKind: App.Enums.Backups.DestinationErrorKind | null,
+usage: App.Data.Backups.DestinationUsageData | null,
+updateUrl: string | null,
+testUrl: string | null,
+removeUrl: string | null,
+runCount: number,
+sharedWithLaunchroom: boolean,
+repositoryPasswordUrl: string | null,
 };
 export type BackupDestinationInput = {
 name: string,
@@ -629,12 +664,67 @@ secretAccessKey: string | null,
 repositoryPassword: string | null,
 allowPrivateNetwork: boolean,
 makeDefault: boolean,
+protectLaunchroom: boolean,
 };
-export type BackupProtectionData = {
-scheduleId: string,
-days: App.Data.Backups.BackupDayData[],
+export type BackupDisabledReasonData = {
+code: App.Enums.Backups.BackupBlocker,
+message: string,
+fixLabel: string | null,
+fixHref: string | null,
+};
+export type BackupEverythingData = {
+action: App.Data.Backups.BackupActionData,
+batch: App.Data.Backups.BackupBatchProgressData | null,
+};
+export type BackupGroupData = {
+key: string,
+kind: 'launchroom' | 'project',
+projectId: string | null,
+name: string,
+items: App.Data.Backups.BackupItemData[],
+};
+export type BackupItemData = {
+id: string,
+kind: App.Enums.Backups.BackupItemKind,
+name: string,
+serviceName: string | null,
+mountPath: string | null,
+engine: string | null,
+engineVersion: string | null,
+projectName: string | null,
+environmentName: string | null,
+environmentKind: App.Enums.EnvironmentKind | null,
+serviceInstanceId: string | null,
+volumeId: string | null,
+state: App.Enums.Backups.BackupItemState,
 lastSucceededAt: string | null,
 lastSizeBytes: number | null,
+liveSizeBytes: number | null,
+nextRunAt: string | null,
+lastError: string | null,
+days: App.Data.Backups.BackupDayData[],
+schedule: App.Data.Backups.BackupItemScheduleData | null,
+run: App.Data.Backups.BackupRunProgressData | null,
+backUp: App.Data.Backups.BackupActionData,
+volumeBackup: App.Data.Backups.BackupVolumeSwitchData | null,
+restoreHref: string | null,
+historyHref: string | null,
+storageRemoved: boolean,
+};
+export type BackupItemScheduleData = {
+id: string,
+cron: string,
+cronDescription: string | null,
+retentionSummary: string,
+enabled: boolean,
+sharedWithVolumes: number,
+updateUrl: string | null,
+detail: App.Data.Backups.BackupScheduleData | null,
+};
+export type BackupLiveData = {
+channel: string,
+event: string,
+pollMs: number | null,
 };
 export type BackupRunData = {
 id: string,
@@ -650,6 +740,22 @@ startedAt: string | null,
 finishedAt: string | null,
 subject: App.Enums.Backups.BackupSubject,
 durationMs: number | null,
+};
+export type BackupRunProgressData = {
+runId: string,
+state: 'queued' | 'running',
+phase: App.Enums.Backups.BackupRunPhase,
+waitingFor: string | null,
+waitingBehind: string | null,
+bytesDone: number | null,
+bytesExpected: number | null,
+expectedIsEstimate: boolean,
+percent: number | null,
+queuedAt: string | null,
+startedAt: string | null,
+elapsedMs: number | null,
+usualDurationMs: number | null,
+reason: App.Enums.Backups.BackupReason,
 };
 export type BackupScheduleData = {
 id: string,
@@ -672,10 +778,17 @@ cronDescription: string | null,
 href: string | null,
 };
 export type BackupScheduleInput = {
-cron: string,
-retention: App.Data.Backups.RetentionData,
+cron: string | null,
+retention: App.Data.Backups.RetentionData | null,
 enabled: boolean,
 destination: string | null,
+};
+export type BackupStorageData = {
+destinations: App.Data.Backups.BackupDestinationData[],
+removed: App.Data.Backups.RemovedDestinationData[],
+canManage: boolean,
+add: App.Data.Backups.BackupActionData,
+canProtectLaunchroom: boolean,
 };
 export type BackupTrendPointData = {
 id: string,
@@ -713,6 +826,46 @@ mountPath: string,
 consistency: App.Enums.Backups.VolumeConsistency,
 server: string | null,
 updateUrl: string,
+backupEnabled: boolean,
+turnedOffBy: string | null,
+turnedOffAt: string | null,
+backupUrl: string | null,
+liveSizeBytes: number | null,
+lastSizeBytes: number | null,
+lastSucceededAt: string | null,
+looksLikeCache: boolean,
+};
+export type BackupVolumeSwitchData = {
+enabled: boolean,
+url: string | null,
+looksLikeCache: boolean,
+};
+export type BackupsPageData = {
+teamId: string,
+summary: App.Data.Backups.BackupsSummaryData,
+groups: App.Data.Backups.BackupGroupData[],
+notBackedUp: App.Data.Backups.NotBackedUpItemData[],
+storage: App.Data.Backups.BackupStorageData,
+launchroom: App.Data.Backups.LaunchroomBackupData | null,
+everything: App.Data.Backups.BackupEverythingData,
+live: App.Data.Backups.BackupLiveData,
+};
+export type BackupsSummaryData = {
+state: App.Enums.Backups.BackupsSummaryState,
+total: number,
+ok: number,
+running: number,
+queued: number,
+waiting: number,
+failed: number,
+overdue: number,
+attention: App.Data.Backups.BackupAttentionData[],
+lastSucceededAt: string | null,
+nextRunAt: string | null,
+};
+export type CopyDestinationData = {
+from: string,
+repositoryPassword: string | null,
 };
 export type DeletionRequestData = {
 id: string,
@@ -741,6 +894,29 @@ databaseBytes: number,
 volumeBytes: number,
 controlPlaneBytes: number,
 };
+export type LaunchroomBackupData = {
+isOwner: boolean,
+item: App.Data.Backups.BackupItemData,
+destination: App.Data.Backups.BackupDestinationData | null,
+copiedFrom: string | null,
+setup: App.Data.Backups.BackupActionData,
+runs: App.Data.Backups.BackupRunData[],
+recoveryKit: App.Data.Backups.RecoveryKitData | null,
+};
+export type NotBackedUpItemData = {
+id: string,
+kind: 'database' | 'volume' | 'service' | 'environment',
+name: string,
+serviceName: string | null,
+projectName: string | null,
+environmentName: string | null,
+reason: App.Enums.Backups.NotBackedUpReason,
+turnedOffBy: string | null,
+turnedOffAt: string | null,
+turnOn: App.Data.Backups.BackupActionData | null,
+schedule: App.Data.Backups.BackupScheduleData | null,
+href: string | null,
+};
 export type PointInTimeData = {
 supported: boolean,
 enabled: boolean,
@@ -760,6 +936,19 @@ export type PointInTimeSettingsData = {
 enabled: boolean,
 keepDays: number,
 };
+export type RecoveryKitData = {
+step: App.Enums.Backups.RecoveryKitStep,
+destinationConfigured: boolean,
+passphraseSet: boolean,
+passphraseSetAt: string | null,
+kitDownloadedAt: string | null,
+kitConfirmedAt: string | null,
+needsAttention: boolean,
+passphraseUrl: string,
+downloadUrl: string,
+confirm: App.Data.Backups.BackupActionData,
+resetReason: 'passphrase_changed' | 'storage_changed' | null,
+};
 export type RecoveryKitStatusData = {
 destinationConfigured: boolean,
 passphraseSet: boolean,
@@ -770,6 +959,22 @@ needsAttention: boolean,
 };
 export type RecoveryPassphraseData = {
 passphrase: string,
+};
+export type RemovedDestinationData = {
+id: string,
+name: string,
+endpoint: string,
+bucket: string,
+prefix: string,
+removedAt: string | null,
+runs: number,
+lastBackupAt: string | null,
+passwordKept: boolean,
+repositoryPasswordUrl: string | null,
+};
+export type RestoreDayData = {
+date: string,
+points: App.Data.Backups.SnapshotData[],
 };
 export type RestoreRunData = {
 id: string,
@@ -847,6 +1052,10 @@ pointInTime: App.Data.Backups.PointInTimeData | null,
 verification: App.Data.Backups.BackupVerificationData | null,
 canVerify: boolean,
 trend: App.Data.Backups.BackupTrendPointData[],
+inFlight: App.Data.Backups.BackupRunProgressData[],
+backUp: App.Data.Backups.BackupActionData | null,
+timeline: App.Data.Backups.RestoreDayData[],
+inPlaceTakesSafetyCopy: boolean,
 };
 export type SnapshotData = {
 id: string,
@@ -863,6 +1072,9 @@ confirmation: string,
 };
 export type VolumeBackupSettingsData = {
 consistency: App.Enums.Backups.VolumeConsistency,
+};
+export type VolumeBackupToggleData = {
+enabled: boolean,
 };
 }
 namespace Blueprints {
@@ -1008,6 +1220,10 @@ needsRepository: boolean,
 };
 }
 namespace Broadcasts {
+export type BackupsChangedData = {
+teamId: string,
+scope: string,
+};
 export type CanvasChangedData = {
 serviceId: string | null,
 };
@@ -1523,6 +1739,10 @@ serverStatus: App.Enums.ServerStatus | null,
 removing: boolean,
 deployedMountPath: string | null,
 sharedWith: string[],
+backupEnabled: boolean,
+backupTurnedOffBy: string | null,
+backupTurnedOffAt: string | null,
+backupUrl: string | null,
 };
 export type WorkloadData = {
 id: string,
@@ -6556,12 +6776,18 @@ updateServers: boolean,
 automatic: boolean,
 backupStatus: App.Enums.Backups.BackupRunStatus | null,
 backupFinishedAt: string | null,
+existingBackup: boolean,
 fleetUpdateId: string | null,
 progress: string | null,
 error: string | null,
 createdAt: string | null,
 startedAt: string | null,
 finishedAt: string | null,
+lastActivityAt: string | null,
+stalled: boolean,
+backupBytes: number | null,
+backupAttempts: number,
+canCancel: boolean,
 };
 export type FleetServerData = {
 id: string,
@@ -6593,6 +6819,13 @@ status: App.Enums.Updates.FleetUpdateStepStatus,
 progress: string | null,
 error: string | null,
 };
+export type PreUpgradeBackupData = {
+id: string,
+status: App.Enums.Backups.BackupRunStatus,
+startedAt: string | null,
+finishedAt: string | null,
+sizeBytes: number | null,
+};
 export type ReleaseCheckData = {
 currentVersion: string,
 channel: string,
@@ -6617,6 +6850,8 @@ export type StartControlPlaneUpdateInput = {
 version: string,
 skipBackup: boolean,
 updateServers: boolean,
+backupRunId: string | null,
+retryOf: string | null,
 };
 export type UpdatePreferencesData = {
 channel: string,
@@ -6697,6 +6932,7 @@ environments: App.Data.Variables.EnvironmentOptionData[],
 canWrite: boolean,
 canRevealSecrets: boolean,
 secretPlaceholder: string,
+usedBy: string[],
 };
 export type SharedVariableRowData = {
 id: string,
@@ -6784,7 +7020,7 @@ export type AnalyticsRange = '24h' | '7d' | '30d';
 export type AnalyticsView = 'traffic' | 'resources';
 export type ApiAbility = 'read' | 'deploy' | 'env:read' | 'env:write' | 'secrets:read' | 'domains:write' | 'data:transfer';
 export type ApiTokenClient = 'dashboard' | 'cli';
-export type AuditAction = 'instance.setup_token_created' | 'instance.owner_created' | 'instance.team_claimed' | 'instance.owner_two_factor_reset' | 'team.created' | 'team.member_invited' | 'team.invitation_revoked' | 'team.invitation_accepted' | 'team.member_role_changed' | 'team.member_removed' | 'instance.signing_key_created' | 'server.enrollment_created' | 'server.enrollment_canceled' | 'server.enrolled' | 'server.approved' | 'server.revoked' | 'server.volume_deletion_confirmed' | 'instance.mesh_enabled' | 'instance.mesh_own_tailscale_configured' | 'server.mesh_node_removed' | 'project.created' | 'project.imported' | 'project.deleted' | 'project.renamed' | 'project.secrets_policy_changed' | 'project.icon_changed' | 'environment.created' | 'environment.deployed' | 'environment.changes_discarded' | 'environment.updated' | 'environment.deleted' | 'environment.reverted' | 'environment.changes_promoted' | 'environment.auto_deploy_resumed' | 'deployment.promoted' | 'service.created' | 'service.removed' | 'service.renamed' | 'variable.created' | 'variable.updated' | 'variable.deleted' | 'variable.imported' | 'variable.secret_revealed' | 'connection.created' | 'connection.deleted' | 'domain.added' | 'domain.removed' | 'domain.www_redirect_changed' | 'instance.apps_domain_changed' | 'instance.dashboard_domain_started' | 'instance.dashboard_domain_cancelled' | 'instance.dashboard_domain_switched' | 'instance.dashboard_domain_reverted' | 'instance.dashboard_domain_reset' | 'deployment.rolled_back' | 'deployment.redeployed' | 'deployment.cancelled' | 'variable.raw_edited' | 'github.app_created' | 'github.app_disconnected' | 'github.installation_linked' | 'git.connection_created' | 'git.connection_authorized' | 'git.connection_disconnected' | 'git.connection_private_network_allowed' | 'git.host_keys_confirmed' | 'git.webhook_secret_revealed' | 'backup.destination_created' | 'backup.destination_updated' | 'backup.destination_deleted' | 'backup.destination_private_network_allowed' | 'backup.schedule_updated' | 'backup.started' | 'backup.restore_started' | 'data.import_started' | 'data.import_finished' | 'data.import_cancelled' | 'data.import_source_checked' | 'data.import_prepared' | 'data.export_started' | 'data.export_downloaded' | 'backup.restore_swapped' | 'backup.volume_updated' | 'backup.final_backup_skipped' | 'backup.point_in_time_updated' | 'backup.verification_started' | 'service.volume_added' | 'service.volume_changed' | 'service.volume_removed' | 'service.volume_attached' | 'service.volume_detached' | 'service.image_changed' | 'service.stopped' | 'service.started' | 'service.restarted' | 'server.replaced' | 'instance.recovery_finished' | 'backup.recovery_passphrase_set' | 'backup.recovery_kit_downloaded' | 'backup.recovery_kit_confirmed' | 'preview.settings_updated' | 'preview.strategy_changed' | 'preview.approved' | 'preview.destroyed' | 'preview.share_link_created' | 'preview.share_link_revoked' | 'preview.bypass_rotated' | 'instance.update_started' | 'instance.update_finished' | 'instance.fleet_update_started' | 'instance.fleet_update_finished' | 'instance.update_preferences_changed' | 'instance.dns_provider_changed' | 'server.shared_edge_changed' | 'domain.hsts_changed' | 'instance.registry_storage_configured' | 'instance.registry_storage_private_network_allowed' | 'instance.registry_storage_removed' | 'instance.registry_config_written' | 'server.settings_updated' | 'server.roles_updated' | 'server.appearance_updated' | 'server.replicas_rescheduled' | 'service.degraded' | 'session.console_started' | 'session.console_ended' | 'session.data_started' | 'session.data_ended' | 'session.recovery_started' | 'session.recovery_ended' | 'database.statement_executed' | 'session.recording_viewed' | 'team.console_recording_changed' | 'team.member_permissions_changed' | 'api_token.created' | 'api_token.revoked' | 'api_token.cli_login_approved' | 'api_token.cli_login_denied' | 'variable.env_exported' | 'deployment.requested' | 'alerts.channel_created' | 'alerts.channel_updated' | 'alerts.channel_deleted' | 'audit.sink_created' | 'audit.sink_updated' | 'audit.sink_deleted' | 'alerts.rules_updated' | 'config_file.applied' | 'config_file.invalid' | 'config_file.exported' | 'config_file.settings_updated' | 'ai_provider.updated' | 'team.dockerfile_generation_changed' | 'dockerfile_generation.started' | 'dockerfile_generation.used' | 'dockerfile_generation.pull_request_opened' | 'instance.client_certificates_changed' | 'server.client_certificate_issued' | 'server.client_certificates_revoked' | 'server.client_certificate_reissue_allowed' | 'server.move_started' | 'server.move_item_finished' | 'server.move_item_retried' | 'server.move_cancelled' | 'server.move_completed' | 'instance.control_plane_move_started' | 'instance.control_plane_move_claimed' | 'instance.control_plane_move_approved' | 'instance.control_plane_move_cancelled' | 'instance.control_plane_handover_started' | 'instance.control_plane_handover_aborted' | 'instance.control_plane_handed_over' | 'instance.control_plane_taken_over' | 'instance.control_plane_move_finished' | 'access.ssh_started' | 'access.ssh_ended' | 'access.database_started' | 'access.database_ended' | 'access.volume_started' | 'access.volume_ended' | 'access.connected' | 'access.auth_failed' | 'access.locked' | 'waf.mode_changed' | 'waf.paranoia_changed' | 'waf.inspect_body_changed' | 'waf.exclusion_added' | 'waf.exclusion_removed' | 'security.finding_dismissed' | 'security.finding_reopened' | 'security.investigation_started' | 'instance.security_sources_changed' | 'account.email_changed' | 'account.password_changed' | 'account.sign_in_link_issued' | 'registry.credential_created' | 'registry.credential_updated' | 'registry.credential_deleted';
+export type AuditAction = 'instance.setup_token_created' | 'instance.owner_created' | 'instance.team_claimed' | 'instance.owner_two_factor_reset' | 'team.created' | 'team.member_invited' | 'team.invitation_revoked' | 'team.invitation_accepted' | 'team.member_role_changed' | 'team.member_removed' | 'instance.signing_key_created' | 'server.enrollment_created' | 'server.enrollment_canceled' | 'server.enrolled' | 'server.approved' | 'server.revoked' | 'server.volume_deletion_confirmed' | 'instance.mesh_enabled' | 'instance.mesh_own_tailscale_configured' | 'server.mesh_node_removed' | 'project.created' | 'project.imported' | 'project.deleted' | 'project.renamed' | 'project.secrets_policy_changed' | 'project.icon_changed' | 'environment.created' | 'environment.deployed' | 'environment.changes_discarded' | 'environment.updated' | 'environment.deleted' | 'environment.reverted' | 'environment.changes_promoted' | 'environment.auto_deploy_resumed' | 'deployment.promoted' | 'service.created' | 'service.removed' | 'service.renamed' | 'variable.created' | 'variable.updated' | 'variable.deleted' | 'variable.imported' | 'variable.secret_revealed' | 'connection.created' | 'connection.deleted' | 'domain.added' | 'domain.removed' | 'domain.www_redirect_changed' | 'instance.apps_domain_changed' | 'instance.dashboard_domain_started' | 'instance.dashboard_domain_cancelled' | 'instance.dashboard_domain_switched' | 'instance.dashboard_domain_reverted' | 'instance.dashboard_domain_reset' | 'deployment.rolled_back' | 'deployment.redeployed' | 'deployment.cancelled' | 'variable.raw_edited' | 'github.app_created' | 'github.app_disconnected' | 'github.installation_linked' | 'git.connection_created' | 'git.connection_authorized' | 'git.connection_disconnected' | 'git.connection_private_network_allowed' | 'git.host_keys_confirmed' | 'git.webhook_secret_revealed' | 'backup.destination_created' | 'backup.destination_updated' | 'backup.destination_deleted' | 'backup.destination_private_network_allowed' | 'backup.repository_password_revealed' | 'backup.schedule_updated' | 'backup.started' | 'backup.restore_started' | 'data.import_started' | 'data.import_finished' | 'data.import_cancelled' | 'data.import_source_checked' | 'data.import_prepared' | 'data.export_started' | 'data.export_downloaded' | 'backup.restore_swapped' | 'backup.volume_updated' | 'backup.final_backup_skipped' | 'backup.point_in_time_updated' | 'backup.verification_started' | 'service.volume_added' | 'service.volume_changed' | 'service.volume_removed' | 'service.volume_attached' | 'service.volume_detached' | 'service.image_changed' | 'service.stopped' | 'service.started' | 'service.restarted' | 'server.replaced' | 'instance.recovery_finished' | 'backup.recovery_passphrase_set' | 'backup.recovery_kit_downloaded' | 'backup.recovery_kit_confirmed' | 'preview.settings_updated' | 'preview.strategy_changed' | 'preview.approved' | 'preview.destroyed' | 'preview.share_link_created' | 'preview.share_link_revoked' | 'preview.bypass_rotated' | 'instance.update_started' | 'instance.update_finished' | 'instance.fleet_update_started' | 'instance.fleet_update_finished' | 'instance.update_preferences_changed' | 'instance.dns_provider_changed' | 'server.shared_edge_changed' | 'domain.hsts_changed' | 'instance.registry_storage_configured' | 'instance.registry_storage_private_network_allowed' | 'instance.registry_storage_removed' | 'instance.registry_config_written' | 'server.settings_updated' | 'server.roles_updated' | 'server.appearance_updated' | 'server.replicas_rescheduled' | 'service.degraded' | 'session.console_started' | 'session.console_ended' | 'session.data_started' | 'session.data_ended' | 'session.recovery_started' | 'session.recovery_ended' | 'database.statement_executed' | 'session.recording_viewed' | 'team.console_recording_changed' | 'team.member_permissions_changed' | 'api_token.created' | 'api_token.revoked' | 'api_token.cli_login_approved' | 'api_token.cli_login_denied' | 'variable.env_exported' | 'deployment.requested' | 'alerts.channel_created' | 'alerts.channel_updated' | 'alerts.channel_deleted' | 'audit.sink_created' | 'audit.sink_updated' | 'audit.sink_deleted' | 'alerts.rules_updated' | 'config_file.applied' | 'config_file.invalid' | 'config_file.exported' | 'config_file.settings_updated' | 'ai_provider.updated' | 'team.dockerfile_generation_changed' | 'dockerfile_generation.started' | 'dockerfile_generation.used' | 'dockerfile_generation.pull_request_opened' | 'instance.client_certificates_changed' | 'server.client_certificate_issued' | 'server.client_certificates_revoked' | 'server.client_certificate_reissue_allowed' | 'server.move_started' | 'server.move_item_finished' | 'server.move_item_retried' | 'server.move_cancelled' | 'server.move_completed' | 'instance.control_plane_move_started' | 'instance.control_plane_move_claimed' | 'instance.control_plane_move_approved' | 'instance.control_plane_move_cancelled' | 'instance.control_plane_handover_started' | 'instance.control_plane_handover_aborted' | 'instance.control_plane_handed_over' | 'instance.control_plane_taken_over' | 'instance.control_plane_move_finished' | 'access.ssh_started' | 'access.ssh_ended' | 'access.database_started' | 'access.database_ended' | 'access.volume_started' | 'access.volume_ended' | 'access.connected' | 'access.auth_failed' | 'access.locked' | 'waf.mode_changed' | 'waf.paranoia_changed' | 'waf.inspect_body_changed' | 'waf.exclusion_added' | 'waf.exclusion_removed' | 'security.finding_dismissed' | 'security.finding_reopened' | 'security.investigation_started' | 'instance.security_sources_changed' | 'account.email_changed' | 'account.password_changed' | 'account.sign_in_link_issued' | 'registry.credential_created' | 'registry.credential_updated' | 'registry.credential_deleted';
 export type BlueprintNoteKind = 'translated' | 'ignored' | 'refused' | 'warning';
 export type CanvasEdgeType = 'connection' | 'process' | 'inherited';
 export type CertFailureKind = 'rate_limited' | 'dns_mismatch' | 'caa' | 'timeout' | 'dns_provider' | 'other';
@@ -6887,14 +7123,22 @@ export type AuditSinkStatus = 'pending' | 'delivering' | 'failing' | 'paused';
 }
 namespace Backups {
 export type BackupAlertKind = 'backup' | 'backup_verify' | 'backup_overdue' | 'wal_archive';
+export type BackupBlocker = 'no_permission' | 'owner_only' | 'no_storage' | 'no_launchroom_storage' | 'storage_removed' | 'no_passphrase' | 'kit_not_downloaded' | 'not_deployed' | 'stopped' | 'server_offline' | 'running' | 'nothing_to_back_up';
 export type BackupHealth = 'ok' | 'stale' | 'failing' | 'running' | 'none' | 'unconfigured';
+export type BackupItemKind = 'control_plane' | 'database' | 'volume';
+export type BackupItemState = 'failed' | 'overdue' | 'running' | 'queued' | 'waiting' | 'paused' | 'ok';
 export type BackupReason = 'scheduled' | 'manual' | 'pre_upgrade' | 'pre_restore' | 'pre_delete' | 'pre_deploy' | 'pre_move';
+export type BackupRunPhase = 'queued' | 'waiting' | 'preparing' | 'streaming' | 'finishing' | 'stored';
 export type BackupRunStatus = 'pending' | 'running' | 'succeeded' | 'failed';
 export type BackupSubject = 'database' | 'volume' | 'control_plane' | 'base_backup';
+export type BackupsSummaryState = 'unconfigured' | 'running' | 'attention' | 'waiting' | 'ok';
 export type DeletionOutcome = 'deleted' | 'waiting_for_final_backup' | 'blocked' | 'busy';
 export type DeletionRequestStatus = 'backing_up' | 'blocked' | 'ready' | 'overridden' | 'completed' | 'cancelled';
+export type DestinationErrorKind = 'wrong_credentials' | 'wrong_repository_password' | 'bucket_missing' | 'unreachable' | 'other';
 export type DestinationScope = 'team' | 'instance';
 export type DestinationStatus = 'unverified' | 'checking' | 'ok' | 'failing';
+export type NotBackedUpReason = 'volume_off' | 'schedule_off' | 'preview' | 'no_schedule';
+export type RecoveryKitStep = 'passphrase' | 'download' | 'keep_safe' | 'done';
 export type RestoreMode = 'new_service' | 'in_place';
 export type RestoreRunStatus = 'waiting_for_safety_backup' | 'waiting_for_target' | 'restoring' | 'succeeded' | 'failed';
 export type SnapshotListingStatus = 'pending' | 'ready' | 'failed';
@@ -7017,8 +7261,8 @@ export type TransferPurpose = 'database_import' | 'volume_import' | 'database_ex
 export type TransferStatus = 'receiving' | 'ready' | 'failed' | 'expired';
 }
 namespace Updates {
-export type ControlPlaneUpdateStatus = 'pending' | 'backing_up' | 'updating' | 'succeeded' | 'failed' | 'rolled_back';
-export type FleetUpdateStatus = 'running' | 'succeeded' | 'failed';
+export type ControlPlaneUpdateStatus = 'pending' | 'backing_up' | 'updating' | 'succeeded' | 'failed' | 'rolled_back' | 'cancelled';
+export type FleetUpdateStatus = 'running' | 'succeeded' | 'failed' | 'cancelled';
 export type FleetUpdateStepStatus = 'pending' | 'updating' | 'succeeded' | 'failed' | 'rolled_back' | 'skipped';
 export type UpdateScope = 'daemon' | 'control_plane';
 }

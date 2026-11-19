@@ -2,10 +2,15 @@
 
 declare(strict_types=1);
 
+use App\Data\Servers\Host\DiskBreakdownData;
+use App\Data\Servers\Host\HostHealthData;
+use App\Data\Servers\Host\HostStatusData;
+use App\Data\Servers\Host\VolumeUsageData;
 use App\Enums\TeamRole;
 use App\Models\Team;
 use Tests\Support\Backups;
 use Tests\Support\Projects;
+use Tests\Support\VolumeServices;
 
 beforeEach(function (): void {
     Projects::useTestKek();
@@ -63,4 +68,19 @@ test('links to the former Backups tab redirect to the settings page with their q
 
     $outsider = memberOf(Team::factory()->create(), TeamRole::Owner);
     $this->actingAs($outsider)->get("{$base}/backups")->assertNotFound();
+});
+
+test('services with volumes carry their backup health too, and volumes their measured size', function (): void {
+    [$team, $server, , $app] = VolumeServices::runningApp($this->team);
+    $app->load('environment.project', 'volumes');
+    $volume = $app->volumes->sole();
+    $server->forceFill(['host_status' => new HostStatusData(
+        cpus: 2, memoryMb: 2048, diskTotalMb: 10000, diskFreeMb: 5000, daemonVersion: '1.0.0',
+        health: new HostHealthData(disk: new DiskBreakdownData(now()->toIso8601ZuluString(), [new VolumeUsageData($volume->public_id, 3)])),
+    )])->save();
+
+    $this->actingAs($this->viewer)->get(route('projects.canvas', [$app->environment->project, $app->environment]))
+        ->assertInertia(fn ($page) => $page
+            ->where('nodes.0.backup.status', 'unconfigured')
+            ->where('volumes.0.sizeBytes', 3 * 1024 * 1024));
 });

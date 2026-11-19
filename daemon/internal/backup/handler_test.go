@@ -285,3 +285,32 @@ func TestTransferHandlerSharesTheHeavySlot(t *testing.T) {
 		t.Fatalf("failed export: %v, slot held %d", err, len(slots))
 	}
 }
+
+func TestBackupHandlerReportsWaitingOnTheSystemStream(t *testing.T) {
+	key, _ := ecdh.X25519().GenerateKey(rand.Reader)
+	slots := make(chan struct{}, 1)
+	slots <- struct{}{} // another backup holds the slot
+	fc := &taskstest.ControlPlane{}
+	h := backup.Handler(backup.HandlerOptions{ServerID: bServer, SealingKey: key, Engine: &fakeBackupEngine{}, Client: fc, Slots: slots})
+	ctx, cancel := context.WithTimeout(t.Context(), 200*time.Millisecond)
+	defer cancel()
+	if _, err := h(ctx, backupTask(t, key.PublicKey(), state.TaskBackup, s3Env, bTask)); !errors.Is(err, context.DeadlineExceeded) {
+		t.Fatalf("backup ran while the slot was taken: %v", err)
+	}
+	var found bool
+	for _, b := range fc.ShippedBatches() {
+		for _, c := range b.Chunks {
+			for _, l := range c.Lines {
+				if backup.IsProgress(l.Text) {
+					if l.Stream != state.StreamSystem || l.Step != "backup" || !strings.Contains(l.Text, `"phase":"waiting"`) {
+						t.Fatalf("progress line = %+v", l)
+					}
+					found = true
+				}
+			}
+		}
+	}
+	if !found {
+		t.Fatal("no waiting progress line")
+	}
+}

@@ -20,8 +20,9 @@ import { UpdateDialog } from '@/features/updates/update-dialog';
 import { updateSteps } from '@/features/updates/update-steps';
 import { cn } from '@/lib/utils';
 import { vocabulary } from '@/lib/vocabulary';
-import { settings as backupSettings } from '@/routes/backups';
+import { index as backupSettings } from '@/routes/backups';
 import { check } from '@/routes/updates';
+import { cancel as cancelControlPlane } from '@/routes/updates/control-plane';
 
 export type UpdatesPageProps = {
     currentVersion: string;
@@ -29,6 +30,8 @@ export type UpdatesPageProps = {
     highlights: string[];
     hasBackupDestination: boolean;
     backupDestinationName: string | null;
+    latestBackup: App.Data.Updates.PreUpgradeBackupData | null;
+    runningBackup: App.Data.Updates.PreUpgradeBackupData | null;
     controlPlaneUpdate: App.Data.Updates.ControlPlaneUpdateData | null;
     fleetUpdate: App.Data.Updates.FleetUpdateData | null;
     history: App.Data.Updates.ControlPlaneUpdateData[];
@@ -66,6 +69,37 @@ function CheckButton({
                 >
                     {processing && <Spinner />}
                     {label}
+                </Button>
+            )}
+        </Form>
+    );
+}
+
+/**
+ * "Cancel update" (docs/11 §4.3): offered while nothing has changed yet,
+ * whatever the update is waiting for.
+ */
+function CancelUpdateButton({
+    update,
+    variant = 'outline',
+}: {
+    update: App.Data.Updates.ControlPlaneUpdateData;
+    variant?: 'default' | 'outline' | 'ghost';
+}) {
+    return (
+        <Form
+            {...cancelControlPlane.form({ update: update.id })}
+            options={{ preserveScroll: true }}
+        >
+            {({ processing }) => (
+                <Button
+                    type="submit"
+                    variant={variant}
+                    size="sm"
+                    disabled={processing}
+                >
+                    {processing && <Spinner />}
+                    Cancel update
                 </Button>
             )}
         </Form>
@@ -277,6 +311,8 @@ export function UpdateHero(
         highlights,
         hasBackupDestination,
         backupDestinationName,
+        latestBackup,
+        runningBackup,
         controlPlaneUpdate: update,
         fleetUpdate,
         serversBehindRelease,
@@ -295,20 +331,44 @@ export function UpdateHero(
         update.fleetUpdateId === fleetUpdate.id;
 
     if ((updating || serversRunning) && update !== null) {
+        const stalled = updating && update.stalled && !restarting;
+
         return (
             <section className="flex flex-col gap-4" aria-live="polite">
                 <HeroCard
                     icon={
-                        <HeroIcon tone="progress">
-                            <ProgressRing tone="current" className="size-5" />
-                        </HeroIcon>
+                        stalled ? (
+                            <HeroIcon tone="attention">
+                                <TriangleAlert
+                                    aria-hidden="true"
+                                    className="size-5"
+                                />
+                            </HeroIcon>
+                        ) : (
+                            <HeroIcon tone="progress">
+                                <ProgressRing
+                                    tone="current"
+                                    className="size-5"
+                                />
+                            </HeroIcon>
+                        )
                     }
                     title={
                         restarting
                             ? 'launchroom is restarting…'
-                            : serversRunning
-                              ? `Updating your servers to ${update.toVersion}`
-                              : `Updating to ${update.toVersion}`
+                            : stalled
+                              ? `The update to ${update.toVersion} isn’t making progress`
+                              : serversRunning
+                                ? `Updating your servers to ${update.toVersion}`
+                                : `Updating to ${update.toVersion}`
+                    }
+                    actions={
+                        updating && update.canCancel && !restarting ? (
+                            <CancelUpdateButton
+                                update={update}
+                                variant={stalled ? 'default' : 'outline'}
+                            />
+                        ) : undefined
                     }
                     meta={
                         <MetaLine>
@@ -325,7 +385,9 @@ export function UpdateHero(
                     footer={
                         restarting
                             ? `This takes about a minute. The page reloads when ${update.toVersion} responds.`
-                            : 'You can leave this page. The dashboard is unavailable for a few minutes while it restarts, and this page continues afterwards.'
+                            : stalled
+                              ? stalledFooter(update)
+                              : 'You can leave this page. The dashboard is unavailable for a few minutes while it restarts, and this page continues afterwards.'
                     }
                 />
                 <StepList
@@ -420,7 +482,8 @@ export function UpdateHero(
     if (
         update !== null &&
         update.toVersion === available.version &&
-        vocabulary.Updates.ControlPlaneUpdateStatus[update.status].isFailed
+        (vocabulary.Updates.ControlPlaneUpdateStatus[update.status].isFailed ||
+            update.status === 'cancelled')
     ) {
         return null;
     }
@@ -456,6 +519,8 @@ export function UpdateHero(
                                 version={available.version}
                                 hasBackupDestination={hasBackupDestination}
                                 backupDestinationName={backupDestinationName}
+                                latestBackup={latestBackup}
+                                runningBackup={runningBackup}
                                 serverCount={serversBehindRelease}
                                 disabled={running}
                             />
@@ -529,6 +594,22 @@ export function UpdateHero(
     );
 }
 
+/** What a stalled update waits for, and that cancelling is safe. */
+function stalledFooter(
+    update: App.Data.Updates.ControlPlaneUpdateData,
+): string {
+    const waiting =
+        update.status === 'pending'
+            ? 'launchroom’s background worker hasn’t started it.'
+            : update.status === 'backing_up'
+              ? 'The backup before the update stopped reporting progress. launchroom starts it again by itself if its worker stopped.'
+              : 'The main server hasn’t started installing it. It may be offline.';
+
+    return update.canCancel
+        ? `${waiting} Nothing has changed yet, so you can cancel the update and try again.`
+        : waiting;
+}
+
 /**
  * After an update that didn't go through (docs/08 §11): what happened, in
  * which state launchroom is now, and what to do. Calm: amber, not red,
@@ -545,15 +626,22 @@ export function UpdateAttention({
     currentVersion: string;
     fleetUpdate: App.Data.Updates.FleetUpdateData | null;
     serverCount: number;
-    /** The same release is still the newest: offer "Try again" here. */
+    /**
+     * "Try again" here: the same release is still the newest, or the release
+     * can't be checked right now (the update's pinned release is used again).
+     */
     retry?: {
-        release: App.Data.Updates.ReleaseData;
+        version: string;
+        url: string | null;
         hasBackupDestination: boolean;
         backupDestinationName: string | null;
+        latestBackup: App.Data.Updates.PreUpgradeBackupData | null;
+        runningBackup: App.Data.Updates.PreUpgradeBackupData | null;
         disabled: boolean;
     };
 }) {
     const rolledBack = update.status === 'rolled_back';
+    const cancelled = update.status === 'cancelled';
     const backupFailed =
         update.status === 'failed' && update.backupStatus === 'failed';
     // The update supervisor couldn't put the old version back (CPOPS).
@@ -568,62 +656,68 @@ export function UpdateAttention({
 
     const summary = rolledBack
         ? `${update.toVersion} didn’t start, so launchroom rolled back to ${update.fromVersion}. Your apps kept running.`
-        : backupFailed
-          ? 'The backup before the update failed, so nothing was changed.'
-          : stillOnOld
-            ? `launchroom is still on ${update.fromVersion}. Your apps kept running.`
-            : `The update to ${update.toVersion} stopped before it finished.`;
+        : cancelled
+          ? `The update was cancelled before anything changed. launchroom is still on ${update.fromVersion}.`
+          : backupFailed
+            ? 'The backup before the update failed, so nothing was changed.'
+            : stillOnOld
+              ? `launchroom is still on ${update.fromVersion}. Your apps kept running.`
+              : `The update to ${update.toVersion} stopped before it finished.`;
 
-    const todo: ReactNode[] = rolledBack
+    const todo: ReactNode[] = cancelled
         ? [
-              `You don’t need to fix anything. Everything is as it was before the update${window ? ` (dashboard changes made between ${window} were undone)` : ''}.`,
-              'Read the release notes for known issues, then try again. A release that failed is never installed automatically.',
+              'Try again when you’re ready. A new backup is taken first, unless you pick an existing one.',
           ]
-        : backupFailed
+        : rolledBack
           ? [
-                <>
-                    Check the backup destination in{' '}
-                    <Link
-                        href={backupSettings()}
-                        className="text-signal underline-offset-4 hover:underline"
-                    >
-                        Settings → Backups
-                    </Link>{' '}
-                    (a test backup shows the problem), then try again.
-                </>,
+                `You don’t need to fix anything. Everything is as it was before the update${window ? ` (dashboard changes made between ${window} were undone)` : ''}.`,
+                'Read the release notes for known issues, then try again. A release that failed is never installed automatically.',
             ]
-          : rollbackFailed
+          : backupFailed
             ? [
                   <>
-                      The rollback didn’t finish. In the launchroom folder on
-                      the main server, run{' '}
-                      <code className="type-mono">./launchroom doctor</code> to
-                      finish it, then try the update again.
+                      Check the backup storage on the{' '}
+                      <Link
+                          href={backupSettings()}
+                          className="text-signal underline-offset-4 hover:underline"
+                      >
+                          Backups page
+                      </Link>{' '}
+                      (a test backup shows the problem), then try again.
                   </>,
               ]
-            : [
-                  'If the dashboard works as usual, you can try again.',
-                  <>
-                      If something looks wrong, run{' '}
-                      <code className="type-mono">./launchroom status</code> in
-                      the launchroom folder on the main server
-                      {update.backupStatus === 'succeeded' ? (
-                          <>
-                              ; the backup taken at{' '}
-                              {time(update.backupFinishedAt)} can bring
-                              everything back (
-                              <Link
-                                  href={backupSettings()}
-                                  className="text-signal underline-offset-4 hover:underline"
-                              >
-                                  Settings → Backups
-                              </Link>
-                              )
-                          </>
-                      ) : null}
-                      .
-                  </>,
-              ];
+            : rollbackFailed
+              ? [
+                    <>
+                        The rollback didn’t finish. In the launchroom folder on
+                        the main server, run{' '}
+                        <code className="type-mono">./launchroom doctor</code>{' '}
+                        to finish it, then try the update again.
+                    </>,
+                ]
+              : [
+                    'If the dashboard works as usual, you can try again.',
+                    <>
+                        If something looks wrong, run{' '}
+                        <code className="type-mono">./launchroom status</code>{' '}
+                        in the launchroom folder on the main server
+                        {update.backupStatus === 'succeeded' ? (
+                            <>
+                                ; the backup taken at{' '}
+                                {time(update.backupFinishedAt)} can bring
+                                everything back (
+                                <Link
+                                    href={backupSettings()}
+                                    className="text-signal underline-offset-4 hover:underline"
+                                >
+                                    Backups page
+                                </Link>
+                                )
+                            </>
+                        ) : null}
+                        .
+                    </>,
+                ];
 
     return (
         <section className="flex flex-col gap-4" aria-live="polite">
@@ -640,7 +734,11 @@ export function UpdateAttention({
                         )}
                     </HeroIcon>
                 }
-                title={`The update to ${update.toVersion} didn’t go through`}
+                title={
+                    cancelled
+                        ? `The update to ${update.toVersion} was cancelled`
+                        : `The update to ${update.toVersion} didn’t go through`
+                }
                 meta={
                     <MetaLine>
                         {update.automatic && 'Automatic update'}
@@ -648,17 +746,19 @@ export function UpdateAttention({
                     </MetaLine>
                 }
                 actions={
-                    retry !== undefined &&
-                    retry.release.daemonImage !== null ? (
+                    retry !== undefined ? (
                         <>
                             <UpdateDialog
-                                version={retry.release.version}
+                                version={retry.version}
+                                retryOf={update.id}
                                 hasBackupDestination={
                                     retry.hasBackupDestination
                                 }
                                 backupDestinationName={
                                     retry.backupDestinationName
                                 }
+                                latestBackup={retry.latestBackup}
+                                runningBackup={retry.runningBackup}
                                 serverCount={serverCount}
                                 disabled={retry.disabled}
                                 label="Try again"
@@ -668,14 +768,16 @@ export function UpdateAttention({
                     ) : undefined
                 }
                 footer={
-                    retry !== undefined && retry.release.url !== '' ? (
+                    retry !== undefined &&
+                    retry.url !== null &&
+                    retry.url !== '' ? (
                         <a
-                            href={retry.release.url}
+                            href={retry.url}
                             target="_blank"
                             rel="noreferrer noopener"
                             className="inline-flex items-center gap-0.5 text-signal underline-offset-4 hover:underline"
                         >
-                            Release notes for {retry.release.version}
+                            Release notes for {retry.version}
                             <ArrowUpRight
                                 aria-hidden="true"
                                 className="size-3.5"
@@ -686,7 +788,7 @@ export function UpdateAttention({
             >
                 <div className="flex flex-col gap-1">
                     <p className="type-body">{summary}</p>
-                    {!rolledBack && update.error !== null && (
+                    {!rolledBack && !cancelled && update.error !== null && (
                         <p className="type-small break-words text-muted-foreground">
                             {update.error}
                         </p>

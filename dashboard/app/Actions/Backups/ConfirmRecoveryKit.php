@@ -31,7 +31,7 @@ final readonly class ConfirmRecoveryKit
                 throw DomainRuleViolation::on('recoveryKit', 'Set a recovery passphrase and download the recovery kit first.');
             }
 
-            $settings->forceFill(['recovery_kit_confirmed_at' => now()])->save();
+            $settings->forceFill(['recovery_kit_confirmed_at' => now(), 'recovery_kit_reset_reason' => null])->save();
 
             $this->audit->handle(new AuditEntryData(action: AuditAction::RecoveryKitConfirmed, actor: $actor, subjectType: 'instance'));
         });

@@ -1,5 +1,6 @@
 import type { Step } from '@/components/steps/step-list';
 import type { StepStatus } from '@/components/steps/step-icon';
+import { formatBytes, relativeTime } from '@/lib/format';
 import { vocabulary } from '@/lib/vocabulary';
 
 type Update = App.Data.Updates.ControlPlaneUpdateData;
@@ -17,9 +18,64 @@ const fleetStepStatus: Record<
     skipped: 'skipped',
 };
 
+/** What the backup step says while it waits for, or uses, an existing backup. */
+function existingBackupSummary(
+    update: Update,
+    now: number,
+): string | undefined {
+    if (!update.existingBackup) {
+        return undefined;
+    }
+
+    if (
+        update.backupStatus === 'pending' ||
+        update.backupStatus === 'running'
+    ) {
+        return 'Waiting for the running backup to finish';
+    }
+
+    return update.backupStatus === 'succeeded' &&
+        update.backupFinishedAt !== null
+        ? `Uses the backup from ${relativeTime(update.backupFinishedAt, now)}`
+        : undefined;
+}
+
 /** Where a control-plane update stopped: 1 backup, 2 install, 3 check. */
 function failedAt(update: Update): number {
     return update.backupStatus === 'failed' ? 1 : 2;
+}
+
+/** Where a cancelled update stopped: before the install, or before the backup was done. */
+function cancelledAt(update: Update): number {
+    return update.skipBackup || update.backupStatus === 'succeeded' ? 2 : 1;
+}
+
+/**
+ * The backup step while it runs (docs/11 §4.3): how much is stored, that
+ * it was started again after its worker stopped, or that it shows no sign
+ * of progress (then the page offers "Cancel update").
+ */
+function backupProgress(update: Update, now: number): string | undefined {
+    if (update.status !== 'backing_up') {
+        return undefined;
+    }
+
+    if (update.stalled && update.lastActivityAt !== null) {
+        return `No progress since ${relativeTime(update.lastActivityAt, now)}`;
+    }
+
+    const stored =
+        update.backupBytes !== null && update.backupBytes > 0
+            ? `${formatBytes(update.backupBytes)} stored`
+            : undefined;
+
+    if (update.backupAttempts > 0) {
+        return stored === undefined
+            ? 'Started again after the previous attempt stopped'
+            : `Started again, ${stored}`;
+    }
+
+    return stored;
 }
 
 function phase(update: Update): number {
@@ -46,15 +102,21 @@ export function updateSteps(
     update: Update,
     fleet: Fleet | null,
     serverCount: number,
+    now: number = Date.now(),
 ): Step[] {
     const failed =
         vocabulary.Updates.ControlPlaneUpdateStatus[update.status].isFailed;
-    const stop = failed ? failedAt(update) : null;
+    const cancelled = update.status === 'cancelled';
+    const stop = failed
+        ? failedAt(update)
+        : cancelled
+          ? cancelledAt(update)
+          : null;
     const pick = (order: number): StepStatus => {
         if (stop !== null) {
             return order < stop
                 ? 'succeeded'
-                : order === stop
+                : order === stop && failed
                   ? 'failed'
                   : 'skipped';
         }
@@ -77,9 +139,10 @@ export function updateSteps(
             status: pick(1),
             summary: update.skipBackup
                 ? 'No off-site backup'
-                : update.backupStatus === 'failed'
+                : update.backupStatus === 'failed' && failed
                   ? (update.error ?? undefined)
-                  : undefined,
+                  : (backupProgress(update, now) ??
+                    existingBackupSummary(update, now)),
         },
         {
             id: 'install',
@@ -88,8 +151,10 @@ export function updateSteps(
             summary:
                 update.status === 'updating'
                     ? (update.progress ??
-                      'The dashboard is unavailable for a few minutes')
-                    : stop === 2
+                      (update.stalled
+                          ? 'Waiting for the main server to start the update. It may be offline.'
+                          : 'The dashboard is unavailable for a few minutes'))
+                    : stop === 2 && failed
                       ? (update.error ?? undefined)
                       : undefined,
         },
@@ -123,7 +188,7 @@ export function updateSteps(
                     : serverCount > 1
                       ? `Update ${serverCount} servers`
                       : 'Update servers',
-            status: failed ? 'skipped' : 'pending',
+            status: failed || cancelled ? 'skipped' : 'pending',
             summary: 'Servers update one at a time, edge servers last',
         });
 

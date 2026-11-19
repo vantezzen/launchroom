@@ -87,7 +87,20 @@ export default function UpdateSettings(props: UpdatesPageProps) {
     const attention =
         update !== null &&
         !props.running &&
-        vocabulary.Updates.ControlPlaneUpdateStatus[update.status].isFailed;
+        (vocabulary.Updates.ControlPlaneUpdateStatus[update.status].isFailed ||
+            update.status === 'cancelled');
+    const available = props.check.available;
+    // "Try again" installs the same release: the newest one, or, while
+    // releases can't be checked, the one this update had pinned.
+    const retryRelease =
+        update === null || props.currentVersion !== update.fromVersion
+            ? null
+            : available !== null
+              ? available.version === update.toVersion &&
+                available.daemonImage !== null
+                  ? { version: available.version, url: available.url }
+                  : null
+              : { version: update.toVersion, url: null };
 
     return (
         <>
@@ -100,14 +113,15 @@ export default function UpdateSettings(props: UpdatesPageProps) {
                     fleetUpdate={props.fleetUpdate}
                     serverCount={props.serversBehindRelease}
                     retry={
-                        props.check.available !== null &&
-                        props.check.available.version === update.toVersion
+                        retryRelease !== null
                             ? {
-                                  release: props.check.available,
+                                  ...retryRelease,
                                   hasBackupDestination:
                                       props.hasBackupDestination,
                                   backupDestinationName:
                                       props.backupDestinationName,
+                                  latestBackup: props.latestBackup,
+                                  runningBackup: props.runningBackup,
                                   disabled: props.running,
                               }
                             : undefined

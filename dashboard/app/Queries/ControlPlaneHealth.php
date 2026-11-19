@@ -14,6 +14,7 @@ use App\Data\Servers\ControlPlaneHealthData;
 use App\Enums\Backups\BackupHealth;
 use App\Enums\Instance\SystemCheckStatus;
 use App\Enums\ServerStatus;
+use App\Enums\Updates\ControlPlaneUpdateStatus;
 use App\Models\Backups\BackupDestination;
 use App\Models\DashboardDomainChange;
 use App\Models\InstanceSettings;
@@ -114,6 +115,7 @@ final readonly class ControlPlaneHealth
             $this->fleetCheck(),
             $this->certificateCheck($now),
             $this->changesCheck(),
+            $this->updateCheck($now),
         ];
     }
 
@@ -363,7 +365,7 @@ final readonly class ControlPlaneHealth
         $ago = $last instanceof CarbonInterface ? $this->ago($last, $now) : null;
 
         $backup = match ($status->status) {
-            BackupHealth::Unconfigured => $this->check('backup', 'Control-plane backup', SystemCheckStatus::Warn, 'Off: without a backup destination, losing this server loses every project’s settings. Add one under Settings → Backups.'),
+            BackupHealth::Unconfigured => $this->check('backup', 'Control-plane backup', SystemCheckStatus::Warn, 'Off: without a backup destination, losing this server loses every project’s settings. Set it up on the Backups page.'),
             BackupHealth::Failing => $this->check('backup', 'Control-plane backup', SystemCheckStatus::Fail, 'The latest backup failed'.($ago === null ? '.' : ", the last good one is {$ago} old."), $status->lastError === null ? [] : [mb_substr($status->lastError, 0, 200)]),
             BackupHealth::Stale => $this->check('backup', 'Control-plane backup', SystemCheckStatus::Warn, 'No backup succeeded for '.($ago ?? 'a long time').'.'),
             BackupHealth::None => $this->check('backup', 'Control-plane backup', SystemCheckStatus::Ok, 'Scheduled; no backup has run yet.'),
@@ -376,7 +378,7 @@ final readonly class ControlPlaneHealth
         }
 
         return [$backup, $settings->recovery_kit_confirmed_at === null
-            ? $this->check('recovery-kit', 'Recovery kit', SystemCheckStatus::Warn, 'Not saved yet. Without it, a backup can’t be restored on a new server. Download it under Settings → Backups.')
+            ? $this->check('recovery-kit', 'Recovery kit', SystemCheckStatus::Warn, 'Not saved yet. Without it, a backup can’t be restored on a new server. Download it on the Backups page.')
             : $this->check('recovery-kit', 'Recovery kit', SystemCheckStatus::Ok, 'Saved.')];
     }
 
@@ -468,6 +470,34 @@ final readonly class ControlPlaneHealth
         return $update instanceof ControlPlaneUpdate && ! $update->status->isTerminal()
             ? $this->check('changes', 'Changes', SystemCheckStatus::Ok, "An update to {$update->to_version} is running.")
             : $this->check('changes', 'Changes', SystemCheckStatus::Ok, 'Nothing is paused.');
+    }
+
+    /**
+     * An update that shows no sign of life (docs/11 §4.3), also when the
+     * dashboard's pages are down: the fix cancels it (nothing has changed
+     * yet, so it is safe), then the owner tries again.
+     */
+    private function updateCheck(CarbonImmutable $now): SystemCheckData
+    {
+        try {
+            $update = ControlPlaneUpdate::query()->with(['backupRun', 'daemonTask'])->whereIn('status', ControlPlaneUpdateStatus::nonTerminal())->latest('id')->first();
+        } catch (Throwable) {
+            return $this->check('update', 'Update', SystemCheckStatus::Skip, 'Can’t be read.');
+        }
+
+        if (! $update instanceof ControlPlaneUpdate) {
+            return $this->check('update', 'Update', SystemCheckStatus::Ok, 'No update is running.');
+        }
+
+        $last = $update->lastActivityAt();
+
+        if (! $update->stalled($now) || ! $last instanceof CarbonInterface) {
+            return $this->check('update', 'Update', SystemCheckStatus::Ok, "The update to {$update->to_version} is running ({$update->status->label()}).");
+        }
+
+        return $update->cancellable()
+            ? $this->check('update', 'Update', SystemCheckStatus::Fail, "The update to {$update->to_version} has made no progress for ".$this->ago($last, $now).'. Nothing has changed yet, so it can be cancelled and tried again.', [$update->status->label()], SystemCheckData::FIX_CANCEL_UPDATE)
+            : $this->check('update', 'Update', SystemCheckStatus::Warn, "The update to {$update->to_version} has made no progress for ".$this->ago($last, $now).'.', [$update->status->label()]);
     }
 
     /**

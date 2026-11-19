@@ -86,8 +86,14 @@ final class ServerReplacementPlan
 
         $volumes = [];
         $oldest = null;
+        // Volumes whose backups are turned off start empty; the others are restored.
+        $backedUp = $instance->volumes->filter(static fn (Volume $volume): bool => ! BackupSubjects::excluded($volume));
 
-        foreach ($instance->volumes as $volume) {
+        if ($backedUp->isEmpty()) {
+            return [null, 'Backups of its volumes are turned off: it starts empty.'];
+        }
+
+        foreach ($backedUp as $volume) {
             $run = $runs->first(static fn (BackupRun $run): bool => $run->volume_id === $volume->id);
 
             if (! $run instanceof BackupRun || $run->snapshot_id === null) {

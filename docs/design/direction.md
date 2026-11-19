@@ -199,7 +199,7 @@ See §9.4 for the full spec: `ServiceNode`, `GroupFrame`, `ConnectionEdge` with 
 `<Status>` keeps the dot/icon + label rule. A `StatusPill` variant (soft background) for headers and cards. Unified vocabulary in [../design-system.md](../design-system.md) §3.3.
 
 ### 5.12 Settings layout
-One layout for team and project settings: grouped left nav (Team: Members, Git, Backups, Notifications, Dockerfile generation · This launchroom: Updates, Registry, Dashboard domain, Network, Certificates & audit · You: Profile, Sign-in, API tokens, Appearance), content 800 px, each section a titled block with its controls; descriptions one line; long explanations behind "Learn more". Instant settings show the `UnsavedBar`; destructive actions on the page's own subject (the project, your account) live in a final "Danger zone" card with outline-red buttons; items in a list (a git connection, an invitation, a token) are removed from their own row or `⋯` menu.
+One layout for team and project settings: grouped left nav (Team: Members, Git, Private registries, Notifications, Dockerfile generation · This launchroom: Updates, Registry, Dashboard domain, Network, Certificates & audit · You: Profile, Sign-in, API tokens, Appearance), content 800 px, each section a titled block with its controls; descriptions one line; long explanations behind "Learn more". Instant settings show the `UnsavedBar`; destructive actions on the page's own subject (the project, your account) live in a final "Danger zone" card with outline-red buttons; items in a list (a git connection, an invitation, a token) are removed from their own row or `⋯` menu.
 
 ## 6. Writing
 
@@ -415,7 +415,6 @@ The rule as one sentence under the title ("Pull requests into main get a copy of
 Shared settings layout (§5.12). Specific pages:
 - **Members**: an inline invite line on top (email, role, Send invite), avatar rows, role chips, `⋯` menu; pending invitations in the same list with an "Invited" chip; a sheet only for inviting several people.
 - **Git**: a provider picker (GitHub, GitLab, Gitea / Forgejo, any git server), then one card per connection with one health line; Disconnect lives in the card's `⋯`.
-- **Backups**: destination card with donut, "What's protected" with run strips, recovery kit card, schedules as sentences.
 - **Updates**: status hero ("You're up to date · 0.4.2" / "0.5.0 is ready" + highlights + Update now), step list during updates, server version cards with "Update 3 servers".
 - **Registry, Network** (instance): cards with the current mode as `OptionCards` (built-in / your own) and the details below.
 - **Profile, Sign-in, Appearance**: settings rows; Sign-in leads with two-factor and passkeys, the password is one row with "Change…" (a dialog); Appearance as three theme tiles with previews.
@@ -435,9 +434,19 @@ Shared settings layout (§5.12). Specific pages:
 | Previews | lucide `git-pull-request` | "Open a pull request to get a preview." | Preview settings |
 | Logs | lucide `scroll-text` | "Nothing logged in this time range." | Widen the range |
 | Servers (only the control plane) | dashed server card with the `unknown` silhouette as the second card | "Add a server for builds, more capacity or a second edge." | Add server |
-| Backups (no destination) | `OptionCards` of providers | "Keep a copy of your databases off this server." | Add destination |
+| Backups (no storage) | provider logos over a dashed card | "Keep a copy off your servers" and what would be protected ("Connect any S3-compatible bucket and your 2 databases are backed up every day.") | Connect storage |
 | Variables | lucide `key-round` | "No variables yet. Paste a .env anywhere on this tab." | Add variable |
 | Activity | lucide `history` | "Deploys, promotions and changes will show up here." | |
+
+### 9.17 Backups
+`wide`, a top-level page in the sidebar (D95; flows §14). Anatomy, top to bottom:
+- **Hero**: the state as one sentence with a status icon (ok, attention with links to the items, waiting for first backups, running) and **Back up everything now**, which becomes its own progress while a batch runs.
+- **What's protected**: rows per database, per volume and for launchroom itself, grouped by project; each row has the schedule as a sentence, status word, last and next line, a `RunStrip` of 30 days, size, and a fixed-width action column so rows align (Back up now, or the running run with its steps under the row).
+- **Not backed up**: collapsed, the reason per item and **Turn on**.
+- **Where backups go**: storage cards with a donut by kind, status by cause with the fix; removed storage as quiet rows with **Add again**.
+- **Recovery kit**: a card with steps that collapses to one line once saved.
+
+A disabled action always has its reason and fix as a line under it (one `ActionReason` component); tooltips can't carry it, because a disabled button takes no pointer events. Restoring stays in each service's Backups settings page.
 
 ## 10. Accessibility and responsiveness (applies to everything above)
 

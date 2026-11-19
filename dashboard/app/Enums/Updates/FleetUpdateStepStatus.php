@@ -28,7 +28,8 @@ enum FleetUpdateStepStatus: string implements HasTransitionTable
     {
         return match ($this) {
             self::Pending => [self::Updating, self::Skipped],
-            self::Updating => [self::Succeeded, self::Failed, self::RolledBack],
+            // Skipped: its task was withdrawn before launchroomd took it (cancel).
+            self::Updating => [self::Succeeded, self::Failed, self::RolledBack, self::Skipped],
             self::Succeeded, self::Failed, self::RolledBack, self::Skipped => [],
         };
     }

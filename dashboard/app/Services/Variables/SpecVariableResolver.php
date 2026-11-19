@@ -23,7 +23,9 @@ use App\Support\Variables\VariableResolver;
  *
  *     system < shared (opted-in) < connection-injected < environment-targeted < branch override
  *
- * Workers and crons also get the variables their app's connections inject.
+ * Workers and crons also get the variables their app's connections inject
+ * and the app's own runtime variables (docs/06 §3.2), both resolved as for
+ * the app: an inherited key is a reference to the app's value.
  *
  * Shared variables a service didn't opt into are reachable only through
  * `${{shared.KEY}}`. Values are decrypted in memory only. Browser-inlined
@@ -125,8 +127,13 @@ final readonly class SpecVariableResolver
                 SystemVariables::for($spec->environment, $service, $service->deploy->port, $service->parentId === null ? null : $spec->service($service->parentId)),
             );
 
+            $parent = $spec->parentOf($service);
+
             foreach ($spec->variablesInPrecedence($service) as $variable) {
-                $values[$variable->key] = $annotate($variable);
+                // A worker or cron takes its app's variable as the app resolves it.
+                $values[$variable->key] = $parent instanceof ServiceSpec && $spec->isInheritedVariable($service, $variable)
+                    ? ['value' => '${{'.$parent->slug.'.'.$variable->key.'}}', 'secret' => $variable->type === VariableType::Secret]
+                    : $annotate($variable);
             }
 
             $scopes[$service->slug] = $values;

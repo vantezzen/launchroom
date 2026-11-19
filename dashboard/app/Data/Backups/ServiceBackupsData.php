@@ -22,6 +22,8 @@ final class ServiceBackupsData extends Data
      * @param  list<RestoreRunData>  $restores
      * @param  list<BackupVolumeData>  $volumes
      * @param  list<BackupTrendPointData>  $trend
+     * @param  list<BackupRunProgressData>  $inFlight
+     * @param  list<RestoreDayData>  $timeline
      * @param  array{backup: string, refresh: string, restore: string, self: string, verify: string}  $urls
      */
     public function __construct(
@@ -58,5 +60,13 @@ final class ServiceBackupsData extends Data
         public bool $canVerify = false,
         /** The last finished runs, oldest first: size, duration and success over time. */
         public array $trend = [],
+        /** Backups in flight (queued or running) with their progress. */
+        public array $inFlight = [],
+        /** "Back up now": the URL, or why it can't run (e.g. `running`, so it can't be clicked again mid-run). */
+        public ?BackupActionData $backUp = null,
+        /** Restore points grouped by day (UTC), newest day first. */
+        public array $timeline = [],
+        /** "Into <name>" first takes a backup of the data as it is now (pre_restore), so the restore can be undone. */
+        public bool $inPlaceTakesSafetyCopy = true,
     ) {}
 }

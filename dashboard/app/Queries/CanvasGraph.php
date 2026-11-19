@@ -29,6 +29,7 @@ use App\Models\ServiceInstance;
 use App\Models\Volume;
 use App\Models\VolumeMount;
 use App\Queries\Backups\BackupStatuses;
+use App\Queries\Backups\LiveVolumeSizes;
 use App\Services\Holds\Holds;
 use App\Support\Canvas\NodeStatus;
 use App\Support\Canvas\ServiceGlyph;
@@ -327,6 +328,8 @@ final readonly class CanvasGraph
             ->with(['server:id,name', 'mounts'])
             ->orderBy('id')
             ->get();
+        // The size its server measured last (disk breakdown); `size_bytes` is only a fallback.
+        $sizes = LiveVolumeSizes::of($volumes);
         $out = [];
 
         foreach ($volumes as $volume) {
@@ -373,7 +376,7 @@ final readonly class CanvasGraph
                 id: $volume->public_id,
                 ownerId: $ownerId,
                 mountPath: $volume->mount_path,
-                sizeBytes: $volume->size_bytes,
+                sizeBytes: $sizes[$volume->public_id] ?? $volume->size_bytes,
                 server: $volume->server?->name,
                 staged: $volume->server_id === null,
                 removing: $volume->removed_at !== null,

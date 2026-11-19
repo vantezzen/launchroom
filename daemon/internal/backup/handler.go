@@ -77,12 +77,19 @@ func Handler(o HandlerOptions) tasks.Handler {
 		logs := tasks.NewTaskLogShipper(ctx, o.Client, t.ID, t.Attempt)
 		defer logs.Close()
 		logf := func(format string, args ...any) { //nolint:contextcheck // logs ship on the shipper's own context
-			logs.Line(step, state.StreamStdout, fmt.Sprintf(format, args...))
+			text, stream := fmt.Sprintf(format, args...), state.StreamStdout
+			if IsProgress(text) {
+				stream = state.StreamSystem
+			}
+			logs.Line(step, stream, text)
 		}
 		select {
 		case o.Slots <- struct{}{}:
 		default:
 			logf("Waiting for another backup or restore on this server to finish")
+			waiting := ProgressLine{Op: step, Phase: PhaseWaiting}
+			logf(ProgressPrefix+"%s", progressJSON(waiting))
+			tasks.SetProgress(ctx, progressSummary(waiting))
 			select {
 			case o.Slots <- struct{}{}:
 			case <-ctx.Done():

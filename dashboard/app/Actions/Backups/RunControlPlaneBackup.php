@@ -19,6 +19,8 @@ use App\Services\Backups\Process\ResticCli;
 use App\Services\Backups\Process\ResticTarget;
 use App\Services\Backups\RecoveryKey;
 use App\Services\Backups\SnapshotTags;
+use Closure;
+use Illuminate\Support\Facades\DB;
 use RuntimeException;
 use Throwable;
 
@@ -50,24 +52,48 @@ final readonly class RunControlPlaneBackup
 
     public function handle(BackupRun $run): BackupRun
     {
-        $run = BackupRun::query()->whereKey($run->id)->with('destination')->firstOrFail();
+        // Claimed under a row lock: the update job and the backup's own job
+        // may both reach a pending run; exactly one of them takes it.
+        [$run, $claimed] = DB::transaction(static function () use ($run): array {
+            $locked = BackupRun::query()->whereKey($run->id)->with('destination')->lockForUpdate()->firstOrFail();
 
-        if ($run->status !== BackupRunStatus::Pending) {
+            if ($locked->status !== BackupRunStatus::Pending) {
+                return [$locked, false];
+            }
+
+            $locked->forceFill(['heartbeat_at' => now(), 'progress_bytes' => 0]);
+            $locked->transitionTo(BackupRunStatus::Running);
+
+            return [$locked, true];
+        });
+
+        if (! $claimed) {
             return $run;
         }
 
-        $run->transitionTo(BackupRunStatus::Running);
-
         try {
             $outcome = $this->backup($run, $run->destination);
-            $run->forceFill(['snapshot_id' => $outcome['snapshot'], 'size_bytes' => $outcome['size'], 'added_bytes' => $outcome['added']]);
+            $this->alive($run);
+            $run->forceFill(['snapshot_id' => $outcome['snapshot'], 'size_bytes' => $outcome['size'], 'added_bytes' => $outcome['added'], 'duration_ms' => $this->elapsed($run)]);
             $run->transitionTo(BackupRunStatus::Succeeded);
             $run->destination->markChecked(DestinationStatus::Ok);
         } catch (Throwable $e) {
+            // Given up as abandoned while it still ran (it was silent too
+            // long): that verdict stands.
+            if ($run->refresh()->status->isTerminal()) {
+                return $run;
+            }
+
             $message = $e instanceof ProcessFailed || $e instanceof DomainRuleViolation || $e instanceof RuntimeException
                 ? $e->getMessage()
                 : 'The control-plane backup failed unexpectedly. See the dashboard logs.';
+            $run->forceFill(['duration_ms' => $this->elapsed($run)]);
             $run->transitionTo(BackupRunStatus::Failed, $message);
+
+            // The storage itself refused (credentials, password, bucket, network): say so on its card.
+            if ($e instanceof ProcessFailed || $e instanceof DomainRuleViolation) {
+                $run->destination->markChecked(DestinationStatus::Failing, $message);
+            }
 
             if (! $e instanceof ProcessFailed && ! $e instanceof RuntimeException) {
                 report($e);
@@ -75,6 +101,49 @@ final readonly class RunControlPlaneBackup
         }
 
         return $run;
+    }
+
+    /**
+     * The heartbeat (docs/11 §4.3): a run that stops beating is given up as
+     * abandoned (its worker died). Throws when that already happened, so a
+     * worker that was only slow stops instead of finishing a run that
+     * counts as failed.
+     */
+    private function alive(BackupRun $run, ?int $bytes = null): void
+    {
+        $beat = ['heartbeat_at' => now()];
+
+        if ($bytes !== null) {
+            $beat['progress_bytes'] = $bytes;
+        }
+
+        $updated = BackupRun::query()->whereKey($run->id)->where('status', BackupRunStatus::Running->value)->update($beat);
+
+        if ($updated === 0) {
+            throw new RuntimeException(BackupRun::ABANDONED);
+        }
+    }
+
+    /**
+     * Beats at most every 10 s while the dump streams and restic reports.
+     */
+    private function heartbeat(BackupRun $run): Closure
+    {
+        $last = 0.0;
+
+        return function (int $bytes) use ($run, &$last): void {
+            if (microtime(true) - $last < 10) {
+                return;
+            }
+
+            $last = microtime(true);
+            $this->alive($run, $bytes);
+        };
+    }
+
+    private function elapsed(BackupRun $run): ?int
+    {
+        return $run->started_at === null ? null : (int) $run->started_at->diffInMilliseconds(now());
     }
 
     /**
@@ -95,6 +164,7 @@ final readonly class RunControlPlaneBackup
         $this->guard->check($destination->endpoint, $destination->allow_private_network);
         $target = ResticTarget::for($destination, $this->secrets->reveal($destination));
         $this->restic->openOrInit($target);
+        $this->alive($run);
 
         $connection = config()->string('database.default');
         $postgres = PostgresClient::fromConnection($connection);
@@ -106,7 +176,9 @@ final readonly class RunControlPlaneBackup
             self::DATABASE_FILE,
             SnapshotTags::forControlPlane($run->public_id, 'database', $run->reason),
             config()->integer('launchroom.backups.task_timeout_seconds'),
+            $this->heartbeat($run),
         );
+        $this->alive($run, $dump->sizeBytes);
 
         // Bound to this run and its database snapshot, authenticated with
         // the passphrase-derived key (format 2, review L5); a passphrase set

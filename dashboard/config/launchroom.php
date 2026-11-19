@@ -63,6 +63,19 @@ return [
         'auto_window' => ['start' => 2, 'end' => 5],
         // Release assets redirect once to GitHub's storage hosts.
         'asset_hosts' => ['objects.githubusercontent.com', 'release-assets.githubusercontent.com'],
+        // An update never waits silently (docs/11 §4.3): a step without a
+        // sign of life for this long shows as stalled, with "Cancel update".
+        'stall_seconds' => 180,
+        // The queued step of an update whose job died is dispatched again
+        // after this long without progress.
+        'redispatch_seconds' => 120,
+        // A pre-upgrade backup whose worker died is started again this
+        // many times before the update fails.
+        'backup_restarts' => 2,
+        // A self_update task that launchroomd hasn't taken after this long
+        // is withdrawn and the update cancelled (nothing changed yet); a
+        // server update step is given up the same way.
+        'task_start_seconds' => 30 * 60,
     ],
 
     /*
@@ -757,6 +770,11 @@ return [
         'pg_restore_binary' => env('LAUNCHROOM_PG_RESTORE_BINARY', '/usr/lib/postgresql/18/bin/pg_restore'),
         // Hard deadline of one backup/restore task (daemon) or job (dashboard).
         'task_timeout_seconds' => (int) env('LAUNCHROOM_BACKUP_TIMEOUT', 6 * 3600),
+        // A control-plane backup (run by a dashboard worker) reports that it
+        // is alive every few seconds; one silent this long lost its worker
+        // and is given up. Above the longest silent restic call (repository
+        // check and init, about 9 minutes at worst).
+        'control_plane_stall_seconds' => 600,
         // "Last backup" turns stale after this long without a success.
         'stale_after_hours' => 36,
         // Snapshot listings from the repository are cached this long.

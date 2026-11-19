@@ -244,7 +244,7 @@ func (f *sshFront) session(ctx context.Context, raw ssh.Channel, reqs <-chan *ss
 			go func() {
 				defer close(done)
 				fsys := NewFSAt(ctx, f.o.Container, f.o.Root, func(n int) { f.ep.activity(n, 0) })
-				rs := sftp.NewRequestServer(ch, fsys.Handlers(), sftp.WithStartDirectory("/"))
+				rs := sftp.NewRequestServer(newLimitsConn(ch), fsys.Handlers(), sftp.WithStartDirectory("/"), sftp.WithRSMaxTxPacket(sftpMaxData))
 				_ = rs.Serve()
 				// The exit status first: closing the request server closes the
 				// channel, and scp (SFTP mode) fails without an exit status.

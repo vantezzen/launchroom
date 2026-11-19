@@ -25,8 +25,14 @@
 # faked in the tinker process that starts the update; everything after that
 # runs for real in horizon, the scheduler, launchroomd and its supervisor):
 #
-#   - 1.0.0 → 1.1.0 with a control-plane backup destination: the pre-upgrade
-#     backup succeeds, the self_update task verifies and installs the bundle
+#   - 1.0.0 → 1.1.0, first attempt (docs/11 §4.3, the v0.1.5-rc.1 incident):
+#     the worker running the pre-upgrade backup is killed mid-backup. The
+#     update shows no progress, `./launchroom doctor` offers to cancel it,
+#     and the owner cancels it from the dashboard over HTTP (no shell);
+#   - 1.0.0 → 1.1.0, "Try again" from the dashboard over HTTP, with a
+#     pre-upgrade backup slower than the queue's old retry_after (90 s; its
+#     pg_dump waits for a table lock): the backup succeeds, the
+#     self_update task verifies and installs the bundle
 #     (the real install.sh, re-run by the supervisor), migrations run, the
 #     new dashboard and launchroomd come up, and the update is recorded as
 #     succeeded by the new dashboard; data is kept.
@@ -231,9 +237,76 @@ healthy() {
 	done
 }
 
-step "update 1.0.0 → 1.1.0 (pre-upgrade backup, signed bundle, real installer)"
-start=$(date +%s)
+# The owner's browser, as curl in the VPS: a cookie session against the
+# dashboard behind Caddy (CSRF token from the XSRF-TOKEN cookie).
+in_vps mkdir -p /root/e2e-http
+owner_curl() {
+	docker exec "$VPS" docker run --rm --user 0:0 --network host -v /root/e2e-http:/c --entrypoint curl "$d100" \
+		-sk -o /c/body -w '%{http_code}' -c /c/jar -b /c/jar --resolve "$DOMAIN:443:127.0.0.1" "$@"
+}
+# shellcheck disable=SC2016 # awk program
+xsrf() { in_vps awk '$6 == "XSRF-TOKEN" { t = $7 } END { print t }' /root/e2e-http/jar | sed 's/%3D/=/g; s/%2F/\//g; s/%2B/+/g'; }
+# owner_post PATH JSON: what a button on the Updates page sends; prints the HTTP status.
+owner_post() {
+	owner_curl -X POST -H "X-XSRF-TOKEN: $(xsrf)" -H 'Content-Type: application/json' -H 'Accept: text/html' \
+		-H "Origin: https://$DOMAIN" -H "Referer: https://$DOMAIN/settings/updates" --data "$2" "https://$DOMAIN$1"
+}
+owner_login() {
+	in_vps rm -f /root/e2e-http/jar
+	owner_curl "https://$DOMAIN/login" >/dev/null
+	code="$(owner_curl -X POST -H "X-XSRF-TOKEN: $(xsrf)" -H 'Content-Type: application/json' -H 'Accept: application/json' \
+		-H "Origin: https://$DOMAIN" --data '{"email":"owner@e2e.test","password":"e2e-owner-password-1234"}' "https://$DOMAIN/login")"
+	case "$code" in 200 | 204 | 302) ;; *) in_vps cat /root/e2e-http/body; fail "owner login answered $code" ;; esac
+}
+# hold_dump SECONDS: a session holds a table lock, so pg_dump (and with it
+# the pre-upgrade backup) waits up to SECONDS. release_dump ends it early.
+psql "CREATE TABLE IF NOT EXISTS e2e_slow (id int)" >/dev/null
+dump_held() { [ "$(psql "SELECT count(*) FROM pg_locks l JOIN pg_class c ON c.oid = l.relation WHERE c.relname = 'e2e_slow' AND l.mode = 'AccessExclusiveLock' AND l.granted")" = 1 ]; }
+hold_dump() {
+	docker exec -d -w "$LR" "$VPS" docker compose exec -T postgres psql -U launchroom -d launchroom \
+		-c "BEGIN; LOCK TABLE e2e_slow IN ACCESS EXCLUSIVE MODE; SELECT pg_sleep($1); COMMIT;"
+	retry 30 dump_held || fail "could not lock e2e_slow"
+}
+release_dump() { psql "SELECT count(pg_terminate_backend(pid)) FROM pg_stat_activity WHERE query LIKE 'BEGIN; LOCK TABLE e2e_slow%'" >/dev/null; }
+latest_update() { psql "SELECT $1 FROM control_plane_updates ORDER BY id DESC LIMIT 1"; }
+latest_run() { psql "SELECT $1 FROM backup_runs WHERE subject = 'control_plane' ORDER BY id DESC LIMIT 1"; }
+backup_running() { [ "$(psql "SELECT status FROM backup_runs WHERE subject = 'control_plane' AND reason = 'pre_upgrade' ORDER BY id DESC LIMIT 1")" = running ]; }
+
+step "update 1.0.0 → 1.1.0, first attempt: the worker running the pre-upgrade backup dies"
+hold_dump 600
 start_update 1.1.0 "$d110" "$a110"
+retry 120 backup_running || fail "the pre-upgrade backup did not start"
+sleep 5
+# A crash, not a graceful stop: the worker and its pg_dump | restic die at once.
+in_lr docker compose kill horizon >/dev/null 2>&1
+in_lr docker compose up -d horizon >/dev/null 2>&1
+release_dump
+dead_run="$(latest_run public_id)"
+cancelled="$(latest_update public_id)"
+ok "worker killed while $dead_run ran; nothing but the backup had started"
+# No progress for the stall time (180 s): the page says so, the doctor offers the fix.
+sleep 200
+[ "$(latest_update status)" = backing_up ] || fail "the update is $(latest_update status), want backing_up"
+in_lr docker compose exec -T dashboard php artisan launchroom:doctor --json >"$WORK/doctor.json" 2>/dev/null || true
+if ! grep -q '"id":"update","title":"Update","status":"fail"' "$WORK/doctor.json" || ! grep -q '"fix":"cancel-update"' "$WORK/doctor.json"; then
+	cat "$WORK/doctor.json"
+	fail "the doctor does not offer to cancel the stalled update"
+fi
+ok "the update shows no progress and ./launchroom doctor offers --fix cancel-update"
+owner_login
+code="$(owner_post "/settings/updates/control-plane/$cancelled/cancel" '{}')"
+[ "$code" = 302 ] || { in_vps cat /root/e2e-http/body; fail "Cancel update answered $code"; }
+[ "$(latest_update status)" = cancelled ] || fail "the update is $(latest_update status) after Cancel, want cancelled"
+[ "$(psql "SELECT status FROM backup_runs WHERE public_id = '$dead_run'")" = failed ] || fail "the dead backup run was not given up"
+[ "$(psql "SELECT count(*) FROM daemon_tasks WHERE type = 'self_update'")" = 0 ] || fail "a self_update task exists after Cancel"
+ok "cancelled from the dashboard; the dead backup was given up; nothing changed"
+
+step "update 1.0.0 → 1.1.0, Try again from the dashboard with a backup slower than the old retry_after"
+start=$(date +%s)
+hold_dump 120
+code="$(owner_post /settings/updates/control-plane "{\"version\":\"1.1.0\",\"retryOf\":\"$cancelled\"}")"
+[ "$code" = 302 ] || { in_vps cat /root/e2e-http/body; fail "Try again answered $code"; }
+[ "$(latest_update public_id)" != "$cancelled" ] || fail "Try again did not start a new update"
 status="$(wait_update 1.1.0)"
 [ "$status" = succeeded ] || {
 	psql "SELECT status, error FROM control_plane_updates ORDER BY id"
@@ -242,9 +315,13 @@ status="$(wait_update 1.1.0)"
 	fail "the update to 1.1.0 ended $status"
 }
 ok "succeeded in $(($(date +%s) - start)) s"
-[ "$(psql "SELECT r.status || ' ' || r.reason FROM control_plane_updates u JOIN backup_runs r ON r.id = u.backup_run_id WHERE u.to_version = '1.1.0'")" = "succeeded pre_upgrade" ] ||
+[ "$(psql "SELECT r.status || ' ' || r.reason FROM control_plane_updates u JOIN backup_runs r ON r.id = u.backup_run_id WHERE u.to_version = '1.1.0' AND u.status = 'succeeded'")" = "succeeded pre_upgrade" ] ||
 	fail "no successful pre-upgrade backup recorded"
-ok "pre-upgrade backup succeeded before anything changed"
+[ "$(psql "SELECT (extract(epoch FROM r.finished_at - r.started_at) > 90)::text FROM control_plane_updates u JOIN backup_runs r ON r.id = u.backup_run_id WHERE u.to_version = '1.1.0' AND u.status = 'succeeded'")" = true ] ||
+	fail "the pre-upgrade backup was not slower than 90 s"
+[ "$(psql "SELECT count(*) FROM failed_jobs WHERE payload LIKE '%RunControlPlaneUpdateJob%' OR payload LIKE '%RunControlPlaneBackupJob%'")" = 0 ] ||
+	fail "an update or backup job failed (attempted too many times?)"
+ok "pre-upgrade backup over 90 s succeeded before anything changed, no job failed"
 healthy "after 1.1.0"
 [ "$(in_lr docker compose exec -T dashboard php artisan tinker --execute='echo config("launchroom.version");')" = 1.1.0 ] || fail "the dashboard is not 1.1.0"
 retry 120 sh -c "[ \"\$(docker exec -w $LR $VPS docker compose exec -T postgres psql -U launchroom -d launchroom -tAc 'SELECT daemon_version FROM servers WHERE is_control_plane')\" = 1.1.0 ]" ||
@@ -273,8 +350,8 @@ healthy "after the rollback"
 [ "$(in_lr docker compose exec -T dashboard php artisan tinker --execute='echo config("launchroom.version");')" = 1.1.0 ] || fail "the dashboard is not back on 1.1.0"
 in_lr grep -qx "LR_DASHBOARD_IMAGE=$d110" .env || fail ".env was not restored"
 [ "$(psql "SELECT public_id FROM projects WHERE name = 'update-e2e'")" = "$project" ] || fail "project $project is gone after the rollback"
-[ "$(psql "SELECT status FROM control_plane_updates WHERE to_version = '1.1.0'")" = succeeded ] || fail "the database restore lost the earlier update"
+[ "$(psql "SELECT status FROM control_plane_updates WHERE to_version = '1.1.0' ORDER BY id DESC LIMIT 1")" = succeeded ] || fail "the database restore lost the earlier update"
 retry 120 edge_caddy "$c110" || fail "the edge Caddy is not on the 1.1.0 image after the rollback"
 ok "1.1.0 is back with its files, database and edge Caddy"
 
-printf '\nPASS: control-plane update with backup, signed bundle and installer; broken release rolled back\n'
+printf '\nPASS: stuck update cancelled and tried again from the dashboard; slow backup; control-plane update with backup, signed bundle and installer; broken release rolled back\n'

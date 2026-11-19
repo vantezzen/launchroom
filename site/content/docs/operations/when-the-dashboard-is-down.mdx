@@ -54,6 +54,7 @@ It checks Docker, the disk, memory, every launchroom service, the database, the 
 - **A service hangs.** `--fix restart:<service>` restarts the dashboard, horizon, reverb, scheduler, zot or headscale. The database and the cache are never restarted this way.
 - **The cache can't load its file after a full disk or a hard stop.** `--fix repair-valkey-aof` copies the file aside, repairs it and starts the cache.
 - **Background jobs are stuck.** `--fix restart-workers` lets the workers finish and start again. `--fix clear-schedule-locks` clears scheduled tasks that are marked as running but aren't.
+- **An update stopped making progress before it installed.** `--fix cancel-update` cancels it. Nothing has changed yet, so try it again from Settings → Updates.
 - **An update failed and going back failed too.** `--fix update-rollback` finishes going back to the version you had.
 - **Locked out.** `./launchroom reset-password you@example.com` prints a one-time sign-in link.
 

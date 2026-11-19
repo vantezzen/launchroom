@@ -62,5 +62,16 @@ test('a new backup joins a run in flight but gives up one past its timeout', fun
     expect($next->id)->not->toBe($running->id)
         ->and($next->status)->toBe(BackupRunStatus::Pending)
         ->and($running->refresh()->status)->toBe(BackupRunStatus::Failed)
-        ->and($running->error)->toContain('Abandoned');
+        ->and($running->error)->toBe(BackupRun::ABANDONED);
+});
+
+test('a new backup gives up a run whose worker stopped beating long before its timeout', function (): void {
+    $running = startControlPlaneRun();
+    $running->transitionTo(BackupRunStatus::Running);
+
+    $this->travel(config()->integer('launchroom.backups.control_plane_stall_seconds') + 1)->seconds();
+    $next = startControlPlaneRun();
+
+    expect($next->id)->not->toBe($running->id)
+        ->and($running->refresh()->error)->toBe(BackupRun::ABANDONED);
 });

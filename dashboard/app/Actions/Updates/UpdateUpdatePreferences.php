@@ -36,7 +36,7 @@ final readonly class UpdateUpdatePreferences
             $channelBefore = $this->releases->channel();
 
             if ($input->autoUpdate && ! $settings->auto_update && ! BackupDestination::query()->instanceWide()->exists()) {
-                throw DomainRuleViolation::on('autoUpdate', 'Automatic updates need a backup of launchroom first. Add one in Settings → Backups.');
+                throw DomainRuleViolation::on('autoUpdate', 'Automatic updates need a backup of launchroom first. Set it up on the Backups page.');
             }
 
             $changed = [];

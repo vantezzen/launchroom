@@ -20,4 +20,6 @@ enum BroadcastEvent: string
     case ServiceActivity = 'service.activity';
     /** A team's security findings were re-evaluated. */
     case SecurityChanged = 'security.changed';
+    /** A team's backups changed: a run started, moved on or finished, or a destination was tested, added or removed. */
+    case BackupsChanged = 'backups.changed';
 }

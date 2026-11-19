@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Data\Updates;
 
+use App\Enums\DaemonTaskStatus;
 use App\Enums\Updates\FleetUpdateStepStatus;
 use App\Models\Updates\FleetUpdateStep;
 use Spatie\LaravelData\Data;
@@ -31,8 +32,20 @@ final class FleetUpdateStepData extends Data
             $step->server_name,
             $step->from_version,
             $step->status,
-            $step->status === FleetUpdateStepStatus::Updating ? $step->daemonTask?->progress : null,
+            $step->status === FleetUpdateStepStatus::Updating ? self::progress($step) : null,
             $step->error,
         );
+    }
+
+    /** launchroomd's last line, or that the server hasn't taken the task (docs/11 §4.3). */
+    private static function progress(FleetUpdateStep $step): ?string
+    {
+        $task = $step->daemonTask;
+
+        if ($task?->status === DaemonTaskStatus::Pending && ($task->updated_at?->lt(now()->subSeconds(config()->integer('launchroom.updates.stall_seconds'))) ?? false)) {
+            return 'Waiting for the server to start the update. It may be offline.';
+        }
+
+        return $task?->progress;
     }
 }

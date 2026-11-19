@@ -275,7 +275,7 @@ SHOTS = {
     "ai-dockerfile": (f"{AIGEN}/s/{AIGEN_SITE}/settings/build", 1440, 900, 2, False, a_ai_dockerfile),
     "alerts": ("/settings/notifications", 1440, 900, 2, True, None),
     "api-tokens": ("/settings/api-tokens", 1440, 1000, 2, False, None),
-    "backup-settings": ("/settings/backups", 1440, 900, 2, True, None),
+    "backup-settings": ("/backups", 1440, 900, 2, True, None),
     "canvas": (SHOP, 1440, 900, 2, False, None),
     "canvas-alt": (ACME, 1440, 900, 2, False, None),
     "capabilities": (f"{JOBS}/s/{JOBS_WEB}/settings/advanced", 1440, 900, 2, False, a_capabilities),

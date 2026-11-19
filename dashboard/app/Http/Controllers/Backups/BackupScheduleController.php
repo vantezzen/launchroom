@@ -35,9 +35,13 @@ final class BackupScheduleController extends Controller
     {
         Gate::authorize('manageInstance', BackupDestination::class);
 
-        $start->handle(BackupReason::Manual, $user, $this->auditActor($request, $user));
+        $run = $start->handle(BackupReason::Manual, $user, $this->auditActor($request, $user));
 
-        Toast::success('Control-plane backup started.');
+        if ($run->wasRecentlyCreated) {
+            Toast::success('Backup of launchroom started.');
+        } else {
+            Toast::info('launchroom is already backing up.');
+        }
 
         return back();
     }

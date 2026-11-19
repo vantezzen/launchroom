@@ -85,6 +85,7 @@ final class BackupStatuses
         $lastSuccess = BackupRun::query()
             ->whereIn('service_instance_id', $ids)
             ->where('status', BackupRunStatus::Succeeded->value)
+            ->ofBackedUpVolumes()
             ->groupBy('service_instance_id')
             ->selectRaw('service_instance_id, max(finished_at) as last_success')
             ->pluck('last_success', 'service_instance_id')
@@ -92,6 +93,7 @@ final class BackupStatuses
 
         $latestIds = BackupRun::query()
             ->whereIn('service_instance_id', $ids)
+            ->ofBackedUpVolumes()
             ->groupBy('service_instance_id')
             ->selectRaw('max(id) as id')
             ->pluck('id');

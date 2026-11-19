@@ -255,9 +255,10 @@ final class SpecDiff
     }
 
     /**
-     * A worker or cron restarts when the connection variables it takes from
-     * its app change (a connection of the app added, changed or removed).
-     * The change itself is the app's item; this only adds the effect.
+     * A worker or cron restarts when the variables it takes from its app
+     * change: a connection of the app added, changed or removed, or one of
+     * the app's runtime variables (docs/06 §3.2). The change itself is the
+     * app's item; this only adds the effect.
      */
     private function diffInherited(?EnvironmentSpec $base, EnvironmentSpec $current): void
     {
@@ -267,7 +268,7 @@ final class SpecDiff
 
         $fingerprint = fn (EnvironmentSpec $spec, ServiceSpec $service): string => CanonicalJson::encode(array_map(
             $this->variableFingerprint(...),
-            $spec->inheritedConnectionVariables($service),
+            [...$spec->inheritedConnectionVariables($service), ...$spec->inheritedVariables($service)],
         ));
 
         foreach ($current->services as $id => $service) {
@@ -368,7 +369,7 @@ final class SpecDiff
             $needed = ChangeEffect::Restart;
         }
 
-        foreach ([...$service->variables, ...$current->connectionVariablesOf($service)] as $variable) {
+        foreach ([...$service->variables, ...$current->connectionVariablesOf($service), ...$current->inheritedVariables($service)] as $variable) {
             foreach ($variable->references as $reference) {
                 $scope = str_contains($reference, '.') ? strstr($reference, '.', true) : null;
                 $key = str_contains($reference, '.') ? substr($reference, strpos($reference, '.') + 1) : $reference;

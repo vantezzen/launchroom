@@ -77,10 +77,13 @@ final readonly class ServiceVariablesView
         $scopes = $this->resolver->annotatedScopes($project, $spec);
         $preview = new ReferencePreview($scopes);
 
-        // A worker or cron also gets its app's connection variables (read-only here).
+        // A worker or cron also gets its app's connection variables and the
+        // app's own runtime variables (read-only here; docs/06 §3.2). App
+        // rows the process overrides are listed as overridden.
+        $parent = $spec->parentOf($serviceSpec);
         $inherited = $spec->inheritedConnectionVariables($serviceSpec);
-        $inheritedFrom = $inherited === [] || $serviceSpec->parentId === null ? null : $spec->service($serviceSpec->parentId)?->name;
-        $ids = [...array_keys($serviceSpec->variables), ...array_keys($serviceSpec->connectionVariables), ...array_keys($inherited)];
+        $fromApp = $spec->parentVariables($serviceSpec);
+        $ids = [...array_keys($serviceSpec->variables), ...array_keys($serviceSpec->connectionVariables), ...array_keys($inherited), ...array_keys($fromApp)];
         /** @var array<string, Variable> $models */
         $models = Variable::query()
             ->where('project_id', $project->id)
@@ -113,15 +116,17 @@ final readonly class ServiceVariablesView
             $rows[] = $this->row($project, $variable, $model, $serviceSpec, $preview, $winners, $environmentNames, $environmentIds, $user, $managed);
         }
 
-        foreach ($inherited as $id => $variable) {
-            $model = $models[$id] ?? null;
+        if ($parent instanceof ServiceSpec) {
+            foreach ([...$inherited, ...$fromApp] as $id => $variable) {
+                $model = $models[$id] ?? null;
 
-            if ($model !== null) {
-                $rows[] = $this->row($project, $variable, $model, $serviceSpec, $preview, $winners, $environmentNames, $environmentIds, $user, inheritedFrom: $inheritedFrom);
+                if ($model !== null) {
+                    $rows[] = $this->row($project, $variable, $model, $serviceSpec, $preview, $winners, $environmentNames, $environmentIds, $user, inheritedFrom: $parent);
+                }
             }
         }
 
-        usort($rows, static fn (VariableRowData $a, VariableRowData $b): int => [$a->key, $a->connection !== null] <=> [$b->key, $b->connection !== null]);
+        usort($rows, static fn (VariableRowData $a, VariableRowData $b): int => [$a->key, $a->inheritedFrom !== null, $a->connection !== null] <=> [$b->key, $b->inheritedFrom !== null, $b->connection !== null]);
 
         $shared = [];
 
@@ -168,7 +173,29 @@ final readonly class ServiceVariablesView
             canWrite: $stagedRemoval === null && Gate::allows('create', [Variable::class, $project]),
             canRevealSecrets: $canRevealSecrets,
             secretPlaceholder: self::SECRET_PLACEHOLDER,
+            usedBy: $this->processes($spec, $serviceSpec),
         );
+    }
+
+    /**
+     * The enabled workers and crons of an app: they take its runtime
+     * variables (docs/06 §3.2).
+     *
+     * @return list<string> their names
+     */
+    private function processes(EnvironmentSpec $spec, ServiceSpec $app): array
+    {
+        $names = [];
+
+        foreach ($spec->services as $other) {
+            if ($other->enabled && $spec->parentOf($other)?->id === $app->id) {
+                $names[] = $other->name;
+            }
+        }
+
+        sort($names);
+
+        return $names;
     }
 
     /**
@@ -234,9 +261,9 @@ final readonly class ServiceVariablesView
      * @param  array<int, string>  $environmentNames
      * @param  array<int, string>  $environmentIds
      * @param  list<string>  $managed  keys launchroom.json sets
-     * @param  string|null  $inheritedFrom  the app whose connection injects it (workers and crons)
+     * @param  ServiceSpec|null  $inheritedFrom  workers and crons: the app whose variable or connection it is
      */
-    private function row(Project $project, VariableSpec $variable, Variable $model, ServiceSpec $service, ReferencePreview $preview, array $winners, array $environmentNames, array $environmentIds, User $user, array $managed = [], ?string $inheritedFrom = null): VariableRowData
+    private function row(Project $project, VariableSpec $variable, Variable $model, ServiceSpec $service, ReferencePreview $preview, array $winners, array $environmentNames, array $environmentIds, User $user, array $managed = [], ?ServiceSpec $inheritedFrom = null): VariableRowData
     {
         $isSecret = $variable->type === VariableType::Secret;
         // Secrets are decrypted only to check their references; never returned.
@@ -244,7 +271,9 @@ final readonly class ServiceVariablesView
             ? $this->keyring->decryptVariable($project, $variable->id, $variable->version, $variable->ciphertext)
             : null;
         $value = $isSecret ? null : $raw;
-        $result = $raw === null ? null : $preview->preview($service->slug, $variable->key, $raw);
+        // The app's own variables resolve as they do for the app.
+        $scope = $inheritedFrom instanceof ServiceSpec && $variable->connectionId === null ? $inheritedFrom->slug : $service->slug;
+        $result = $raw === null ? null : $preview->preview($scope, $variable->key, $raw);
 
         $connection = $model->connection instanceof Connection ? $model->connection->to->name : null;
 
@@ -262,7 +291,7 @@ final readonly class ServiceVariablesView
             errors: $result['errors'] ?? [],
             connection: $connection,
             overridden: ($winners[$variable->key] ?? $variable->id) !== $variable->id,
-            targets: $connection !== null ? [] : array_values($model->targets->map(static fn (VariableTarget $target): VariableTargetChipData => new VariableTargetChipData(
+            targets: $connection !== null || $inheritedFrom instanceof ServiceSpec ? [] : array_values($model->targets->map(static fn (VariableTarget $target): VariableTargetChipData => new VariableTargetChipData(
                 environmentId: $target->environment_id === null ? null : ($environmentIds[$target->environment_id] ?? null),
                 label: $target->all_previews
                     ? ($target->branch_pattern === null ? 'All previews' : "Previews: {$target->branch_pattern}")
@@ -271,10 +300,10 @@ final readonly class ServiceVariablesView
                 branchPattern: $target->branch_pattern,
             ))->all()),
             // A secret the file requires keeps its value in the dashboard.
-            canEdit: $inheritedFrom === null && Gate::forUser($user)->allows('update', $model) && (! in_array($variable->key, $managed, true) || $isSecret),
+            canEdit: ! $inheritedFrom instanceof ServiceSpec && Gate::forUser($user)->allows('update', $model) && (! in_array($variable->key, $managed, true) || $isSecret),
             canReveal: Gate::forUser($user)->allows('reveal', $model),
             managedByFile: $model->connection_id === null && in_array($variable->key, $managed, true),
-            inheritedFrom: $inheritedFrom,
+            inheritedFrom: $inheritedFrom?->name,
         );
     }
 }

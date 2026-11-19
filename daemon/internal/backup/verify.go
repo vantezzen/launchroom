@@ -67,10 +67,10 @@ func (v *verifier) check(name state.VerifyCheckName, err error, detail string) b
 // Docker); a snapshot that does not restore or check cleanly is a result
 // with Passed false.
 func (e *Engine) Verify(ctx context.Context, spec *state.VerifyRestoreSpec, creds Credentials, logf Logf) (*state.VerifyResult, error) {
-	if logf == nil {
-		logf = nopLog
-	}
+	tr := e.track(ctx, "verify", logf)
+	logf = tr.logf
 	start := e.o.Now()
+	tr.phase(PhaseVerifying, nil, 0)
 	r, err := e.openRepo(spec.Destination, creds)
 	if err != nil {
 		return nil, err
@@ -101,6 +101,7 @@ func (e *Engine) Verify(ctx context.Context, spec *state.VerifyRestoreSpec, cred
 	} else {
 		logf("Verification failed")
 	}
+	tr.finish(0)
 	return &v.res, nil
 }
 

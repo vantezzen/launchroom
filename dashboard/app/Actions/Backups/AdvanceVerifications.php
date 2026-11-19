@@ -46,7 +46,7 @@ final readonly class AdvanceVerifications
         $verified = BackupVerification::query()->whereIn('service_instance_id', $ids)
             ->where('created_at', '>', $now->subDays($every))->pluck('service_instance_id')->flip();
         $backedUp = BackupRun::query()->whereIn('service_instance_id', $ids)
-            ->where('status', BackupRunStatus::Succeeded->value)->distinct()->pluck('service_instance_id')->flip();
+            ->where('status', BackupRunStatus::Succeeded->value)->ofBackedUpVolumes()->stored()->distinct()->pluck('service_instance_id')->flip();
 
         $started = 0;
 

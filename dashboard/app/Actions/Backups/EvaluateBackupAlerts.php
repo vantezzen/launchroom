@@ -15,12 +15,14 @@ use App\Enums\Backups\BackupRunStatus;
 use App\Enums\Backups\BackupSubject;
 use App\Enums\Backups\VerificationStatus;
 use App\Enums\Backups\WalArchiveState;
+use App\Models\Backups\BackupDestination;
 use App\Models\Backups\BackupRun;
 use App\Models\Backups\BackupSchedule;
 use App\Models\Backups\BackupVerification;
 use App\Models\Backups\WalArchive;
 use App\Models\ServiceInstance;
 use App\Queries\Backups\BackupStatuses;
+use App\Services\Backups\BackupSubjects;
 use App\Support\Links;
 use Carbon\CarbonImmutable;
 use Illuminate\Support\Facades\Cache;
@@ -31,6 +33,8 @@ use Illuminate\Support\Facades\Cache;
  * has right now —
  *
  * - **failed**: its newest backup run (dump, volume snapshot or base backup) failed;
+ *   runs of volumes whose backups are turned off don't count, and a service
+ *   whose volumes are all turned off has no backup problems;
  * - **verification failed**: its newest restore verification failed;
  * - **overdue**: scheduled, but no success for `stale_after_hours`;
  * - **WAL lagging**: point-in-time recovery is on and WAL has not reached
@@ -65,7 +69,7 @@ final readonly class EvaluateBackupAlerts
             ->merge(WalArchive::query()->pluck('service_instance_id'))->unique()->values()->all();
         $changed = 0;
 
-        foreach (ServiceInstance::query()->whereIn('id', $ids)->whereNull('removed_at')->with(['service', 'team', 'environment.project'])->orderBy('id')->get() as $instance) {
+        foreach (ServiceInstance::query()->whereIn('id', $ids)->whereNull('removed_at')->with(['service', 'team', 'environment.project', 'volumes'])->orderBy('id')->get() as $instance) {
             foreach ($this->problems($instance, $now) as $value => $problem) {
                 $kind = BackupAlertKind::from($value);
                 $changed += $this->apply($instance, $kind, $problem, $now) ? 1 : 0;
@@ -81,19 +85,24 @@ final readonly class EvaluateBackupAlerts
     private function problems(ServiceInstance $instance, CarbonImmutable $now): array
     {
         $name = $instance->service->name;
-        $latest = BackupRun::query()->where('service_instance_id', $instance->id)
+        // Every volume's backups turned off: nothing is expected, nothing alerts.
+        $off = BackupSubjects::allExcluded($instance);
+        $latest = $off ? null : BackupRun::query()->where('service_instance_id', $instance->id)
             ->whereIn('status', BackupRunStatus::terminal())
+            ->ofBackedUpVolumes()
             ->latest('finished_at')->orderByDesc('id')->first();
         $verification = BackupVerification::query()->where('service_instance_id', $instance->id)
             ->whereIn('status', VerificationStatus::terminal())
             ->latest('finished_at')->orderByDesc('id')->first();
-        $schedule = BackupSchedule::query()->where('service_instance_id', $instance->id)->where('enabled', true)->exists();
+        // Not while its storage is removed: the Backups page says so, and nothing can run.
+        $schedule = ! $off && BackupSchedule::query()->where('service_instance_id', $instance->id)->where('enabled', true)
+            ->whereIn('destination_id', BackupDestination::query()->select('id'))->exists();
         $archive = WalArchive::query()->where('service_instance_id', $instance->id)->where('enabled', true)->first();
 
         return [
             BackupAlertKind::Failed->value => $latest?->status === BackupRunStatus::Failed ? [
                 'title' => ($latest->subject === BackupSubject::BaseBackup ? 'Base backup of ' : 'Backup of ').$name.' failed',
-                'summary' => 'The newest backup of '.$name.' did not finish. The error is in its Settings, under Backups.',
+                'summary' => 'The newest backup of '.$name.' did not finish. The error is in its Backups tab.',
                 'occurrence' => $latest->public_id,
             ] : null,
             BackupAlertKind::VerificationFailed->value => $verification?->status === VerificationStatus::Failed ? [

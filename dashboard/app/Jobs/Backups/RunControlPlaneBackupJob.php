@@ -10,12 +10,17 @@ use Illuminate\Contracts\Queue\ShouldBeUnique;
 use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Foundation\Queue\Queueable;
 use Illuminate\Queue\Attributes\Tries;
+use Illuminate\Queue\Attributes\UniqueFor;
 
 /**
  * Runs one control-plane backup off the request path (docs/10 §2.2 rule 8).
  * No retries: a failed run is recorded and the next schedule tries again.
+ * The unique lock expires (#[UniqueFor]): a worker that dies never releases
+ * it, and the run is dispatched again (FailAbandonedControlPlaneBackups); a
+ * copy that runs finds the run no longer pending and does nothing.
  */
 #[Tries(1)]
+#[UniqueFor(600)]
 final class RunControlPlaneBackupJob implements ShouldBeUnique, ShouldQueue
 {
     use Queueable;

@@ -27,14 +27,18 @@ enum ControlPlaneUpdateStatus: string implements HasTransitionTable
     // The new release was installed but did not become healthy; the previous
     // compose files and database snapshot were restored.
     case RolledBack = 'rolled_back';
+    // Stopped by the owner (or given up by launchroom) before the self_update
+    // task started: nothing was changed (docs/11 §4.3).
+    case Cancelled = 'cancelled';
 
     public function allowedTransitions(): array
     {
         return match ($this) {
-            self::Pending => [self::BackingUp, self::Updating, self::Failed],
-            self::BackingUp => [self::Updating, self::Failed],
-            self::Updating => [self::Succeeded, self::Failed, self::RolledBack],
-            self::Succeeded, self::Failed, self::RolledBack => [],
+            self::Pending => [self::BackingUp, self::Updating, self::Failed, self::Cancelled],
+            self::BackingUp => [self::Updating, self::Failed, self::Cancelled],
+            // Cancelled only while launchroomd hasn't taken the task yet.
+            self::Updating => [self::Succeeded, self::Failed, self::RolledBack, self::Cancelled],
+            self::Succeeded, self::Failed, self::RolledBack, self::Cancelled => [],
         };
     }
 
@@ -53,6 +57,7 @@ enum ControlPlaneUpdateStatus: string implements HasTransitionTable
             self::Succeeded => 'Updated',
             self::Failed => 'Failed',
             self::RolledBack => 'Rolled back',
+            self::Cancelled => 'Cancelled',
         };
     }
 
@@ -63,6 +68,7 @@ enum ControlPlaneUpdateStatus: string implements HasTransitionTable
             self::Succeeded => StatusTone::Active,
             self::Failed => StatusTone::Failed,
             self::RolledBack => StatusTone::Warning,
+            self::Cancelled => StatusTone::Idle,
         };
     }
 }

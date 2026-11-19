@@ -51,6 +51,9 @@ type Options struct {
 	VolumeIdleTimeout time.Duration
 	// PollEvery is the idle-wait poll interval (default 2 s).
 	PollEvery time.Duration
+	// ProgressEvery is how often a running backup or restore logs a
+	// progress line (default 2 s; slower on long runs, see progress.go).
+	ProgressEvery time.Duration
 	// Runtime runs database images in throwaway containers for
 	// point-in-time restores and verifications (nil: unsupported).
 	Runtime RuntimeDocker
@@ -90,6 +93,9 @@ func New(o Options) *Engine {
 	}
 	if o.PollEvery <= 0 {
 		o.PollEvery = 2 * time.Second
+	}
+	if o.ProgressEvery <= 0 {
+		o.ProgressEvery = 2 * time.Second
 	}
 	if o.TransferDir == "" && o.DataDir != "" {
 		o.TransferDir = filepath.Join(o.DataDir, "transfers")
@@ -138,12 +144,12 @@ var errDumpFailed = errors.New("dump failed")
 // snapshot. Both exit codes are checked: a failed dump fails the backup even
 // if restic stored a (truncated) snapshot, which is then forgotten.
 func (e *Engine) Backup(ctx context.Context, spec *state.BackupSpec, creds Credentials, logf Logf) (*state.BackupResult, error) {
-	if logf == nil {
-		logf = nopLog
-	}
+	tr := e.track(ctx, "backup", logf)
+	defer tr.stopTicker()
 	if spec.Kind == state.BackupVolume {
-		return e.backupVolume(ctx, spec, creds, logf)
+		return e.backupVolume(ctx, spec, creds, tr)
 	}
+	logf = tr.logf
 	if spec.Kind != state.BackupDatabase && spec.Kind != state.BackupBaseBackup {
 		return nil, fmt.Errorf("backup: %s backups: %w (control-plane backups run in the dashboard container)", spec.Kind, ErrUnsupported)
 	}
@@ -178,6 +184,7 @@ func (e *Engine) Backup(ctx context.Context, spec *state.BackupSpec, creds Crede
 		return nil, err
 	}
 	start := e.o.Now()
+	tr.phase(PhasePreparing, nil, 0)
 	if created, err := r.ensure(ctx); err != nil {
 		return nil, err
 	} else if created {
@@ -194,6 +201,10 @@ func (e *Engine) Backup(ctx context.Context, spec *state.BackupSpec, creds Crede
 	defer cancel()
 	pr, pw := io.Pipe()
 	counted := &countingWriter{w: pw}
+	out := &resticOutput{}
+	tr.restic = out
+	tr.phase(PhaseStreaming, counted.n.Load, 0)
+	tr.ticking()
 	dumpDone := make(chan error, 1)
 	go func() {
 		if native {
@@ -202,6 +213,7 @@ func (e *Engine) Backup(ctx context.Context, spec *state.BackupSpec, creds Crede
 				_ = pw.CloseWithError(errDumpFailed)
 			} else {
 				_ = pw.Close()
+				tr.phase(PhaseFinishing, counted.n.Load, 0)
 			}
 			dumpDone <- err
 			return
@@ -217,18 +229,19 @@ func (e *Engine) Backup(ctx context.Context, spec *state.BackupSpec, creds Crede
 			_ = pw.CloseWithError(errDumpFailed)
 		} else {
 			_ = pw.Close()
+			tr.phase(PhaseFinishing, counted.n.Load, 0)
 		}
 		dumpDone <- err
 	}()
 
-	var out bytes.Buffer
-	resticErr := r.run(ctx, "backup", pr, &out, args...)
+	resticErr := r.run(ctx, "backup", pr, out, args...)
 	if resticErr != nil {
 		// Unblock the dump if restic stopped reading.
 		_ = pr.CloseWithError(errors.New("restic stopped"))
 		cancel()
 	}
 	dumpErr := <-dumpDone
+	tr.stopTicker()
 
 	summary := parseBackupSummary(out.Bytes())
 	switch {
@@ -253,6 +266,7 @@ func (e *Engine) Backup(ctx context.Context, spec *state.BackupSpec, creds Crede
 	}
 	size := counted.n.Load()
 	logf("Snapshot %s stored (%s, %s added)", summary.SnapshotID[:8], humanBytes(size), humanBytes(summary.DataAdded))
+	tr.stored(size, summary.SnapshotID, summary.DataAdded)
 	return &state.BackupResult{
 		SnapshotID: snap, SizeBytes: size, AddedBytes: max(summary.DataAdded, 0),
 		DurationMs: e.o.Now().Sub(start).Milliseconds(),
@@ -303,12 +317,12 @@ func (r *repo) snapshots(ctx context.Context, args ...string) ([]resticSnapshot,
 // Restore feeds a snapshot of the engine's dump into the engine's restore
 // tool inside the target workload's container. Both exit codes are checked.
 func (e *Engine) Restore(ctx context.Context, spec *state.RestoreSpec, creds Credentials, logf Logf) (*state.RestoreResult, error) {
-	if logf == nil {
-		logf = nopLog
-	}
+	tr := e.track(ctx, "restore", logf)
+	defer tr.stopTicker()
 	if spec.Kind == state.BackupVolume {
-		return e.restoreVolume(ctx, spec, creds, logf)
+		return e.restoreVolume(ctx, spec, creds, tr)
 	}
+	logf = tr.logf
 	if spec.Kind != state.BackupDatabase {
 		return nil, fmt.Errorf("backup: %s restores: %w", spec.Kind, ErrUnsupported)
 	}
@@ -336,6 +350,7 @@ func (e *Engine) Restore(ctx context.Context, spec *state.RestoreSpec, creds Cre
 		return nil, err
 	}
 	start := e.o.Now()
+	tr.phase(PhasePreparing, nil, 0)
 	if ok, err := r.exists(ctx); err != nil {
 		return nil, err
 	} else if !ok {
@@ -354,11 +369,13 @@ func (e *Engine) Restore(ctx context.Context, spec *state.RestoreSpec, creds Cre
 	}
 	logf("Restoring snapshot %s into %s", short(snaps[0].ID), spec.Target.Engine)
 	if native {
+		tr.phase(PhaseRestoring, nil, snaps[0].size())
 		size, err := e.restoreClickhouse(ctx, r, snaps[0].ID, id, env)
 		if err != nil {
 			return nil, err
 		}
 		logf("Restored %s", humanBytes(size))
+		tr.finish(size)
 		return &state.RestoreResult{SizeBytes: size, DurationMs: e.o.Now().Sub(start).Milliseconds()}, nil
 	}
 
@@ -366,6 +383,8 @@ func (e *Engine) Restore(ctx context.Context, spec *state.RestoreSpec, creds Cre
 	defer cancel()
 	pr, pw := io.Pipe()
 	counted := &countingWriter{w: pw}
+	tr.phase(PhaseRestoring, counted.n.Load, snaps[0].size())
+	tr.ticking()
 	dumpDone := make(chan error, 1)
 	go func() {
 		err := r.run(ctx, "dump", nil, counted, "dump", snaps[0].ID, want)
@@ -394,7 +413,16 @@ func (e *Engine) Restore(ctx context.Context, spec *state.RestoreSpec, creds Cre
 	}
 	size := counted.n.Load()
 	logf("Restored %s", humanBytes(size))
+	tr.finish(size)
 	return &state.RestoreResult{SizeBytes: size, DurationMs: e.o.Now().Sub(start).Milliseconds()}, nil
+}
+
+// size is the snapshot's recorded size (0: unknown, restic < 0.17).
+func (s resticSnapshot) size() int64 {
+	if s.Summary == nil {
+		return 0
+	}
+	return max(s.Summary.TotalBytesProcessed, 0)
 }
 
 // Snapshots lists the snapshots carrying all of spec.Tags, newest first.
@@ -449,9 +477,8 @@ func (e *Engine) Snapshots(ctx context.Context, spec *state.BackupSnapshotsSpec,
 // the dashboard scopes it per service (service:<id>) or per control plane
 // (kind:control_plane); snapshots of other services are never considered.
 func (e *Engine) Maintenance(ctx context.Context, spec *state.BackupMaintenanceSpec, creds Credentials, logf Logf) (*state.MaintenanceResult, error) {
-	if logf == nil {
-		logf = nopLog
-	}
+	tr := e.track(ctx, "maintenance", logf)
+	logf = tr.logf
 	r, err := e.openRepo(spec.Destination, creds)
 	if err != nil {
 		return nil, err
@@ -462,6 +489,7 @@ func (e *Engine) Maintenance(ctx context.Context, spec *state.BackupMaintenanceS
 		return nil, err
 	} else if !ok {
 		logf("The backup repository does not exist yet; nothing to do")
+		tr.finish(0)
 		res.DurationMs = e.o.Now().Sub(start).Milliseconds()
 		return res, nil
 	}
@@ -485,6 +513,7 @@ func (e *Engine) Maintenance(ctx context.Context, spec *state.BackupMaintenanceS
 		if h := spec.Retention.KeepWithinHours; h > 0 {
 			args = append(args, "--keep-within", strconv.Itoa(h)+"h")
 		}
+		tr.phase(PhaseForgetting, nil, 0)
 		var out bytes.Buffer
 		if err := r.run(ctx, "forget", nil, &out, args...); err != nil {
 			return nil, err
@@ -499,12 +528,14 @@ func (e *Engine) Maintenance(ctx context.Context, spec *state.BackupMaintenanceS
 		}
 		logf("Forgot %d snapshots", res.RemovedSnapshots)
 		if res.RemovedSnapshots > 0 {
+			tr.phase(PhasePruning, nil, 0)
 			if err := r.run(ctx, "prune", nil, nil, "prune"); err != nil {
 				return nil, err
 			}
 			logf("Pruned unreferenced data")
 		}
 	case state.MaintenancePrune:
+		tr.phase(PhasePruning, nil, 0)
 		if err := r.run(ctx, "prune", nil, nil, "prune"); err != nil {
 			return nil, err
 		}
@@ -513,6 +544,7 @@ func (e *Engine) Maintenance(ctx context.Context, spec *state.BackupMaintenanceS
 		if spec.ReadDataSubsetPercent > 0 {
 			args = append(args, "--read-data-subset="+strconv.Itoa(spec.ReadDataSubsetPercent)+"%")
 		}
+		tr.phase(PhaseChecking, nil, 0)
 		if err := r.run(ctx, "check", nil, nil, args...); err != nil {
 			return nil, err
 		}
@@ -521,6 +553,7 @@ func (e *Engine) Maintenance(ctx context.Context, spec *state.BackupMaintenanceS
 		return nil, fmt.Errorf("backup: maintenance %q: %w", spec.Operation, ErrUnsupported)
 	}
 	res.DurationMs = e.o.Now().Sub(start).Milliseconds()
+	tr.finish(0)
 	return res, nil
 }
 

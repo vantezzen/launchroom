@@ -10,7 +10,7 @@ import { STEP_STATUS_LABEL, StepIcon } from '@/components/steps/step-icon';
 import { Button } from '@/components/ui/button';
 import { quietDeployToasts } from '@/features/deployments/deploy-toasts';
 import { requestJson } from '@/lib/http';
-import { settings as backupSettings } from '@/routes/backups';
+import { index as backupSettings } from '@/routes/backups';
 import { show as deploymentShow } from '@/routes/deployments';
 import { edit as gitSettings } from '@/routes/git';
 import onboardingRoutes from '@/routes/onboarding';
@@ -175,7 +175,10 @@ function Live({ app, onDismiss }: { app: FirstApp; onDismiss: () => void }) {
         ...(app.suggestGit
             ? [{ label: 'Deploy on every push', href: gitSettings().url }]
             : []),
-        { label: 'Keep a backup off this server', href: backupSettings().url },
+        {
+            label: 'Keep a backup off this server',
+            href: `${backupSettings().url}#setup`,
+        },
     ];
 
     return (

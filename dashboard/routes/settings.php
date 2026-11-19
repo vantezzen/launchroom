@@ -56,6 +56,13 @@ Route::middleware(['auth', 'verified'])->group(function (): void {
     Route::post('settings/updates/servers', [UpdatesController::class, 'updateFleet'])
         ->middleware('throttle:6,1')
         ->name('updates.servers');
+    // Stop an update before it changed anything (docs/11 §4.3).
+    Route::post('settings/updates/control-plane/{update}/cancel', [UpdatesController::class, 'cancelControlPlane'])
+        ->middleware('throttle:6,1')
+        ->name('updates.control-plane.cancel');
+    Route::post('settings/updates/servers/{fleet}/cancel', [UpdatesController::class, 'cancelFleet'])
+        ->middleware('throttle:6,1')
+        ->name('updates.servers.cancel');
 
     // Settings → Network, the private network and public
     // traffic & certificates on one page (actions stay on servers/mesh/*, servers/ingress/*).

@@ -21,7 +21,8 @@ type StepperProps = {
 
 /**
  * Numeric quantity with a small range as − value + (design-system §6).
- * Arrow keys on the value work too.
+ * − and + move by `step`; any whole number in range can be typed. Arrow
+ * keys on the value move by 1.
  */
 export function Stepper({
     label,
@@ -62,7 +63,10 @@ export function Stepper({
                         value={value}
                         min={min}
                         max={Number.isFinite(max) ? max : undefined}
-                        step={step}
+                        // `step` is what − and + add. A typed value only has
+                        // to be whole: step={step} would make the browser
+                        // accept min + n × step only (1, 6, 11 … for 60).
+                        step={1}
                         disabled={disabled}
                         onChange={(event) => {
                             const next = Number(event.target.value);

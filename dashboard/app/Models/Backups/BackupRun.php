@@ -9,6 +9,7 @@ use App\Enums\Backups\BackupReason;
 use App\Enums\Backups\BackupRunStatus;
 use App\Enums\Backups\BackupSubject;
 use App\Enums\Contracts\HasTransitionTable;
+use App\Events\Broadcasts\BackupsChanged;
 use App\Events\Broadcasts\ServiceActivityChanged;
 use App\Models\Concerns\HasPublicId;
 use App\Models\Concerns\HasStatusTransitions;
@@ -18,7 +19,10 @@ use App\Models\ServiceInstance;
 use App\Models\Team;
 use App\Models\User;
 use App\Models\Volume;
+use Carbon\CarbonInterface;
 use Illuminate\Database\Eloquent\Attributes\Fillable;
+use Illuminate\Database\Eloquent\Attributes\Scope;
+use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Support\Carbon;
@@ -44,7 +48,10 @@ use Illuminate\Support\Carbon;
  * @property int|null $daemon_task_id
  * @property int|null $server_id
  * @property int|null $actor_id
+ * @property string|null $batch_id "Back up everything now": the runs started together
  * @property string|null $error
+ * @property Carbon|null $heartbeat_at control-plane runs: last sign of life of the worker running it
+ * @property int|null $progress_bytes control-plane runs: bytes of the dump stored so far
  * @property Carbon|null $started_at
  * @property Carbon|null $finished_at
  * @property Carbon|null $created_at
@@ -58,7 +65,7 @@ use Illuminate\Support\Carbon;
  * @property-read Server|null $server
  * @property-read User|null $actor
  */
-#[Fillable(['team_id', 'schedule_id', 'destination_id', 'subject', 'service_instance_id', 'volume_id', 'reason', 'daemon_task_id', 'server_id', 'actor_id'])]
+#[Fillable(['team_id', 'schedule_id', 'destination_id', 'subject', 'service_instance_id', 'volume_id', 'reason', 'daemon_task_id', 'server_id', 'actor_id', 'batch_id'])]
 final class BackupRun extends Model
 {
     use HasPublicId;
@@ -71,9 +78,33 @@ final class BackupRun extends Model
         'status' => 'pending',
     ];
 
+    /** The error of a control-plane run whose worker stopped (docs/11 §4.3). */
+    public const string ABANDONED = 'The backup stopped without finishing: the background worker running it was restarted or stopped.';
+
     public static function publicIdPrefix(): string
     {
         return 'bkr';
+    }
+
+    /**
+     * A control-plane run (taken by a dashboard worker) that shows no sign
+     * of life: running without a heartbeat for the stall time, or still
+     * pending after the backup timeout. Its worker died; it never finishes
+     * by itself. Runs on launchroomd are followed through their tasks.
+     */
+    public function abandoned(?CarbonInterface $now = null): bool
+    {
+        if ($this->team_id !== null || $this->daemon_task_id !== null) {
+            return false;
+        }
+
+        $now ??= now();
+
+        return match ($this->status) {
+            BackupRunStatus::Running => ($this->heartbeat_at ?? $this->started_at ?? $this->created_at)?->lt($now->copy()->subSeconds(config()->integer('launchroom.backups.control_plane_stall_seconds'))) ?? false,
+            BackupRunStatus::Pending => $this->created_at?->lt($now->copy()->subSeconds(config()->integer('launchroom.backups.task_timeout_seconds') + config()->integer('launchroom.backups.control_plane_stall_seconds'))) ?? false,
+            default => false,
+        };
     }
 
     /**
@@ -90,6 +121,32 @@ final class BackupRun extends Model
             $this->forceFill(['started_at' => $this->started_at ?? now(), 'finished_at' => now()]);
             $this->error = $note;
         }
+    }
+
+    /**
+     * Runs that count for a service's backup state: database dumps, base
+     * backups, and snapshots of volumes that are still backed up (a volume
+     * whose backups were turned off no longer raises "failed" or "overdue").
+     *
+     * @param  Builder<self>  $query
+     */
+    #[Scope]
+    protected function ofBackedUpVolumes(Builder $query): void
+    {
+        $query->where(static fn (Builder $runs) => $runs
+            ->whereNull('volume_id')
+            ->orWhereIn('volume_id', Volume::query()->where('backup_enabled', true)->select('id')));
+    }
+
+    /**
+     * Runs on a destination that is still connected (not removed).
+     *
+     * @param  Builder<self>  $query
+     */
+    #[Scope]
+    protected function stored(Builder $query): void
+    {
+        $query->whereIn('destination_id', BackupDestination::query()->select('id'));
     }
 
     /**
@@ -113,7 +170,7 @@ final class BackupRun extends Model
      */
     public function destination(): BelongsTo
     {
-        return $this->belongsTo(BackupDestination::class, 'destination_id');
+        return $this->belongsTo(BackupDestination::class, 'destination_id')->withTrashed();
     }
 
     /**
@@ -168,13 +225,21 @@ final class BackupRun extends Model
             'size_bytes' => 'integer',
             'added_bytes' => 'integer',
             'duration_ms' => 'integer',
+            'heartbeat_at' => 'datetime',
+            'progress_bytes' => 'integer',
             'started_at' => 'datetime',
             'finished_at' => 'datetime',
         ];
     }
 
+    protected static function booted(): void
+    {
+        self::created(static fn (self $run) => BackupsChanged::about($run->team_id));
+    }
+
     protected function transitioned(HasTransitionTable $from, HasTransitionTable $to): void
     {
         ServiceActivityChanged::about($this->serviceInstance, ServiceActivityTopic::Backups);
+        BackupsChanged::about($this->team_id);
     }
 }

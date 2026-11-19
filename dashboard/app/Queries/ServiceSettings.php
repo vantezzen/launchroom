@@ -51,6 +51,7 @@ use App\Models\ServiceInstance;
 use App\Models\User;
 use App\Models\Volume;
 use App\Models\VolumeMount;
+use App\Queries\Backups\LiveVolumeSizes;
 use App\Queries\ConfigAsCode\ConfigFileLinks;
 use App\Queries\Metrics\LatestSample;
 use App\Scheduling\PlacementFailed;
@@ -212,10 +213,15 @@ final readonly class ServiceSettings
             $sharedWith[$mount->volume_id][] = $mount->serviceInstance->service->name;
         }
 
+        // The size the server measured last (disk breakdown); `size_bytes` is never written by a report.
+        $sizes = LiveVolumeSizes::of($volumes);
+        $database = $instance->service->kind === ServiceKind::Database;
+        $volumes->loadMissing('backupDisabledBy');
+
         return array_values($volumes->map(static fn (Volume $volume): VolumeData => new VolumeData(
             id: $volume->public_id,
             mountPath: $volume->mount_path,
-            sizeBytes: $volume->size_bytes,
+            sizeBytes: $sizes[$volume->public_id] ?? $volume->size_bytes,
             server: $volume->server?->name,
             dockerName: $volume->dockerName(),
             serverId: $volume->server?->public_id,
@@ -224,6 +230,10 @@ final readonly class ServiceSettings
             removing: $volume->removed_at !== null,
             deployedMountPath: isset($applied[$volume->public_id]) && $applied[$volume->public_id] !== $volume->mount_path ? $applied[$volume->public_id] : null,
             sharedWith: $sharedWith[$volume->id] ?? [],
+            backupEnabled: $volume->backup_enabled,
+            backupTurnedOffBy: $volume->backup_enabled ? null : $volume->backupDisabledBy?->name,
+            backupTurnedOffAt: $volume->backup_enabled ? null : $volume->backup_disabled_at,
+            backupUrl: $database || $volume->removed_at !== null ? null : route('backups.services.volumes.backup', ['serviceInstance' => $instance, 'volume' => $volume->public_id]),
         ))->all());
     }
 

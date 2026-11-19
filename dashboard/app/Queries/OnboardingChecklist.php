@@ -30,7 +30,8 @@ use Laravel\Fortify\Features;
 /**
  * The first-run checklist (docs/08 §3.1), for instance owners: this server
  * is connected, GitHub is connected, the platform domain is set, backups are
- * set up (control-plane destination + confirmed recovery kit), and the first
+ * set up (team storage, launchroom's own storage and a confirmed recovery
+ * kit, all from the one setup on the Backups page), and the first
  * app is live, not just created (FirstApp; flows §1 order: server, GitHub,
  * address, first app, backup). Each step is derived from real state; the address step is done
  * once the owner continued after the DNS check (`domainConfirmed`), not when
@@ -48,7 +49,7 @@ final readonly class OnboardingChecklist
     public function for(User $user): OnboardingData
     {
         $settings = InstanceSettings::current();
-        ['team' => $team, 'server' => $server, 'app' => $app, 'installation' => $installation, 'recoveryKit' => $recoveryKit, 'projectCount' => $projectCount, 'firstApp' => $firstApp, 'steps' => $steps] = $this->state($user, $settings);
+        ['team' => $team, 'server' => $server, 'app' => $app, 'installation' => $installation, 'recoveryKit' => $recoveryKit, 'teamStorage' => $teamStorage, 'projectCount' => $projectCount, 'firstApp' => $firstApp, 'steps' => $steps] = $this->state($user, $settings);
         $githubConnected = $installation instanceof GitHubInstallation;
         $ipv4 = ServerAddress::ipv4($server?->public_ipv4);
         $address = $ipv4 ?? ServerAddress::ipv6($server?->public_ipv6);
@@ -64,7 +65,7 @@ final readonly class OnboardingChecklist
             edgeAddresses: $this->edges->addresses(null),
             freeWildcard: $ipv4 === null ? null : GeneratedHostname::sslipWildcard($ipv4),
             dashboardHost: (string) parse_url(config()->string('app.url'), PHP_URL_HOST),
-            teamBackupsConfigured: $team instanceof Team && BackupDestination::query()->where('team_id', $team->id)->exists(),
+            teamBackupsConfigured: $teamStorage,
             recoveryKit: $recoveryKit,
             projectCount: $projectCount,
             canCreateProject: $team instanceof Team && Gate::forUser($user)->allows('create', [Project::class, $team]),
@@ -110,7 +111,7 @@ final readonly class OnboardingChecklist
      * What the steps are derived from, shared by the checklist page and the
      * sidebar's progress so both always agree.
      *
-     * @return array{team: Team|null, server: Server|null, app: GitHubApp|null, installation: GitHubInstallation|null, recoveryKit: RecoveryKitStatusData, projectCount: int, firstApp: FirstAppData|null, confirmed: bool, steps: list<OnboardingStepData>}
+     * @return array{team: Team|null, server: Server|null, app: GitHubApp|null, installation: GitHubInstallation|null, recoveryKit: RecoveryKitStatusData, teamStorage: bool, projectCount: int, firstApp: FirstAppData|null, confirmed: bool, steps: list<OnboardingStepData>}
      */
     private function state(User $user, InstanceSettings $settings): array
     {
@@ -127,6 +128,7 @@ final readonly class OnboardingChecklist
             ->orderBy('id')
             ->first() : null;
         $recoveryKit = RecoveryKitStatusData::fromSettings($settings, BackupDestination::forInstance() instanceof BackupDestination);
+        $teamStorage = $team instanceof Team && BackupDestination::query()->where('team_id', $team->id)->exists();
         $projectCount = $team instanceof Team ? Project::query()->where('team_id', $team->id)->count() : 0;
         $firstApp = $team instanceof Team && $projectCount > 0 ? $this->firstApp->for($team, $settings->onboarding?->firstAppSeenAt !== null) : null;
         $confirmed = $settings->onboarding?->confirmed($settings->apps_domain) === true;
@@ -136,12 +138,14 @@ final readonly class OnboardingChecklist
             OnboardingStep::Github->value => $installation instanceof GitHubInstallation,
             // Done once the owner continued after the DNS check (saving alone isn't).
             OnboardingStep::Domain->value => $confirmed,
-            OnboardingStep::Backups->value => ! $recoveryKit->needsAttention,
+            // One setup (Backups page) connects storage for the team's data and
+            // for launchroom itself, then the recovery kit.
+            OnboardingStep::Backups->value => $teamStorage && ! $recoveryKit->needsAttention,
             // Live, not just created: a running or failed first deploy isn't done.
             OnboardingStep::Project->value => $firstApp?->state === 'live',
         ]);
 
-        return ['team' => $team, 'server' => $server, 'app' => $app, 'installation' => $installation, 'recoveryKit' => $recoveryKit, 'projectCount' => $projectCount, 'firstApp' => $firstApp, 'confirmed' => $confirmed, 'steps' => $steps];
+        return ['team' => $team, 'server' => $server, 'app' => $app, 'installation' => $installation, 'recoveryKit' => $recoveryKit, 'teamStorage' => $teamStorage, 'projectCount' => $projectCount, 'firstApp' => $firstApp, 'confirmed' => $confirmed, 'steps' => $steps];
     }
 
     /**

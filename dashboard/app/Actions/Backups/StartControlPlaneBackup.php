@@ -27,7 +27,9 @@ use Illuminate\Support\Facades\DB;
  * `php artisan launchroom:backups:control-plane --reason=pre_upgrade --wait`.
  *
  * Refuses without a destination or a recovery passphrase: a backup whose
- * keys can't be decrypted would be a false promise.
+ * keys can't be decrypted would be a false promise. Asking while a run is
+ * in flight returns that run (`wasRecentlyCreated` false): callers say
+ * "already running", not "started".
  */
 final readonly class StartControlPlaneBackup
 {
@@ -37,13 +39,13 @@ final readonly class StartControlPlaneBackup
         private RecordAuditEvent $audit,
     ) {}
 
-    public function handle(BackupReason $reason, ?User $user, AuditActor $actor, bool $dispatch = true): BackupRun
+    public function handle(BackupReason $reason, ?User $user, AuditActor $actor, bool $dispatch = true, ?string $batch = null): BackupRun
     {
-        $run = DB::transaction(function () use ($reason, $user, $actor): BackupRun {
+        $run = DB::transaction(function () use ($reason, $user, $actor, $batch): BackupRun {
             $destination = BackupDestination::query()->instanceWide()->lockForUpdate()->first();
 
             if (! $destination instanceof BackupDestination) {
-                throw DomainRuleViolation::on('destination', 'Add a control-plane backup destination in Settings → Backups first.');
+                throw DomainRuleViolation::on('destination', 'Set up storage for launchroom itself on the Backups page first.');
             }
 
             if (InstanceSettings::current()->recovery_public_key === null) {
@@ -56,9 +58,10 @@ final readonly class StartControlPlaneBackup
                 ->first();
 
             // A run whose process died (worker killed, host lost) never
-            // finishes by itself; past the task timeout it is given up.
-            if ($inFlight instanceof BackupRun && ($inFlight->started_at ?? $inFlight->created_at)?->lt(now()->subSeconds(config()->integer('launchroom.backups.task_timeout_seconds') + self::STALE_GRACE_SECONDS))) {
-                $inFlight->transitionTo(BackupRunStatus::Failed, 'Abandoned: the backup did not finish within its timeout.');
+            // finishes by itself: given up once its heartbeat stops
+            // (docs/11 §4.3), and in any case past the task timeout.
+            if ($inFlight instanceof BackupRun && ($inFlight->abandoned() || ($inFlight->started_at ?? $inFlight->created_at)?->lt(now()->subSeconds(config()->integer('launchroom.backups.task_timeout_seconds') + self::STALE_GRACE_SECONDS)))) {
+                $inFlight->transitionTo(BackupRunStatus::Failed, BackupRun::ABANDONED);
                 $inFlight = null;
             }
 
@@ -73,6 +76,7 @@ final readonly class StartControlPlaneBackup
                 'subject' => BackupSubject::ControlPlane,
                 'reason' => $reason,
                 'actor_id' => $user?->id,
+                'batch_id' => $batch,
             ]);
 
             if ($reason !== BackupReason::Scheduled) {

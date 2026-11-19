@@ -103,7 +103,7 @@ final class BackupSchedule extends Model
      */
     public function destination(): BelongsTo
     {
-        return $this->belongsTo(BackupDestination::class, 'destination_id');
+        return $this->belongsTo(BackupDestination::class, 'destination_id')->withTrashed();
     }
 
     /**

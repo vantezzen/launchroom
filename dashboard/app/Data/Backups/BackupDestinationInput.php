@@ -14,7 +14,8 @@ use Spatie\LaravelData\Data;
  * Create or update an S3-compatible backup destination (docs/14 §3).
  * Credentials are optional on update (blank = keep). The repository
  * password is generated unless one is given to connect an existing restic
- * repository.
+ * repository (a bucket that already holds backups, e.g. after the storage
+ * was removed and is added again).
  */
 final class BackupDestinationInput extends Data
 {
@@ -37,6 +38,8 @@ final class BackupDestinationInput extends Data
         public ?string $repositoryPassword = null,
         public bool $allowPrivateNetwork = false,
         public bool $makeDefault = false,
+        /** Setup of team storage: also keep launchroom's own backup in this bucket (instance owners). */
+        public bool $protectLaunchroom = false,
     ) {}
 
     /**

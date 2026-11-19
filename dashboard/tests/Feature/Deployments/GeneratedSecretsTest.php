@@ -260,7 +260,7 @@ test('a deployment whose env predates the key gets the same value instead of a s
     expect(resolve(GenerateDeclaredSecrets::class)->handle($second->refresh()))->toBe([]);
 });
 
-test('workers and crons share their app\'s key through a reference', function (): void {
+test('workers and crons inherit their app\'s key', function (): void {
     $worker = resolve(CreateService::class)->handle($this->project, CreateServiceData::from(['name' => 'queue', 'kind' => ServiceKind::Worker, 'parentServiceId' => $this->api->public_id]), null, AuditActor::system());
 
     gsDeploy($this->production);
@@ -269,8 +269,7 @@ test('workers and crons share their app\'s key through a reference', function ()
     $appKey = gsPlaintext($this->project, gsRows($this->api)[0]);
     $workerRows = gsRows($worker);
 
-    expect($workerRows)->toHaveCount(1)
-        ->and($workerRows[0]->references)->toBe(['api.APP_KEY'])
+    expect($workerRows)->toHaveCount(0)
         ->and(gsWorkloadEnv($this->server, $this->keypair, gsLatest($worker, $this->production))['APP_KEY'])->toBe($appKey)
         ->and(SpecDiff::between($this->production->refresh()->lastAppliedRevision?->spec, resolve(CurrentEnvironmentSpec::class)->get($this->production))->isEmpty())->toBeTrue();
 });

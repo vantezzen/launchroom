@@ -89,7 +89,7 @@ Some frameworks can't start without a secret key. When the service doesn't have 
 
 Each environment gets its own value, except `NEXT_SERVER_ACTIONS_ENCRYPTION_KEY`: it is used while building, so launchroom creates it once per service and copies it to the service's other environments. Promoting a build then keeps server actions working. Fork previews get their own. It is created after the build that asks for it and used from the next build on.
 
-Queue workers and schedulers get a reference to their app's key. A generated key is an ordinary variable: reveal, rotate or delete it like any other. A key you set yourself always wins. If you delete the generated one, the next deploy creates a new one, so if you manage the key outside launchroom, remove its "Generate …" chip under **Settings → Build → Preset decisions**. See the [framework guides](/docs/builds/frameworks).
+Queue workers and schedulers use their app's key. A generated key is an ordinary variable: reveal, rotate or delete it like any other. A key you set yourself always wins. If you delete the generated one, the next deploy creates a new one, so if you manage the key outside launchroom, remove its "Generate …" chip under **Settings → Build → Preset decisions**. See the [framework guides](/docs/builds/frameworks).
 
 ### Secrets only you have
 
@@ -113,8 +113,25 @@ The final environment of a service is built in this order. Later layers win.
 1. Variables launchroom sets itself (below)
 2. Shared variables the service uses
 3. Variables injected by connections
-4. The service's variables for this environment
-5. The service's variables for this preview branch
+4. For workers and cron jobs: the app's variables (below)
+5. The service's variables for this environment
+6. The service's variables for this preview branch
+
+### Workers and cron jobs
+
+A worker or cron job runs its app's code, so it gets the app's variables and the variables of the app's connections.
+Set a value once on the app, and its queue and scheduler use it too. Don't copy variables to them.
+
+- The worker's **Variables** page lists the app's variables read-only, marked "From api". Secrets stay masked.
+- To use a different value in the worker, choose **Override** on that row. This adds a variable with the same key to
+  the worker, which wins over the app's value. A variable or connection the worker has with the same key always wins.
+- References resolve as they do for the app: `${{PUBLIC_URL}}` in the app's variable is the app's address, also in the
+  worker.
+- Only runtime variables apply. The worker runs the app's image, so **Build only** variables don't reach it.
+- When you change one of the app's runtime variables, the next deploy restarts its workers and cron jobs too. Staged
+  changes list them. The app's Variables page names them ("Also used by queue, scheduler").
+- Environment copies, previews and promotions don't copy the app's variables to the worker. It follows the app in
+  every environment.
 
 ### Shared variables
 

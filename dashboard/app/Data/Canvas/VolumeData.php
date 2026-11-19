@@ -6,6 +6,7 @@ namespace App\Data\Canvas;
 
 use App\Data\Servers\DeviceData;
 use App\Enums\ServerStatus;
+use Carbon\CarbonInterface;
 use Spatie\LaravelData\Data;
 
 final class VolumeData extends Data
@@ -30,5 +31,11 @@ final class VolumeData extends Data
         public ?string $deployedMountPath = null,
         /** Names of other services that mount it too (shared volume, D73). */
         public array $sharedWith = [],
+        /** "Back up this volume" (docs/14 §3); databases are backed up as dumps and have no switch. */
+        public bool $backupEnabled = true,
+        public ?string $backupTurnedOffBy = null,
+        public ?CarbonInterface $backupTurnedOffAt = null,
+        /** PUT {enabled} (owners/admins; the endpoint authorizes). null for databases. */
+        public ?string $backupUrl = null,
     ) {}
 }

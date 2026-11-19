@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 use App\Broadcasting\Channel;
 use App\Http\Routing\TeamScopedBindings;
+use App\Models\Backups\BackupDestination;
 use App\Models\Deployment;
 use App\Models\Environment;
 use App\Models\Membership;
@@ -43,6 +44,12 @@ Broadcast::channel(Channel::TeamSecurity->pattern(), static function (User $user
     $team = is_string($team) ? TeamScopedBindings::find('team', $team, $user) : $team;
 
     return $team instanceof Team && Gate::forUser($user)->allows('viewAny', [SecurityFinding::class, $team]);
+});
+
+Broadcast::channel(Channel::TeamBackups->pattern(), static function (User $user, Team|string $team): bool {
+    $team = is_string($team) ? TeamScopedBindings::find('team', $team, $user) : $team;
+
+    return $team instanceof Team && Gate::forUser($user)->allows('viewAny', [BackupDestination::class, $team]);
 });
 
 // A member's own channel: only the user of that membership joins it.

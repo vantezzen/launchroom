@@ -25,7 +25,7 @@ import { MoveProgress } from '@/features/moves/move-progress';
 import { TypedConfirm } from '@/features/moves/typed-confirm';
 import { StepCard } from '@/components/steps/step-card';
 import type { GuidedStepStatus } from '@/components/steps/step-card';
-import { settings as backupSettings } from '@/routes/backups';
+import { index as backupSettings } from '@/routes/backups';
 import {
     abort,
     cancel,
@@ -699,12 +699,12 @@ function MoveChecklist({ checklist }: { checklist: Checklist }) {
                         )}
                     {checklist.needsRecoveryKit && (
                         <p className="type-small">
-                            Download a new recovery kit:{' '}
+                            Download a new recovery kit on the{' '}
                             <Link
                                 href={backupSettings()}
                                 className="underline underline-offset-4"
                             >
-                                Settings → Backups
+                                Backups page
                             </Link>
                             .
                         </p>
