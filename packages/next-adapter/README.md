@@ -124,9 +124,19 @@ The adapter implements both hooks of Next's `NextAdapter` interface:
 - `modifyConfig(config, { phase, nextVersion, projectDir })` runs after Next applied its defaults and validation, for every command that loads the config, `next dev` included (the adapter returns the config unchanged in `phase-development-server`). The config is complete: `outputFileTracingRoot` and `turbopack.root` are resolved (Next requires them to be equal, so the adapter sets both), and `NEXT_DEPLOYMENT_ID` is already copied into `deploymentId`, which is why it wins over `LAUNCHROOM_DEPLOYMENT_ID`.
 - `onBuildComplete({ routing, outputs, projectDir, repoRoot, distDir, config, nextVersion, buildId })` builds the manifest from `outputs` (`pages`, `pagesApi`, `appPages`, `appRoutes`, `prerenders`, `staticFiles`, `middleware`). `appPages` also lists the `.rsc` variant of each page, and `middleware` covers both `middleware.ts` and `proxy.ts`.
 
-### Next 15.4 to 16.1
+### Older Next versions
 
-Next has read `NEXT_ADAPTER_PATH` (then `experimental.adapterPath`) since 15.4. 15.4 and 15.5 call `modifyConfig(config)` without a context and never call `onBuildComplete`. The adapter then takes the phase from `NEXT_PHASE` (a production build when it is unset) and the project directory from the working directory. Standalone output, `deploymentId` and the tracing root are set as on 16.x. There is no manifest, so `launchroom-next-finalize` copies the assets and prints no summary line.
+Next has read `NEXT_ADAPTER_PATH` (then `experimental.adapterPath`) since 15.4, but the hooks got their full arguments only over time. The adapter fills in what a version leaves out, so the result is the same from 15.4 on:
+
+| Next | `modifyConfig` context | `onBuildComplete` context |
+| --- | --- | --- |
+| 15.4, 15.5 | none | `{ routes, outputs }`, `outputs` a flat list of `{ type, … }` |
+| 16.0, 16.1 | `{ phase }` | complete (`routes` instead of `routing`) |
+| 16.2 | `{ phase, nextVersion }` | complete |
+| 16.3 and later | `{ phase, nextVersion, projectDir }` | complete |
+
+- A missing phase comes from `NEXT_PHASE` (a production build when it is unset), a missing project directory is the working directory of `next build` (turbo, pnpm `--filter` and npm `--workspace` all run it in the app's folder).
+- On 15.x, `onBuildComplete` uses the config `modifyConfig` returned, `<distDir>/BUILD_ID` and the `next` package the project resolves. The flat output list is grouped by `type`. Next 15.5 reports every prerendered page with a revalidate of at least 1 s, so the revalidate times come from `prerender-manifest.json` instead.
 
 ### Why the copy runs after `next build`
 

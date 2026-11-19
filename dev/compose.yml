@@ -452,6 +452,7 @@ services:
       - ../daemon:/src/daemon:ro
       - ../cli:/src/cli:ro
       - ../protocol:/src/protocol:ro
+      - ../deploy/images/caddy/lrtrace:/src/deploy/images/caddy/lrtrace:ro # request trace module (make lint-caddy-module)
       - golangci-cache:/cache
       - golangci-mod:/go/pkg/mod
 

@@ -266,7 +266,7 @@ func patchTaskUnion(r *jsonschema.Reflector, root *jsonschema.Schema, rootIsTask
 }
 
 // patchRouteUpstream makes RouteUpstream an exclusive union: either
-// {workload, port} or {address}.
+// {workload, port} or {address} (server only goes with address).
 func patchRouteUpstream(root *jsonschema.Schema) {
 	def := root.Definitions["RouteUpstream"]
 	if def == nil {
@@ -280,7 +280,7 @@ func patchRouteUpstream(root *jsonschema.Schema) {
 		return &jsonschema.Schema{AnyOf: alts}
 	}
 	def.OneOf = []*jsonschema.Schema{
-		{Required: []string{"workload", "port"}, Not: forbid("address")},
+		{Required: []string{"workload", "port"}, Not: forbid("address", "server")},
 		{Required: []string{"address"}, Not: forbid("workload", "port")},
 	}
 }

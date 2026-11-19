@@ -3172,6 +3172,8 @@ publicKey: string,
 hostname: string,
 arch: string,
 version: string | null,
+serverId: string | null,
+serverProof: string | null,
 };
 export type CompleteHandoverData = {
 url: string,
@@ -3305,6 +3307,8 @@ key: string,
 label: string,
 status: string,
 message: string,
+href: string | null,
+hrefLabel: string | null,
 };
 export type MoveReceiverData = {
 hostname: string | null,
@@ -4094,6 +4098,10 @@ domains: string[],
 sealed: string,
 fingerprint: string,
 } | null,
+trace: {
+sealed: string,
+fingerprint: string,
+} | null,
 };
 export type IngressStatus = {
 state: string,
@@ -4326,6 +4334,7 @@ workload: string,
 port: number,
 }| {
 address: string,
+server?: string,
 })[],
 redirectWwwTo: string | null,
 headers: Record<string, string> | null,
@@ -4355,6 +4364,7 @@ target?: string,
 }[],
 } | null,
 stopped: boolean,
+service: string | null,
 };
 export type RunOnceResult = {
 exitCode: number,
@@ -6589,6 +6599,51 @@ branch: string | null,
 deploy: boolean,
 };
 }
+namespace Traces {
+export type RequestTraceData = {
+receivedAt: string,
+requestId: string,
+method: string | null,
+path: string | null,
+protocol: string | null,
+status: number,
+upstreamStatus: number | null,
+origin: App.Enums.Traces.TraceOrigin,
+failure: App.Enums.Traces.TraceFailure | null,
+edgeTimeUs: number | null,
+upstreamTimeUs: number | null,
+attempts: number | null,
+firewall: App.Data.Traces.TraceFirewallData | null,
+edge: App.Data.Traces.TraceServerData,
+upstreamServer: App.Data.Traces.TraceServerData | null,
+sameServer: boolean,
+host: string | null,
+service: App.Data.Security.SecurityServiceRefData | null,
+dashboard: boolean,
+endsAt: App.Enums.Traces.TraceStop,
+requestClass: 'success' | 'redirect' | 'clientError' | 'blocked' | 'serverError' | 'upgrade',
+summary: string,
+logsHref: string | null,
+firewallHref: string | null,
+allow: App.Data.Security.WafExclusionDraftData | null,
+};
+export type TraceFirewallData = {
+mode: App.Enums.Security.WafMode,
+outcome: App.Enums.Traces.TraceFirewallOutcome,
+score: number,
+rules: App.Data.Security.WafRuleData[],
+};
+export type TraceQueryData = {
+t: string | null,
+};
+export type TraceServerData = {
+id: string,
+name: string,
+status: App.Enums.ServerStatus,
+device: App.Data.Servers.DeviceData,
+href: string,
+};
+}
 namespace Transfers {
 export type ChunkReceiptData = {
 index: number,
@@ -7031,7 +7086,7 @@ export type CliLoginStatus = 'pending' | 'approved' | 'denied' | 'consumed';
 export type ClientCertificateMode = 'off' | 'verify' | 'require';
 export type ConnectionMode = 'private' | 'public';
 export type ConnectionStyle = 'url' | 'laravel' | 'parts';
-export type DaemonFeature = 'linkProbe' | 'shipLogs' | 'pointInTime' | 'verifyRestore' | 'stopSpec' | 'consoleSessions' | 'dataSessions' | 'controlPlaneUrl' | 'gitProviders' | 'generatedDockerfile' | 'mongoClickhouse' | 'dnsProviders' | 'cronSchedule' | 'clientCertificates' | 'dataTransfer' | 'preparedVolumes' | 'requestAnalytics' | 'remoteAccessSsh' | 'remoteAccessDatabase' | 'remoteAccessVolume' | 'inventory' | 'containerInspection' | 'waf' | 'configFiles' | 'serviceStop' | 'phpExtensions' | 'sharedVolumes' | 'probeHost' | 'livenessRestart' | 'volumeInitOwner' | 'releaseMounts' | 'recoverySessions' | 'watchdog' | 'cleanupTask' | 'certificateRetry';
+export type DaemonFeature = 'linkProbe' | 'shipLogs' | 'pointInTime' | 'verifyRestore' | 'stopSpec' | 'consoleSessions' | 'dataSessions' | 'controlPlaneUrl' | 'gitProviders' | 'generatedDockerfile' | 'mongoClickhouse' | 'dnsProviders' | 'cronSchedule' | 'clientCertificates' | 'dataTransfer' | 'preparedVolumes' | 'requestAnalytics' | 'remoteAccessSsh' | 'remoteAccessDatabase' | 'remoteAccessVolume' | 'inventory' | 'containerInspection' | 'waf' | 'configFiles' | 'serviceStop' | 'phpExtensions' | 'sharedVolumes' | 'probeHost' | 'livenessRestart' | 'volumeInitOwner' | 'releaseMounts' | 'recoverySessions' | 'watchdog' | 'cleanupTask' | 'certificateRetry' | 'requestTrace';
 export type DaemonNudge = 'state.changed' | 'task.available' | 'logs.requested' | 'task.cancelled';
 export type DaemonTaskPurpose = 'release' | 'seed' | 'sanitize' | 'dockerfile_check' | 'cp_update' | 'fleet_update' | 'console' | 'data' | 'recovery' | 'access_ssh' | 'access_database' | 'access_volume' | 'log_tail';
 export type DaemonTaskStatus = 'pending' | 'leased' | 'succeeded' | 'failed' | 'cancelled';
@@ -7064,7 +7119,7 @@ export type LogRange = '15m' | '1h' | '24h' | '7d' | '30d';
 export type LogSourceKind = 'task' | 'deployment' | 'workload';
 export type LogStream = 'stdout' | 'stderr' | 'system';
 export type MetricRange = '1h' | '6h' | '24h' | '7d' | '30d' | '90d' | '1y';
-export type NodeStateField = 'system.linkProbe' | 'system.controlPlane' | 'routes[].clientAuth' | 'routes[].waf' | 'routes[].stopped' | 'volumes[]' | 'volumes[].service' | 'workloads[].shipLogs' | 'workloads[].files' | 'workloads[].schedule' | 'workloads[].stop' | 'workloads[].walArchive' | 'ingress.dns.provider' | 'system.watchdog' | 'workloads[].health.host' | 'workloads[].health.restartAfter' | 'workloads[].mounts[].initOwner';
+export type NodeStateField = 'system.linkProbe' | 'system.controlPlane' | 'routes[].clientAuth' | 'routes[].waf' | 'routes[].stopped' | 'volumes[]' | 'volumes[].service' | 'workloads[].shipLogs' | 'workloads[].files' | 'workloads[].schedule' | 'workloads[].stop' | 'workloads[].walArchive' | 'ingress.dns.provider' | 'system.watchdog' | 'workloads[].health.host' | 'workloads[].health.restartAfter' | 'workloads[].mounts[].initOwner' | 'ingress.trace' | 'routes[].service' | 'routes[].upstreams[].server';
 export type NodeStatusReason = 'removal_staged' | 'disabled' | 'stopped' | 'paused' | 'deploying' | 'queued' | 'deploy_failed' | 'last_deploy_failed' | 'not_deployed' | 'server_down' | 'degraded' | 'crashed' | 'unhealthy' | 'not_running' | 'starting' | 'live' | 'running' | 'no_services' | 'services_failed' | 'services_need_attention' | 'partly_running';
 export type Permission = 'team.manage' | 'servers.manage' | 'members.manage' | 'projects.manage' | 'deployments.create' | 'variables.write' | 'secrets.reveal' | 'containers.exec' | 'databases.query' | 'exposure.manage' | 'resources.view' | 'backups.manage' | 'alerts.manage';
 export type PlacementIssueKind = 'stateful_server_down' | 'unplaceable';
@@ -7249,6 +7304,12 @@ export type DatabaseQueryStatus = 'sent' | 'ok' | 'error' | 'refused';
 export type InteractiveSessionKind = 'console' | 'data' | 'recovery';
 export type SessionEndReason = 'closed' | 'exited' | 'idle' | 'deadline' | 'disconnected' | 'ended' | 'never_connected' | 'refused' | 'error';
 export type StartFailure = 'no_shell' | 'shell_missing' | 'shell_start_failed' | 'kind_disabled' | 'guard_refused' | 'policy_refused' | 'not_running' | 'relay_unreachable' | 'session_key';
+}
+namespace Traces {
+export type TraceFailure = 'refused' | 'timeout' | 'no_healthy_upstream' | 'transport' | 'client_closed';
+export type TraceFirewallOutcome = 'clean' | 'detected' | 'blocked';
+export type TraceOrigin = 'app' | 'firewall' | 'upstream_failure' | 'stopped' | 'redirect' | 'no_route' | 'access_refused' | 'edge';
+export type TraceStop = 'edge' | 'firewall' | 'app_server' | 'service';
 }
 namespace Transfers {
 export type DataSubject = 'database' | 'volume';

@@ -1,0 +1,25 @@
+{
+  "description": "Log only: the firewall detected one rule, the app on the edge itself answered 200 over HTTP/3.",
+  "keyId": 42,
+  "nonce": "a0a1a2a3a4a5a6a7a8a9aa06",
+  "payload": "0108000001a1f3ad8e7b02103f1c9a2e8b7d4e6fa5b4c3d2e1f00a1b03100000000000000000000000000007360e0410000000000000000000000000000063410510000000000000000000000000000ced8106100000000000000000000000000007360e070347455408072f7365617263680901040a0200c80b01010c040000238c0d0400001f400e0200c80f01011107010105000e0b1e",
+  "fields": {
+    "receivedAt": 1795089600123,
+    "requestId": "3f1c9a2e-8b7d-4e6f-a5b4-c3d2e1f00a1b",
+    "edge": "srv_0000000000000000000000EDGE",
+    "route": "rt_00000000000000000000000RT1",
+    "service": "sin_0000000000000000000000SVC1",
+    "upstreamServer": "srv_0000000000000000000000EDGE",
+    "method": "GET",
+    "path": "/search",
+    "protocol": 4,
+    "status": 200,
+    "origin": 1,
+    "edgeTime": 9100,
+    "upstreamTime": 8000,
+    "upstreamStatus": 200,
+    "attempts": 1,
+    "firewall": {"mode": 1, "outcome": 1, "score": 5, "rules": [920350]}
+  },
+  "header": "AQAAACqgoaKjpKWmp6ipqgZSkZtM0GN5ikz1Eke1zWuPQOT7URXgPGLWCT02pBXixAiUiheOLn4n9gGXXPdGS8G_PaJA5kZ3G0zUOOifjaruyu3jh66fizPBXLqkuBd6BjD_Y-wqSQ_MAu-58KOo6Sb8fXXiFWKPc-7P2OalWPvV3QTLDJ9Uk8GxEGXTT8lnOQWEONJ-2o5p7ETKlvWv9PvJZzRX9za6rhjVE3ma0t-zGB46yF9PmlA"
+}

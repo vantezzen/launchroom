@@ -1,0 +1,10 @@
+{
+  "description": "A valid header cut to 20 bytes (shorter than version, key id, nonce and tag).",
+  "reason": "format",
+  "keyId": 42,
+  "version": 1,
+  "nonce": "b0b1b2b3b4b5b6b7b8b9ba00",
+  "payload": "0108000001a1f3ad8e7b02103f1c9a2e8b7d4e6fa5b4c3d2e1f00a1b03100000000000000000000000000007360e0a0201940b0106",
+  "mutate": {"truncate": 20},
+  "header": "AQAAACqwsbKztLW2t7i5ugAACm8"
+}

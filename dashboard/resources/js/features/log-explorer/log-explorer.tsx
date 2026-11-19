@@ -52,6 +52,7 @@ import {
     tail as tailRoute,
 } from '@/routes/projects/logs';
 import { stop as stopTailRoute } from '@/routes/projects/logs/tail';
+import { TracePastePopover } from '@/features/request-trace/trace-paste';
 import { downloadLines } from '@/features/log-explorer/download';
 import { bucketEntries, countFacets } from '@/features/log-explorer/facets';
 import { FilterRail } from '@/features/log-explorer/filter-rail';
@@ -833,6 +834,7 @@ export function LogExplorer({
                             Live
                         </Button>
                     )}
+                    {!service && <TracePastePopover />}
                     <DropdownMenu>
                         <DropdownMenuTrigger asChild>
                             <Button

@@ -1,0 +1,31 @@
+{
+  "description": "Path normalisation vectors (docs/23 §2.1). The Caddy module (deploy/images/caddy/lrtrace) and launchroomd's request analytics (daemon/internal/traffic.NormalizePath) must both produce want; want null means the request has no path field (not origin or absolute form).",
+  "vectors": [
+    {"in": "/", "want": "/"},
+    {"in": "/pricing", "want": "/pricing"},
+    {"in": "/pricing?plan=pro&utm_source=x", "want": "/pricing"},
+    {"in": "/docs#install", "want": "/docs"},
+    {"in": "/users/123", "want": "/users/:id"},
+    {"in": "/users/123/posts/456/", "want": "/users/:id/posts/:id/"},
+    {"in": "/orders/550e8400-e29b-41d4-a716-446655440000", "want": "/orders/:id"},
+    {"in": "/c/5f2b9c1d8e7a6b5c4d3e2f1a", "want": "/c/:id"},
+    {"in": "/r/01J9Z8X7W6V5T4S3R2Q1P0N9AA", "want": "/r/:id"},
+    {"in": "/s/aB3dE5fG7hJ9kL1mN", "want": "/s/:id"},
+    {"in": "/blog/my-first-post-about-2024", "want": "/blog/my-first-post-about-2024"},
+    {"in": "/blog/2024", "want": "/blog/:id"},
+    {"in": "/img/123.png", "want": "/img/:id.png"},
+    {"in": "/assets/9f86d081884c7d659a2feaa0c55ad015.js", "want": "/assets/:id.js"},
+    {"in": "/caf%C3%A9", "want": "/caf%C3%A9"},
+    {"in": "/café/menu", "want": "/:id/menu"},
+    {"in": "/x/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", "want": "/x/:id"},
+    {"in": "https://shop.com/cart?id=1", "want": "/cart"},
+    {"in": "https://shop.com", "want": "/"},
+    {"in": "/a b", "want": "/:id"},
+    {"in": "/api/v1/users", "want": "/api/v1/users"},
+    {"in": "//double//slash", "want": "//double//slash"},
+    {"in": "/section/section/section/section/section/section/section/section/section/section/section/section/section/section/section/section/section/section/section/section/section/section/section/section/section/section/section/section/section/section/", "want": "/section/section/section/section/section/section/section/section/section/section/section/section/section/section/section/..."},
+    {"in": "*", "want": null},
+    {"in": "", "want": null},
+    {"in": "shop.com/x", "want": null}
+  ]
+}

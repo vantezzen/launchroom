@@ -1,0 +1,78 @@
+/*
+ * The trace path draws on once, hop by hop (docs/23 §7, design-system §8):
+ * each hop 300 ms, each node and pill 180 ms as the line reaches it, timed
+ * by --trace-delay. Nothing loops. Reduced motion makes it instant
+ * (app.css drops every duration and delay).
+ */
+
+.trace-draw {
+    stroke-dasharray: 1;
+    stroke-dashoffset: 1;
+    animation: trace-draw 300ms cubic-bezier(0.2, 0.8, 0.2, 1)
+        var(--trace-delay, 0ms) both;
+}
+
+@keyframes trace-draw {
+    from {
+        stroke-dashoffset: 1;
+    }
+    to {
+        stroke-dashoffset: 0;
+    }
+}
+
+.trace-enter {
+    animation: trace-enter 180ms cubic-bezier(0.2, 0.8, 0.2, 1)
+        var(--trace-delay, 0ms) both;
+}
+
+@keyframes trace-enter {
+    from {
+        opacity: 0;
+        transform: scale(0.96);
+    }
+    to {
+        opacity: 1;
+        transform: none;
+    }
+}
+
+.trace-fade {
+    animation: trace-fade 180ms cubic-bezier(0.2, 0.8, 0.2, 1)
+        var(--trace-delay, 0ms) both;
+}
+
+@keyframes trace-fade {
+    from {
+        opacity: 0;
+    }
+    to {
+        opacity: 1;
+    }
+}
+
+/* The timing bar's segments grow from the left once. */
+.trace-grow {
+    transform-origin: left center;
+    animation: trace-grow 300ms cubic-bezier(0.2, 0.8, 0.2, 1)
+        var(--trace-delay, 0ms) both;
+}
+
+@keyframes trace-grow {
+    from {
+        transform: scaleX(0);
+    }
+    to {
+        transform: none;
+    }
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .trace-draw,
+    .trace-enter,
+    .trace-fade,
+    .trace-grow {
+        animation: none;
+        stroke-dashoffset: 0;
+    }
+}

@@ -3,7 +3,9 @@
 // declared here so the package has no dependency on `next` (not even for
 // types) and stays compatible across versions: Next passes the complete
 // objects, we only read what is listed. Next 15.4 and 15.5 call modifyConfig
-// without a context and never call onBuildComplete; 16.x passes both.
+// without a context and pass onBuildComplete only routes and a flat output
+// list; 16.0 to 16.2 pass modifyConfig only the phase (and nextVersion from
+// 16.2), 16.3 adds projectDir.
 
 export type Phase =
   | 'phase-export'
@@ -80,6 +82,13 @@ export interface AdapterOutputs {
   middleware?: MiddlewareOutput | undefined;
 }
 
+/**
+ * One output as Next 15.4 and 15.5 pass them: a flat list, each entry with
+ * its `type` (PAGES, PAGES_API, APP_PAGE, APP_ROUTE, PRERENDER, STATIC_FILE,
+ * MIDDLEWARE). Next 16 groups them into {@link AdapterOutputs}.
+ */
+export type FlatAdapterOutput = { type?: string; id: string; pathname: string; [key: string]: unknown };
+
 export interface BuildCompleteContext {
   routing?: unknown;
   outputs: AdapterOutputs;
@@ -91,11 +100,19 @@ export interface BuildCompleteContext {
   buildId: string;
 }
 
+/** What onBuildComplete receives across Next versions (see completeBuildContext). */
+export type GivenBuildCompleteContext = Partial<Omit<BuildCompleteContext, 'outputs'>> & {
+  /** Up to 16.1; 16.2 renamed it to `routing`. Not read. */
+  routes?: unknown;
+  outputs: AdapterOutputs | FlatAdapterOutput[];
+};
+
 export interface NextAdapter {
   name: string;
-  /** `ctx` is missing on Next 15.4 and 15.5. */
-  modifyConfig?: (config: NextConfigLike, ctx?: ModifyConfigContext) => Promise<NextConfigLike> | NextConfigLike;
-  onBuildComplete?: (ctx: BuildCompleteContext) => Promise<void> | void;
+  /** `ctx` is missing on Next 15.4 and 15.5; Next 16 passes only `phase`. */
+  modifyConfig?: (config: NextConfigLike, ctx?: Partial<ModifyConfigContext>) => Promise<NextConfigLike> | NextConfigLike;
+  /** Next 15.4 and 15.5 pass only `routes` and `outputs`, and the outputs as a flat list. */
+  onBuildComplete?: (ctx: GivenBuildCompleteContext) => Promise<void> | void;
 }
 
 /** Environment variables the adapter reads (all optional). */

@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Services\NodeStates;
 
 use App\Data\Protocol\V1\HealthSpec;
+use App\Data\Protocol\V1\IngressSpec;
 use App\Data\Protocol\V1\NodeState;
 use App\Data\Protocol\V1\RouteSpec;
 use App\Data\Protocol\V1\VolumeSpec;
@@ -72,6 +73,17 @@ final class FeatureGate
                         }, $workload->mounts);
                     }
                 }),
+                NodeStateField::IngressTrace => self::dropTrace($state),
+                NodeStateField::RouteService => self::eachRoute($state, static function (RouteSpec $route): void {
+                    $route->service = null;
+                }),
+                NodeStateField::RouteUpstreamServer => self::eachRoute($state, static function (RouteSpec $route): void {
+                    $route->upstreams = array_map(static function (array $upstream): array {
+                        unset($upstream['server']);
+
+                        return $upstream;
+                    }, $route->upstreams);
+                }),
                 // RenderWithout: the renderer already asked accepts() while building.
                 NodeStateField::RouteStopped, NodeStateField::SharedVolume, NodeStateField::WorkloadSchedule,
                 NodeStateField::WorkloadStop, NodeStateField::WorkloadWalArchive, NodeStateField::IngressDnsProvider => null,
@@ -79,6 +91,14 @@ final class FeatureGate
         }
 
         return $state;
+    }
+
+    private static function dropTrace(NodeState $state): void
+    {
+        if ($state->ingress instanceof IngressSpec) {
+            $state->ingress->trace = null;
+            $state->ingress = $state->ingress->isEmpty() ? null : $state->ingress;
+        }
     }
 
     /**

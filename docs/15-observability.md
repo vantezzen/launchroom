@@ -15,7 +15,7 @@ Principles (design-system §1, §9): a chart appears only when it has data; one 
 
 ### 1.1 Collection at the edge
 
-Every edge server's Caddy (`lr-system-caddy`) writes **access logs** to launchroomd over loopback; launchroomd aggregates them per route and minute in memory and ships the completed minutes in its reports, like usage metrics. Nothing per request is stored or forwarded.
+Every edge server's Caddy (`lr-system-caddy`) writes **access logs** to launchroomd over loopback; launchroomd aggregates them per route and minute in memory and ships the completed minutes in its reports, like usage metrics. Nothing per request is stored or forwarded. For one request, the edge puts an encrypted record in the response itself (`Launchroom-Trace`, [23](23-request-trace.md)) that a member pastes into the dashboard; that stores nothing either.
 
 - **Caddy config** (rendered by `internal/ingress/caddy`): the HTTPS server `lr-https` logs through the logger `lr-access` (`servers.lr-https.logs.default_logger_name`); `logging.logs.lr-access` includes only `http.log.access.lr-access` and writes with Caddy's standard `net` writer to `tcp/127.0.0.1:2022` (`LR_INGRESS_ACCESS_LOG_ADDR`, loopback only, like the ask endpoint) with `soft_start` and a 1 s dial timeout, so Caddy starts and serves while launchroomd is down (lines are then dropped). The `default` log keeps writing Caddy's own JSON log to stderr (certificate events are read from it, [05](05-networking-ingress.md) §5) and **excludes** the access logger, so access lines never land in the container's log file.
 - **Data minimisation**: the `filter` encoder deletes `request>headers`, `request>remote_ip`, `request>remote_port`, `request>client_ip`, `request>tls`, `resp_headers` and `user_id` before a line leaves Caddy, and reduces `request>uri` to its path (query string and fragment removed) and the two analytics fields to a referrer host and one user agent token (§5.1). What remains per line: `request.host`, `request.method`, `request.uri` (path only), `status`, `duration`, `size`, `bytes_read`, `ts`, `lr_referer`, `lr_agent`. Client addresses, query strings, cookies, credentials and full user agents are never seen by launchroomd.
@@ -249,7 +249,7 @@ A basic overview of how many requests each service serves and of what kind: requ
 
 ### 5.1 Collection and privacy
 
-The edge aggregates everything; nothing per request is stored or forwarded.
+The edge aggregates everything; nothing per request is stored or forwarded (the request trace travels in the response, [23](23-request-trace.md)).
 
 - **Request counts** are the request metrics of §1: launchroomd already sends per (route, minute, server) counts by status class. Analytics reads them; it adds no second count.
 - **Caddy** (`internal/ingress/caddy`): the first route of `lr-https` is a non-terminal `log_append` route without a matcher that adds `lr_referer` = `{http.request.header.Referer}` and `lr_agent` = `{http.request.header.User-Agent}` to the access line. The `filter` encoder then reduces them inside Caddy with `regexp` filters (Go's regexp, tested with the same patterns in `accesslog_test.go`):

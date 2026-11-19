@@ -409,6 +409,10 @@ type RouteSpec struct {
 	// Waf turns on the web firewall for the route (docs/22 §6, docs/03
 	// §13.3; daemon feature waf). Omitted: off.
 	Waf *RouteWaf `json:"waf,omitzero" jsonschema:"nullable" lr:"feature=waf"`
+	// Service is the service instance the route serves; the edge writes it
+	// into the request trace (docs/23, daemon feature requestTrace).
+	// Omitted on the dashboard's own routes.
+	Service ServiceInstanceID `json:"service,omitzero" lr:"feature=requestTrace"`
 }
 
 // RouteProtection guards a route.
@@ -448,6 +452,10 @@ type RouteUpstream struct {
 	Port Port `json:"port,omitzero"`
 	// Address is a mesh ip:port (cross-server upstream).
 	Address AddrPort `json:"address,omitzero"`
+	// Server is the server behind address, written into the request trace
+	// (docs/23, daemon feature requestTrace). Only with address; workload
+	// upstreams run on this server.
+	Server ServerID `json:"server,omitzero" lr:"feature=requestTrace"`
 }
 
 func (u RouteUpstream) validate(e *errs, p string, workloads map[WorkloadID]bool) {
@@ -460,10 +468,16 @@ func (u RouteUpstream) validate(e *errs, p string, workloads map[WorkloadID]bool
 			e.addf(p+".workload", "references unknown workload %s", u.Workload)
 		}
 		e.check(p+".port", u.Port)
+		if u.Server != "" {
+			e.addf(p+".server", "is only allowed with address")
+		}
 	case u.Address != "":
 		e.check(p+".address", u.Address)
 		if u.Port != 0 {
 			e.addf(p+".port", "is only allowed with workload")
+		}
+		if u.Server != "" {
+			e.check(p+".server", u.Server)
 		}
 	default:
 		e.addf(p, "needs workload+port or address")
@@ -840,6 +854,9 @@ func (r RouteSpec) validate(e *errs, p string, workloads map[WorkloadID]bool) {
 		u.validate(e, idx(p+".upstreams", i), workloads)
 	}
 	unique(e, p+".upstreams", r.Upstreams)
+	if r.Service != "" {
+		e.check(p+".service", r.Service)
+	}
 	if len(r.Headers) > 32 {
 		e.addf(p+".headers", "at most 32 headers")
 	}

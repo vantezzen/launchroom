@@ -34,6 +34,11 @@ info) [ "${STUB_INFO_FAIL:-}" != 1 ] ;;
 "run --rm -i"*" update-local --dir "*) exit "${STUB_UPDATE_EXIT:-0}" ;;
 "run --rm -i"*" doctor --dir "*) ;;
 "compose exec -T postgres psql"*) [ "${STUB_PSQL_FAIL:-}" != 1 ] || exit 1; printf 'srv_01 online\n' ;;
+# A move (install.sh --move): the receiver's answers come from STUB_MOVE_*.
+*"launchroom:move:receive --join"*) printf '%s\n' "${STUB_MOVE_JOIN:-}" ;;
+*"launchroom:move:receive --handover"*) exit 1 ;;
+*"cat /data/backups/move/cp-key") printf 'ed25519:c3R1Yg==\n' ;;
+*"cat /data/backups/move/join-token") printf '%s' "${STUB_MOVE_JOIN_TOKEN:-}" ;;
 "compose"*) ;;
 *) printf 'unexpected: docker %s\n' "$*" >&2; exit 1 ;;
 esac
@@ -516,6 +521,35 @@ has "$WORK/channel-beta/lr/.env" '^LR_UPDATES_CHANNEL=beta$'
 run channel-stable --bundle "$BUNDLE_DIR"
 lacks "$WORK/channel-stable/lr/.env" 'LR_UPDATES_CHANNEL'
 has "$WORK/channel-stable/lr/compose.yml" 'LAUNCHROOM_UPDATES_CHANNEL: ..LR_UPDATES_CHANNEL[:}]'
+
+# --- moving launchroom here (install.sh --move, docs/14 §13.4) -----------
+# Each run stops at the hand-over (the stub receiver fails it).
+JOINED='{"move":"cpm_1","code":"AAAA-BBBB","url":"https://old.example.com","joined":true'
+# enrolled NAME: this machine's launchroomd already enrolled (an earlier,
+# cancelled move left it a server of the old dashboard).
+enrolled() { mkdir -p "$WORK/$1/lr/data/daemon" && printf '{"serverId":"srv_1"}\n' >"$WORK/$1/lr/data/daemon/enrollment.json"; }
+
+# Already a server: proven with its key (root, read-only data folder), then
+# the move continues with it; no join token is written.
+enrolled move-connected
+STUB_MOVE_JOIN="$JOINED,\"connected\":\"netcup\"}" run move-connected --move lrmv1.tok --bundle "$BUNDLE_DIR"
+has "$WORK/move-connected/log" "compose run --rm -T --user 0 -e LR_MOVE_TOKEN -v $WORK/move-connected/lr/data/daemon:/run/launchroom-server:ro dashboard php artisan launchroom:move:receive --prove-server=/run/launchroom-server --json"
+has "$WORK/move-connected.out" 'already connected to https://old.example.com as netcup. The move continues with that server.'
+lacks "$WORK/move-connected.out" 'this server joined'
+[ ! -f "$WORK/move-connected/lr/data/daemon/join-token" ] || fail "move-connected wrote a join token"
+has "$WORK/move-connected.out" 'the hand-over failed'
+
+# An older dashboard issued a join token this machine can't use: say so
+# instead of skipping it (the dashboard would wait for it forever).
+enrolled move-old-dashboard
+STUB_MOVE_JOIN="$JOINED}" STUB_MOVE_JOIN_TOKEN=lr_jt_x run move-old-dashboard --move lrmv1.tok --bundle "$BUNDLE_DIR"
+refused move-old-dashboard "already connected to launchroom, so it can't use the join token"
+lacks "$WORK/move-old-dashboard.out" 'this server joined'
+
+# A new machine: no proof, it joins with the join token as before.
+STUB_MOVE_JOIN="$JOINED}" run move-new --move lrmv1.tok --bundle "$BUNDLE_DIR"
+lacks "$WORK/move-new/log" 'prove-server'
+has "$WORK/move-new.out" 'this server joined launchroom at https://old.example.com.'
 
 # --- public IP detection -------------------------------------------------
 # Every run passes --no-public-ip-detect: launchroomd follows it (.env)…

@@ -285,7 +285,7 @@ start=$(date +%s)
 retry 60 sh -c "test \"\$(docker exec -w $LR $A docker compose exec -T postgres psql -U launchroom -d launchroom -tAc \"SELECT count(*) FROM control_plane_moves WHERE receiver_seen_at > now() - interval '30 seconds'\")\" = 1" ||
 	fail "B's installer isn't waiting"
 # shellcheck disable=SC2016 # PHP code: its $variables are PHP's
-tinker "$A" 'app(App\Actions\Moves\StartHandover::class)->handle(App\Models\Moves\ControlPlaneMove::open(), $actor); echo "handing-over\n";' | grep -q handing-over ||
+tinker "$A" 'app(App\Actions\Moves\StartHandover::class)->handle(App\Models\Moves\ControlPlaneMove::open(), "hand over", $actor); echo "handing-over\n";' | grep -q handing-over ||
 	fail "the hand-over was refused"
 retry 900 docker exec "$B" test -s /root/move.exit || { on "$B" tail -n 60 /root/move.log; fail "B's installer did not finish"; }
 [ "$(on "$B" cat /root/move.exit)" = 0 ] || { on "$B" cat /root/move.log; fail "B's installer failed"; }
@@ -394,15 +394,16 @@ tinker "$B" '
 	$d = App\Models\Server::query()->where("name", "vps-d")->sole();
 	app(App\Actions\Servers\UpdateServerRoles::class)->handle($d, new App\Data\Servers\UpdateServerRolesData(["runtime", "build"]), $actor);
 	echo "d-ready\n";' | grep -q d-ready || fail "could not make D a runtime server"
-sql "$C" "INSERT INTO notes (body) VALUES ('right before the move');" >/dev/null
+sql "$C" "INSERT INTO notes (body) VALUES ('right before the move');" >/dev/null ||
+	fail "could not write a row on C (Postgres container: '$(container_of "$C" postgres || true)'; $(psql_on "$B" "SELECT string_agg(s.name || '=' || p.phase, ' ') FROM placements p JOIN servers s ON s.id = p.server_id" || true))"
 # shellcheck disable=SC2016 # PHP code: its $variables are PHP's
 tinker "$B" '
 	$c = App\Models\Server::query()->where("name", "vps-c")->sole();
 	$d = App\Models\Server::query()->where("name", "vps-d")->sole();
 	$plan = app(App\Services\Moves\MovePlanner::class)->plan($c, $d);
 	if ($plan->blockers !== []) { echo "BLOCKED ", implode(" | ", $plan->blockers), "\n"; return; }
-	app(App\Actions\Moves\StartServerMove::class)->handle($c, $d, false, $owner, $actor);
-	echo "move-started\n";' >"$TMP/move2.log" 2>&1
+	app(App\Actions\Moves\StartServerMove::class)->handle($c, $d, false, $owner, $actor, confirmation: $c->name);
+	echo "move-started\n";' >"$TMP/move2.log" 2>&1 || true
 grep -q move-started "$TMP/move2.log" || { cat "$TMP/move2.log"; fail "the move was refused"; }
 start=$(date +%s)
 retry 1200 sh -c "test \"\$(docker exec -w $LR $B docker compose exec -T postgres psql -U launchroom -d launchroom -tAc \"SELECT status FROM server_moves ORDER BY id DESC LIMIT 1\")\" = ready" ||
@@ -415,7 +416,7 @@ ok "D has every row and the file; B's edge serves it"
 
 step "retire C"
 # shellcheck disable=SC2016 # PHP code: its $variables are PHP's
-tinker "$B" 'app(App\Actions\Moves\RetireMovedServer::class)->handle(App\Models\Moves\ServerMove::query()->latest("id")->firstOrFail(), $actor); echo "retired\n";' | grep -q retired ||
+tinker "$B" '$m = App\Models\Moves\ServerMove::query()->with("source")->latest("id")->firstOrFail(); app(App\Actions\Moves\RetireMovedServer::class)->handle($m, $m->source->name, $actor); echo "retired\n";' | grep -q retired ||
 	fail "retiring C failed"
 [ "$(psql_on "$B" "SELECT status FROM servers WHERE name = 'vps-c'")" = revoked ] || fail "C is not revoked"
 retry 120 sh -c "test -z \"\$(docker exec $C docker ps -q --filter label=launchroom.workload)\"" || fail "C still runs workloads"

@@ -22,6 +22,11 @@
 #                        (github.com/corazawaf/coraza-coreruleset/v4, no rule
 #                        files on disk). All three Apache-2.0. CRS changes only
 #                        with a launchroom release (D64).
+#   - http.handlers.lr_trace, http.reverse_proxy.selection_policies.lr_round_robin
+#     and the Coraza action "lrtrace": launchroom's request trace (docs/23 §3),
+#     the module in ./lrtrace (its own go.mod, same Caddy and Coraza pins).
+#     The image says so with the label io.vantezzen.launchroom.trace=1, which
+#     launchroomd reads before rendering the handler.
 #
 # Why these (D47, docs/05 §5): the registrars and clouds self-hosters use
 # most, each a small libdns provider over a plain HTTPS API with a token
@@ -59,6 +64,7 @@ ENV CGO_ENABLED=0 \
     XCADDY_SETCAP=0 \
     XCADDY_SKIP_CLEANUP=0 \
     GOFLAGS=-trimpath
+COPY lrtrace /src/lrtrace
 RUN GOOS="$TARGETOS" GOARCH="$TARGETARCH" GOARM="${TARGETVARIANT#v}" \
     xcaddy build "$CADDY_VERSION" \
       --output /out/caddy \
@@ -74,7 +80,8 @@ RUN GOOS="$TARGETOS" GOARCH="$TARGETARCH" GOARM="${TARGETVARIANT#v}" \
       --with github.com/caddy-dns/netcup@v1.0.0 \
       --with "github.com/corazawaf/coraza-caddy/v2@$CORAZA_CADDY_VERSION" \
       --with "github.com/corazawaf/coraza/v3@v$CORAZA_VERSION" \
-      --with "github.com/corazawaf/coraza-coreruleset/v4@v$CRS_VERSION"
+      --with "github.com/corazawaf/coraza-coreruleset/v4@v$CRS_VERSION" \
+      --with github.com/vantezzen/launchroom/deploy/images/caddy/lrtrace=/src/lrtrace
 
 # caddy:2.11.7 (multi-arch index digest; the same stock image config/launchroom.php pins)
 FROM docker.io/library/caddy:2.11.7@sha256:685ae3d7c34d9b5f8caeddc5d14051db7bbd88ff1f5a2fa0c16bd8ca328fb7af
@@ -82,15 +89,17 @@ ARG CORAZA_VERSION
 ARG CRS_VERSION
 COPY --from=builder /out/caddy /usr/bin/caddy
 LABEL org.opencontainers.image.title="launchroom-caddy" \
-      org.opencontainers.image.description="Caddy with Redis/Valkey certificate storage, DNS-01 providers and the Coraza web firewall for launchroom edges" \
+      org.opencontainers.image.description="Caddy with Redis/Valkey certificate storage, DNS-01 providers and the Coraza web firewall and request trace for launchroom edges" \
       io.vantezzen.launchroom.waf.engine="coraza ${CORAZA_VERSION}" \
       io.vantezzen.launchroom.waf.ruleset="OWASP CRS ${CRS_VERSION}" \
+      io.vantezzen.launchroom.trace="1" \
       org.opencontainers.image.source="https://github.com/vantezzen/launchroom" \
       org.opencontainers.image.licenses="Apache-2.0"
 # Fails the build if a module is missing.
 RUN set -e; modules="$(caddy list-modules)"; \
     for m in caddy.storage.redis dns.providers.cloudflare dns.providers.hetzner dns.providers.route53 \
              dns.providers.digitalocean dns.providers.porkbun dns.providers.desec dns.providers.gandi \
-             dns.providers.ovh dns.providers.netcup http.handlers.waf; do \
+             dns.providers.ovh dns.providers.netcup http.handlers.waf \
+             http.handlers.lr_trace http.reverse_proxy.selection_policies.lr_round_robin; do \
       printf '%s\n' "$modules" | grep -qx "$m" || { echo "missing module $m" >&2; exit 1; }; \
     done

@@ -419,3 +419,24 @@ test('an architecture change rebuilds apps built from source for the target, and
 
     expect(resolve(PrebuildForPlatform::class)->handle($this->web, 'linux/s390x', null))->toEqual(Refusal::on('platform', 'Unknown platform.'));
 });
+
+test('apps built from source are deployed again on the target, so the move needs an online build server even without an architecture change', function (): void {
+    $planner = resolve(MovePlanner::class);
+    $this->web->service->forceFill(['kind' => ServiceKind::App])->saveQuietly();
+    $this->source->forceFill(['roles' => [ServerRole::Edge->value, ServerRole::Runtime->value]])->save();
+    $this->target->forceFill(['roles' => [ServerRole::Runtime->value]])->save();
+
+    $blockers = $planner->plan($this->source->refresh(), $this->target->refresh())->blockers;
+    expect(implode(' ', $blockers))->toContain('No build server is online. The move deploys 1 app from droplet again on netcup')
+        ->and(implode(' ', $blockers))->toContain('turn on Build for netcup in Servers');
+
+    // Refused when it starts, too (a server can go away after the plan was shown).
+    $this->actingAs($this->owner)
+        ->post(route('servers.move.store', $this->source), ['target' => $this->target->public_id, 'confirmation' => 'droplet'])
+        ->assertSessionHasErrors('target');
+    expect(ServerMove::query()->exists())->toBeFalse();
+
+    // The target can build for itself once it has the role.
+    $this->target->forceFill(['roles' => [ServerRole::Runtime->value, ServerRole::Build->value]])->save();
+    expect($planner->plan($this->source->refresh(), $this->target->refresh())->blockers)->toBe([]);
+});

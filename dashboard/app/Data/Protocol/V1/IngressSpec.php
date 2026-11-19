@@ -9,23 +9,26 @@ use Spatie\LaravelData\Data;
 /**
  * NodeState `ingress` (edge servers, docs/05 §4–5): shared certificate
  * storage and the DNS-01 provider, each with credentials sealed to this
- * server. Fingerprints stand in for the (randomized) ciphertexts when
- * renders are compared.
+ * server, and the edge's request trace key (docs/23 §4, feature
+ * `requestTrace`). Fingerprints stand in for the (randomized) ciphertexts
+ * when renders are compared.
  */
 final class IngressSpec extends Data
 {
     /**
      * @param  array{address: string, keyPrefix: string, sealed: string, fingerprint: string}|null  $storage
      * @param  array{provider: string, domains: list<string>, sealed: string, fingerprint: string}|null  $dns
+     * @param  array{sealed: string, fingerprint: string}|null  $trace
      */
     public function __construct(
         public ?array $storage = null,
         public ?array $dns = null,
+        public ?array $trace = null,
     ) {}
 
     public function isEmpty(): bool
     {
-        return $this->storage === null && $this->dns === null;
+        return $this->storage === null && $this->dns === null && $this->trace === null;
     }
 
     /**
@@ -66,6 +69,10 @@ final class IngressSpec extends Data
                 'domains' => $this->dns['domains'],
                 'credentials' => $credentials($this->dns),
             ];
+        }
+
+        if ($this->trace !== null) {
+            $wire['trace'] = $credentials($this->trace);
         }
 
         return $wire;

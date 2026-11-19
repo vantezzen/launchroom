@@ -12,8 +12,13 @@ client_action() { # HOST ID BODY
 
 check_main() {
 	expect REG "/ answers 200" code_is 200 "$APP" /
-	expect REG "next/image optimizes a public image" code_is 200 "$APP" "/_next/image?url=%2Fnext.svg&w=64&q=75"
-	expect G59 "RSC payload comes back as text/x-component" header_matches 'content-type: text/x-component' "$APP" / -H 'RSC: 1'
+	expect REG "public/ is served" code_is 200 "$APP" /next.svg
+	# Not public/next.svg: stock Next refuses SVG in the optimizer (400) without
+	# images.dangerouslyAllowSVG, and <Image> never asks it for one.
+	expect REG "next/image serves a local image" code_is 200 "$APP" "/_next/image?url=%2Ffavicon.ico&w=64&q=75"
+	# With RSC: 1 Next 16 redirects (307) until the request carries the _rsc
+	# cache-busting parameter; with no router headers its expected value is empty.
+	expect G59 "RSC payload comes back as text/x-component" header_matches 'content-type: text/x-component' "$APP" '/?_rsc=' -H 'RSC: 1'
 	expect G56 "no ISR warning at one replica" log_lacks 'isr-cache-warning|shared cache handler'
 }
 

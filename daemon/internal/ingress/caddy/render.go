@@ -66,6 +66,10 @@ type Options struct {
 	// §6.3); nil when the running Caddy has no firewall module, or for the
 	// fallback load without it (docs/22 §6.6).
 	Waf *WafOptions
+	// Trace turns on the request trace (docs/23 §3); nil when the running
+	// Caddy has no trace module, the edge has no usable key, or for the
+	// fallback load without it.
+	Trace *TraceOptions
 }
 
 // AccessLogger is the name of the access logger of the HTTPS server.
@@ -240,7 +244,7 @@ func RefusedClientAuth(routes []Route, o Options) []state.RouteID {
 // allowed clientAuth: the verified fingerprint into a variable ("" when no
 // certificate was presented), and with mode require a 401 for the daemon API
 // without one (enrollment and certificate issuance exempt).
-func clientAuthRoutes(a *state.RouteClientAuth) []any {
+func (o Options) clientAuthRoutes(a *state.RouteClientAuth) []any {
 	sub := []any{
 		obj{"handle": []any{obj{"handler": "vars", clientAuthVar: "{http.request.tls.client.fingerprint}"}}},
 		// Without a client certificate Caddy's fingerprint placeholder is the
@@ -257,7 +261,7 @@ func clientAuthRoutes(a *state.RouteClientAuth) []any {
 				"vars": obj{clientAuthVar: []string{""}},
 				"not":  []any{obj{"path": []string{state.EnrollPath, state.ClientCertificatePath}}},
 			}},
-			"handle":   []any{pageClientCertRequired.handler(401)},
+			"handle":   o.withTraceVars([]any{pageClientCertRequired.handler(401)}, traceOriginVar, traceOriginRefused),
 			"terminal": true,
 		})
 	}
@@ -405,6 +409,16 @@ func RenderTLS(routes []Route, t TLS, o Options) ([]byte, error) {
 
 	httpsRoutes := []any{}
 	httpRoutes := []any{}
+	if o.Trace != nil {
+		// First on both servers and never terminal: it wraps every later
+		// route, the edge's own pages included (docs/23 §3).
+		h, err := traceHandler(o.Trace, routes, o)
+		if err != nil {
+			return nil, err
+		}
+		httpsRoutes = append(httpsRoutes, obj{"handle": []any{h}})
+		httpRoutes = append(httpRoutes, obj{"handle": []any{h}})
+	}
 	if o.AccessLogAddress != "" {
 		httpsRoutes = append(httpsRoutes, accessLogAppend())
 	}
@@ -414,7 +428,7 @@ func RenderTLS(routes []Route, t TLS, o Options) ([]byte, error) {
 		}
 		check := obj{
 			"match":    []any{obj{"path": []string{ReachabilityPath + "*"}}},
-			"handle":   []any{obj{"handler": "reverse_proxy", "upstreams": []any{obj{"dial": o.ReachabilityDial}}}},
+			"handle":   o.withTraceVars([]any{obj{"handler": "reverse_proxy", "upstreams": []any{obj{"dial": o.ReachabilityDial}}}}, traceOriginVar, traceOriginEdge),
 			"terminal": true,
 		}
 		httpsRoutes = append(httpsRoutes, check)
@@ -423,7 +437,7 @@ func RenderTLS(routes []Route, t TLS, o Options) ([]byte, error) {
 	var wafDirs string
 	if o.Waf != nil {
 		var err error
-		if wafDirs, err = wafDirectives(WafRoutes(routes, o), o.Waf.LogAddress); err != nil {
+		if wafDirs, err = wafDirectivesTraced(WafRoutes(routes, o), o.Waf.LogAddress, o.Trace != nil); err != nil {
 			return nil, err
 		}
 	}
@@ -473,32 +487,32 @@ func RenderTLS(routes []Route, t TLS, o Options) ([]byte, error) {
 
 		// HTTPS: www ↔ apex redirect, web firewall, forward auth, headers,
 		// compression, proxy.
-		sub := []any{}
+		sub := append([]any{}, o.traceRoute(traceRouteVar, string(r.Spec.ID))...)
 		if len(others) > 0 {
 			sub = append(sub, obj{
 				"match":    []any{obj{"host": others}},
-				"handle":   []any{redirect(o.httpsOrigin(canonical) + "{http.request.uri}")},
+				"handle":   o.withTraceVars([]any{redirect(o.httpsOrigin(canonical) + "{http.request.uri}")}, traceOriginVar, traceOriginRedirect),
 				"terminal": true,
 			})
 		}
 		if r.Spec.Stopped {
 			// The service was stopped in launchroom (D68): nothing to proxy.
-			sub = append(sub, obj{"handle": []any{pageStopped.handler(503)}})
+			sub = append(sub, obj{"handle": o.withTraceVars([]any{pageStopped.handler(503)}, traceOriginVar, traceOriginStopped)})
 		} else if r.Spec.Protection != nil && !o.forwardAuthAllowed(r.Spec.Protection) {
 			// Fail closed: a protected route is never served without its check.
-			sub = append(sub, obj{"handle": []any{pageRefusedAuth.handler(403)}})
+			sub = append(sub, obj{"handle": o.withTraceVars([]any{pageRefusedAuth.handler(403)}, traceOriginVar, traceOriginRefused)})
 		} else if r.Spec.ClientAuth != nil && !o.clientAuthAllowed(r) {
 			// Fail closed: client certificates are only checked for the
 			// dashboard's loopback upstream, never another route.
-			sub = append(sub, obj{"handle": []any{pageRefusedClientAuth.handler(403)}})
+			sub = append(sub, obj{"handle": o.withTraceVars([]any{pageRefusedClientAuth.handler(403)}, traceOriginVar, traceOriginRefused)})
 		} else {
 			if r.Spec.ClientAuth != nil {
-				sub = append(sub, clientAuthRoutes(r.Spec.ClientAuth)...)
+				sub = append(sub, o.clientAuthRoutes(r.Spec.ClientAuth)...)
 			}
 			if o.wafOn(r) {
-				sub = append(sub, wafHandlers(r.Spec.ID, wafDirs)...)
+				sub = append(sub, wafHandlers(r.Spec.ID, wafDirs, o.Trace != nil)...)
 			}
-			sub = append(sub, appRoutes(r)...)
+			sub = append(sub, o.appRoutes(r)...)
 		}
 		httpsRoutes = append(httpsRoutes, obj{
 			"@id":      "lr-route-" + string(r.Spec.ID),
@@ -514,11 +528,11 @@ func RenderTLS(routes []Route, t TLS, o Options) ([]byte, error) {
 		}
 		httpRoutes = append(httpRoutes, obj{
 			"match":    []any{obj{"host": hosts}},
-			"handle":   []any{redirect(o.httpsOrigin(target) + "{http.request.uri}")},
+			"handle":   o.withTraceVars([]any{redirect(o.httpsOrigin(target) + "{http.request.uri}")}, traceRouteVar, string(r.Spec.ID), traceOriginVar, traceOriginRedirect),
 			"terminal": true,
 		})
 	}
-	notFound := obj{"handle": []any{pageNotFound.handler(404)}, "terminal": true}
+	notFound := obj{"handle": o.withTraceVars([]any{pageNotFound.handler(404)}, traceOriginVar, traceOriginNoRoute), "terminal": true}
 	httpsRoutes = append(httpsRoutes, notFound)
 	httpRoutes = append(httpRoutes, notFound)
 
@@ -620,16 +634,17 @@ func RenderTLS(routes []Route, t TLS, o Options) ([]byte, error) {
 
 // appRoutes are the subroute entries after the www redirect: forward auth
 // (protected routes), response headers, compression and the proxy (or 503).
-func appRoutes(r Route) []any {
+func (o Options) appRoutes(r Route) []any {
 	var sub []any
 	if r.Spec.Protection != nil {
+		sub = append(sub, o.traceRoute(traceStageVar, traceStageAuth)...)
 		sub = append(sub, obj{"handle": []any{forwardAuthHandler(r.Spec.Protection.ForwardAuth)}})
 	}
 	if hdr := headersHandler(r.Spec.Headers); hdr != nil {
 		sub = append(sub, obj{"handle": []any{hdr}})
 	}
 	if len(r.Dial) == 0 {
-		return append(sub, obj{"handle": []any{pageUnavailable.handler(503)}})
+		return append(sub, obj{"handle": o.withTraceVars([]any{pageUnavailable.handler(503)}, traceOriginVar, traceOriginUnavailable)})
 	}
 	ups := make([]any, 0, len(r.Dial))
 	for _, d := range r.Dial {
@@ -640,7 +655,7 @@ func appRoutes(r Route) []any {
 		"upstreams":      ups,
 		"flush_interval": -1, // streaming / SSE / WebSocket pass-through
 		"load_balancing": obj{
-			"selection_policy": obj{"policy": "round_robin"},
+			"selection_policy": obj{"policy": o.selectionPolicy()},
 			"try_duration":     "5s",
 			"try_interval":     "250ms",
 		},
@@ -660,8 +675,16 @@ func appRoutes(r Route) []any {
 	proxy["headers"] = obj{"request": obj{"set": set}}
 	return append(sub,
 		obj{"handle": []any{obj{"handler": "encode", "encodings": obj{"zstd": obj{}, "gzip": obj{}}, "prefer": []string{"zstd", "gzip"}}}},
-		obj{"handle": []any{proxy}},
+		obj{"handle": o.withTraceVars([]any{proxy}, traceStageVar, traceStageApp)},
 	)
+}
+
+// selectionPolicy is round robin, counted by the trace module when on.
+func (o Options) selectionPolicy() string {
+	if o.Trace != nil {
+		return traceSelectionPolicy
+	}
+	return "round_robin"
 }
 
 // RealIPHeader carries the visitor's address to the app (docs/05 §4).

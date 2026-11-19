@@ -28,6 +28,9 @@ type tlsPlan struct {
 	storage *state.CertStorageStatus
 	// notes are secret-free warnings (logged once per change).
 	notes []string
+	// trace is the request trace with the edge's opened key (nil: no
+	// usable key); rendered only when the running Caddy has the module.
+	trace *TraceOptions
 }
 
 // fingerprint identifies the file contents (in memory only, never logged
@@ -54,8 +57,22 @@ func (m *Manager) plan(ctx context.Context, spec *state.IngressSpec) *tlsPlan {
 	for _, n := range append(dnsSecretFiles(), SecretStorageUser, SecretStoragePassword, SecretStorageKey) {
 		p.files[path.Join(SecretsDir, n)] = "" // stale secrets are overwritten with nothing
 	}
+	p.files[TraceKeyFile] = ""
 	if spec == nil {
 		spec = &state.IngressSpec{}
+	}
+	if spec.Trace != nil {
+		vals, err := m.openSecret(*spec.Trace, state.IngressSecretTrace)
+		var key state.TraceKey
+		if err == nil {
+			key, err = state.TraceKeyOf(vals)
+		}
+		if err != nil {
+			p.notes = append(p.notes, "request trace key unusable, responses carry no trace: "+err.Error())
+		} else {
+			p.files[TraceKeyFile] = vals["key"] // the module decodes it
+			p.trace = &TraceOptions{Edge: state.ServerID(m.o.ServerID), KeyID: key.ID, KeyFile: TraceKeyFile}
+		}
 	}
 	if d := spec.DNS; d != nil {
 		vals, err := m.openSecret(d.Credentials, state.IngressSecretDNS)

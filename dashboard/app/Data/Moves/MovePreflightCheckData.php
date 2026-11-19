@@ -17,5 +17,8 @@ final class MovePreflightCheckData extends Data
         /** ok | info | warning | blocker */
         public string $status,
         public string $message,
+        /** Where the fix is (a page of this dashboard), with the link's words. */
+        public ?string $href = null,
+        public ?string $hrefLabel = null,
     ) {}
 }

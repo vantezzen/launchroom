@@ -1,0 +1,132 @@
+---
+title: Trace a request
+description: Every response through your edge servers carries a Launchroom-Trace header. Paste it into launchroom to see the request's path from the visitor to your app.
+---
+
+When a request fails, is blocked or is slow, you usually only have the response in front of you. launchroom puts a record of what happened into that response. Paste it into the dashboard and you see the request's path: which edge server took it, what the web firewall decided, which server ran the app, and how the app answered.
+
+## The Launchroom-Trace header
+
+Every response that passes through one of your edge servers carries a `Launchroom-Trace` header. That includes redirects, error pages, firewall blocks and requests for addresses that no service uses. It looks like this:
+
+```http
+Launchroom-Trace: AQAAACq3vN0yM1x2...
+```
+
+The value is encrypted with a key only your launchroom knows. Visitors see the header but can't read it. It records:
+
+- when the edge server received the request, and the request id it gave it
+- the edge server, the server the app ran on, the domain's route and the service
+- the method, the protocol and the path with ids replaced by `:id` (no query string)
+- the web firewall's mode, result, score and the rules that matched
+- the status, who answered (the app, the firewall or the edge server itself), and why the app couldn't be reached if it couldn't
+- the time until the response headers, the part of it the app took, and how many attempts the edge server made
+
+It contains no visitor address, no query string, no headers, cookies or bodies.
+
+A response without the header didn't pass through a launchroom edge server: the request may have been stopped earlier, for example by DNS, a proxy in front of your server or a failed TLS handshake. Servers on an older launchroom version don't add the header yet. Update them in **Settings → Updates**.
+
+## Find the header
+
+### In the browser
+
+1. Open your browser's developer tools and switch to the **Network** tab.
+2. Load the page again, or repeat what failed.
+3. Select the request and look at its **Response Headers**. Copy the value of `launchroom-trace` (browsers often show header names in lowercase).
+
+### With curl
+
+```sh
+curl -sI https://shop.example.com/products/42 | grep -i launchroom-trace
+```
+
+`curl -I` sends a `HEAD` request. To trace the request you actually make, print the headers of that one:
+
+```sh
+curl -s -D - -o /dev/null -X POST https://shop.example.com/api/orders | grep -i launchroom-trace
+```
+
+## Open the trace
+
+Paste the value in one of these places. The header name in front of it is fine too.
+
+- **Logs**: in a project's Logs tab or the team's Logs page, select **Trace a request** in the toolbar.
+- **Search ⌘K**: paste the header into the search field and choose **Trace this request**, or search for "Trace a request".
+
+The trace opens on its own page with an address you can send to a teammate. **Copy link** copies it, **Trace another** opens a new paste field.
+
+## What the trace shows
+
+At the top, one sentence says what happened, for example "The firewall blocked this request. 2 rules matched." or "web answered with 200.".
+
+Below it, the path of the request from the visitor to the edge server, through the web firewall, to the server the app ran on and the service. Each hop shows how long it took. Where the request ended is marked with its status, and the steps it never reached are dimmed. When the edge server and the app's server are the same machine, it is shown once with both roles. A request to an address no service uses ends at the edge server.
+
+A bar shows the time until the response headers, split into the edge server's share and the app's. The trace is written when the response starts, so it doesn't include the time the body took to download.
+
+**Details** lists the time, the request id, the domain, protocol and status, the attempts and the reason when the app couldn't be reached, and the firewall's mode and score. When the firewall matched rules, they are listed with their names.
+
+### Actions
+
+- **Open logs**: the service's logs from a minute before to a minute after the request, searched for its request id.
+- **Allow requests like this**: when the firewall blocked the request (or would have, in Log only mode), add an exception for every rule that matched, for this path. See [Firewall exceptions](/docs/security/firewall-exceptions).
+- **Open firewall**: the service's web firewall settings.
+- The edge server, the app's server and the service link to their pages.
+
+## The request id in your app
+
+The edge server gives every request a new id and sends it to your app as the `X-Request-Id` header. It replaces any `X-Request-Id` the visitor or a proxy in front sent. The trace shows the same id, and on a firewall block page it is the reference.
+
+Write the id into your log lines and **Open logs** finds them for that request:
+
+<Tabs items={['Node.js', 'Laravel', 'Rails', 'Django']}>
+<Tab value="Node.js">
+```js
+import pinoHttp from 'pino-http';
+
+// Every line logged through req.log carries the id as reqId.
+app.use(pinoHttp({ genReqId: (req) => req.headers['x-request-id'] }));
+```
+</Tab>
+<Tab value="Laravel">
+```php
+use Illuminate\Support\Facades\Context;
+
+// In a middleware: every log line of the request gets the id.
+Context::add('request_id', $request->header('X-Request-Id'));
+```
+</Tab>
+<Tab value="Rails">
+```ruby
+# config/environments/production.rb
+# Rails uses an incoming X-Request-Id as its request id.
+config.log_tags = [:request_id]
+```
+</Tab>
+<Tab value="Django">
+```python
+# In a view: request is the HttpRequest.
+logger.info(
+    "order created request_id=%s",
+    request.headers.get("X-Request-Id"),
+)
+```
+</Tab>
+</Tabs>
+
+Lines are searchable after the fact only in environments that [keep runtime logs](/docs/observability/logs#keep-runtime-logs). Production does by default.
+
+## Who can read a trace
+
+Anyone on your team who can see the service can open its traces, firewall rules included. Traces of requests to the launchroom dashboard itself are for owners and admins. A trace from another team's server, or one you can't see, shows "This trace isn't from one of your services.", the same as a value that isn't a trace.
+
+Traces stay readable for at least 90 days. Each edge server's key changes every 30 days, and an old key is deleted 90 days after it was replaced. After that, its traces can't be opened anymore.
+
+## Nothing is stored
+
+launchroom keeps no record of single requests. The trace travels in the response, and the dashboard reads it only when you paste it. Request metrics and analytics stay counts per minute.
+
+<Cards>
+  <Card title="Logs" href="/docs/observability/logs" description="Search and follow what your services write." />
+  <Card title="Web firewall" href="/docs/security/web-firewall" description="How the firewall checks requests and what Block and Log only do." />
+  <Card title="Firewall exceptions" href="/docs/security/firewall-exceptions" description="Let legitimate requests through." />
+</Cards>

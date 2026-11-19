@@ -64,7 +64,7 @@ test('every member sees the Security page and its data', function (User $user): 
         ->and($data->json('actionNeeded.0.package'))->toBe('lodash')
         ->and($data->json('actionNeeded.0.title'))->toBe('Command injection in lodash')
         ->and($data->json('firewall.recent.0.path'))->toBe('/api/products/:id')
-        ->and($data->json('firewall.recent.0.rules.0.message'))->toBe('SQL injection attack detected via libinjection')
+        ->and($data->json('firewall.recent.0.rules.0.message'))->toBe('SQL Injection Attack Detected via libinjection')
         ->and($data->json('runtimes.0.label'))->toBe('Node.js');
 })->with([
     'owner' => fn () => $this->owner,
@@ -120,7 +120,7 @@ test('the service firewall: members read, developers change it', function (): vo
     $this->actingAs($this->developer)->postJson("{$this->base}/firewall/exclusions", ['rule' => 980130])->assertUnprocessable();
     $exclusion = WafExclusion::query()->sole();
 
-    expect($this->actingAs($this->viewer)->getJson("{$this->base}/firewall")->json('exclusions.0.message'))->toBe('SQL injection attack detected via libinjection');
+    expect($this->actingAs($this->viewer)->getJson("{$this->base}/firewall")->json('exclusions.0.message'))->toBe('SQL Injection Attack Detected via libinjection');
     $this->actingAs($this->viewer)->deleteJson("{$this->base}/firewall/exclusions/{$exclusion->public_id}")->assertForbidden();
     $this->actingAs($this->developer)->deleteJson("{$this->base}/firewall/exclusions/{$exclusion->public_id}")->assertNoContent();
 });

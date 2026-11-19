@@ -2,6 +2,8 @@
 
 declare(strict_types=1);
 
+use App\Actions\Deployments\DeployEnvironment;
+use App\Actions\Moves\AdvanceControlPlaneMoves;
 use App\Actions\Moves\TakeOverControlPlane;
 use App\Contracts\ControlPlaneDumps;
 use App\Data\Audit\AuditActor;
@@ -13,19 +15,24 @@ use App\Enums\Moves\ControlPlaneMoveStatus;
 use App\Enums\Moves\ServerMoveStatus;
 use App\Enums\ServerRole;
 use App\Enums\ServerStatus;
+use App\Enums\ServiceKind;
 use App\Enums\TeamRole;
 use App\Exceptions\DomainRuleViolation;
 use App\Models\AuditEvent;
 use App\Models\InstanceSettings;
 use App\Models\Moves\ControlPlaneMove;
 use App\Models\Moves\ServerMove;
+use App\Models\Server;
 use App\Models\ServerEnrollment;
+use App\Models\ServiceInstance;
 use App\Models\Team;
 use App\Models\User;
 use App\Services\Backups\ControlPlaneKeyBundle;
 use App\Services\Crypto\Signer;
 use App\Services\Moves\HandoverStore;
 use App\Services\Moves\MoveToken;
+use App\Support\Crypto\PublicKeyFormat;
+use App\Support\PublicId;
 use Illuminate\Http\Client\Request as ClientRequest;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Sleep;
@@ -407,4 +414,251 @@ test('the receiver refuses answers that aren’t signed with the key in the toke
     $this->artisan('launchroom:move:receive', ['--join' => true, '--state' => sys_get_temp_dir().'/lr-move-state-'.bin2hex(random_bytes(6))])
         ->expectsOutputToContain('not signed with the key in the move token')
         ->assertFailed();
+});
+
+/*
+| D103: a machine that is already a server of this dashboard (a cancelled
+| move keeps the server it joined) claims with that server and proves it with
+| its launchroomd identity key; the move continues with it instead of a join
+| token it can't use. And no move starts, connects or moves apps when no
+| build server could deploy them on the new server.
+*/
+
+/**
+ * A server of the team whose launchroomd identity key the test holds.
+ *
+ * @return array{Server, string} [server, Ed25519 seed]
+ */
+function connectedServer(Team $team, string $name = 'netcup'): array
+{
+    $seed = random_bytes(SODIUM_CRYPTO_SIGN_SEEDBYTES);
+    [$server] = Projects::server($team, ip: '203.0.113.9');
+    $server->forceFill([
+        'name' => $name,
+        'signing_public_key' => PublicKeyFormat::formatEd25519(sodium_crypto_sign_publickey(sodium_crypto_sign_seed_keypair($seed))),
+    ])->save();
+
+    return [$server->refresh(), $seed];
+}
+
+function serverProof(string $seed, string $move, string $server, string $receiverPublic): string
+{
+    return base64_encode(sodium_crypto_sign_detached(MoveToken::serverProofMessage($move, $server, $receiverPublic), sodium_crypto_sign_secretkey(sodium_crypto_sign_seed_keypair($seed))));
+}
+
+/**
+ * @param  array<string, mixed>  $extra
+ * @return TestResponse<Response>
+ */
+function claimWith(TestCase $test, string $token, string $publicKey, array $extra): TestResponse
+{
+    $parsed = MoveToken::parse($token) ?? throw new RuntimeException('bad token');
+
+    return $test->postJson('/move/v1/claim', ['move' => $parsed['move'], 'secret' => $parsed['secret'], 'publicKey' => $publicKey, 'hostname' => 'netcup', 'arch' => 'aarch64', ...$extra]);
+}
+
+/**
+ * An app built from a repository running on $server.
+ */
+function builtAppOn(Team $team, Server $server): ServiceInstance
+{
+    $project = Projects::create($team, 'shop');
+    $web = Projects::image($project, 'web');
+    resolve(DeployEnvironment::class)->handle($project->production()->sole(), null, AuditActor::system());
+
+    for ($i = 0; $i < 4; $i++) {
+        Projects::report($server);
+    }
+
+    $web->forceFill(['kind' => ServiceKind::App])->saveQuietly();
+
+    return ServiceInstance::query()->where('service_id', $web->id)->sole();
+}
+
+test('a machine that is already a server here claims as that server, and approval continues with it without a join token', function (): void {
+    [$server, $seed] = connectedServer($this->team);
+    $token = startMove($this, $this->owner);
+    $moveId = MoveToken::parse($token)['move'] ?? '';
+
+    $response = claimWith($this, $token, $this->receiverPublic, ['serverId' => $server->public_id, 'serverProof' => serverProof($seed, $moveId, $server->public_id, $this->receiverPublic)])->assertOk();
+    expect(signedByControlPlane($response))->toBeTrue()
+        ->and($response->json('status'))->toBe('claimed')
+        ->and($response->json('joined'))->toBe('netcup');
+
+    $move = ControlPlaneMove::query()->sole();
+    expect($move->target_server_id)->toBe($server->id);
+
+    // The owner sees which server it is before confirming the code.
+    $this->actingAs($this->owner)->get(route('move.edit'))
+        ->assertInertia(fn ($page) => $page->where('move.status', 'claimed')->where('move.target.name', 'netcup'));
+
+    $this->actingAs($this->owner)->post(route('move.approve'), ['code' => (string) $move->claim_code])->assertRedirect()->assertSessionHasNoErrors();
+
+    expect($move->refresh()->status)->toBe(ControlPlaneMoveStatus::Joined)
+        ->and($move->enrollment_id)->toBeNull()
+        ->and($move->sealed_join_token)->toBeNull()
+        ->and(ServerEnrollment::query()->exists())->toBeFalse()
+        ->and(AuditEvent::query()->where('action', AuditAction::ControlPlaneMoveApproved->value)->sole()->meta)->toMatchArray(['server' => $server->public_id, 'connected' => true]);
+
+    receiver($this, 'GET', "/move/v1/{$move->public_id}", MoveToken::parse($token)['secret'] ?? '')->assertOk()
+        ->assertJsonPath('status', 'joined')
+        ->assertJsonPath('joined', 'netcup')
+        ->assertJsonMissingPath('joinToken');
+});
+
+test('a claimed server is refused unless it proves itself and can be the move’s target', function (): void {
+    [$server, $seed] = connectedServer($this->team);
+    $token = startMove($this, $this->owner);
+    $moveId = MoveToken::parse($token)['move'] ?? '';
+    $proof = fn (Server $as, ?string $key = null): array => ['serverId' => $as->public_id, 'serverProof' => serverProof($key ?? $seed, $moveId, $as->public_id, $this->receiverPublic)];
+
+    // Another team's server (another launchroom, as far as this move knows).
+    [$foreign] = Projects::server(Team::factory()->create());
+    claimWith($this, $token, $this->receiverPublic, $proof($foreign))->assertForbidden();
+    // A proof by another key, for another receiver key, or none.
+    claimWith($this, $token, $this->receiverPublic, $proof($server, random_bytes(32)))->assertForbidden();
+    claimWith($this, $token, $this->receiverPublic, ['serverId' => $server->public_id, 'serverProof' => serverProof($seed, $moveId, $server->public_id, 'x25519:'.base64_encode(random_bytes(32)))])->assertForbidden();
+    claimWith($this, $token, $this->receiverPublic, ['serverId' => $server->public_id])->assertForbidden();
+
+    // Offline, or part of another move.
+    $server->transitionTo(ServerStatus::Offline);
+    claimWith($this, $token, $this->receiverPublic, $proof($server))->assertStatus(409)->assertJsonPath('error', fn (string $error): bool => str_contains($error, 'isn’t connected right now'));
+    $server->refresh()->transitionTo(ServerStatus::Online);
+    [$other] = Projects::server($this->team, ip: '203.0.113.10');
+    $open = (new ServerMove)->forceFill(['public_id' => PublicId::generate('smv'), 'team_id' => $this->team->id, 'source_server_id' => $other->id, 'target_server_id' => $server->id, 'status' => ServerMoveStatus::Running->value]);
+    $open->save();
+    claimWith($this, $token, $this->receiverPublic, $proof($server))->assertStatus(409)->assertJsonPath('error', fn (string $error): bool => str_contains($error, 'part of another server move'));
+    $open->delete();
+
+    // The dashboard's own server never is.
+    $sourceSeed = random_bytes(32);
+    $this->source->forceFill(['signing_public_key' => PublicKeyFormat::formatEd25519(sodium_crypto_sign_publickey(sodium_crypto_sign_seed_keypair($sourceSeed)))])->save();
+    claimWith($this, $token, $this->receiverPublic, $proof($this->source->refresh(), $sourceSeed))->assertStatus(409);
+
+    // Nothing was claimed by the refusals: the token still works.
+    expect(ControlPlaneMove::query()->sole()->status)->toBe(ControlPlaneMoveStatus::WaitingForServer);
+    claimWith($this, $token, $this->receiverPublic, $proof($server->refresh()))->assertOk()->assertJsonPath('joined', 'netcup');
+
+    // Gone offline before the owner confirms: approval refuses.
+    $server->refresh()->transitionTo(ServerStatus::Offline);
+    $this->actingAs($this->owner)->post(route('move.approve'), ['code' => (string) ControlPlaneMove::query()->sole()->claim_code])->assertSessionHasErrors('code');
+    expect(ControlPlaneMove::query()->sole()->status)->toBe(ControlPlaneMoveStatus::Claimed);
+});
+
+test('joining that waits on an unused join token says why, and a re-run installer that proves its server continues the move', function (): void {
+    [$server, $seed] = connectedServer($this->team);
+    $token = startMove($this, $this->owner);
+    [$move, $secret, $code] = claimMove($this, $token, $this->receiverPublic);
+    $this->actingAs($this->owner)->post(route('move.approve'), ['code' => $code]);
+    expect($move->refresh()->status)->toBe(ControlPlaneMoveStatus::Joining);
+
+    // A few minutes later nothing enrolled: the page and the installer say so.
+    $this->travel(6)->minutes();
+    receiver($this, 'GET', "/move/v1/{$move->public_id}", $secret)->assertOk()
+        ->assertJsonPath('status', 'joining')
+        ->assertJsonPath('message', AdvanceControlPlaneMoves::STALLED);
+    $this->actingAs($this->owner)->get(route('move.edit'))
+        ->assertInertia(fn ($page) => $page->where('move.status', 'joining')->where('move.error', AdvanceControlPlaneMoves::STALLED));
+
+    // The installer runs again and proves it is already a server here.
+    claimWith($this, $token, $this->receiverPublic, ['serverId' => $server->public_id, 'serverProof' => serverProof($seed, $move->public_id, $server->public_id, $this->receiverPublic)])
+        ->assertOk()
+        ->assertJsonPath('status', 'joined')
+        ->assertJsonPath('joined', 'netcup');
+
+    expect($move->refresh()->status)->toBe(ControlPlaneMoveStatus::Joined)
+        ->and($move->target_server_id)->toBe($server->id)
+        ->and($move->error)->toBeNull()
+        ->and($move->sealed_join_token)->toBeNull()
+        // The join token it couldn't use is withdrawn.
+        ->and(ServerEnrollment::query()->exists())->toBeFalse();
+});
+
+test('the installer of a machine that is already a server proves it with launchroomd’s key and continues the move (launchroom:move:receive --prove-server)', function (): void {
+    [$server, $seed] = connectedServer($this->team);
+    $token = startMove($this, $this->owner);
+    $state = sys_get_temp_dir().'/lr-move-state-'.bin2hex(random_bytes(6));
+    $daemon = sys_get_temp_dir().'/lr-move-daemon-'.bin2hex(random_bytes(6));
+    mkdir($daemon.'/keys', 0700, true);
+    file_put_contents($daemon.'/enrollment.json', json_encode(['serverId' => $server->public_id, 'controlPlaneUrl' => 'https://dash.example.com']));
+    // As Go's x509.MarshalPKCS8PrivateKey + pem.EncodeToMemory write it.
+    file_put_contents($daemon.'/keys/signing.key', "-----BEGIN PRIVATE KEY-----\n".base64_encode(hex2bin('302e020100300506032b657004220420').$seed)."\n-----END PRIVATE KEY-----\n");
+    config(['launchroom.moves.token' => $token, 'launchroom.moves.hostname' => 'netcup']);
+    Sleep::fake();
+    $test = $this;
+    $owner = $this->owner;
+
+    Http::fake(function (ClientRequest $request) use ($test, $owner) {
+        $path = (string) parse_url($request->url(), PHP_URL_PATH);
+        $response = $test->call($request->method(), $path, [], [], [], [
+            'HTTP_AUTHORIZATION' => $request->header('Authorization')[0] ?? '',
+            'HTTP_ACCEPT' => 'application/json',
+            'CONTENT_TYPE' => 'application/json',
+        ], $request->body() === '' ? null : $request->body());
+        $move = ControlPlaneMove::query()->first();
+
+        if ($path === '/move/v1/claim' && $move?->status === ControlPlaneMoveStatus::Claimed) {
+            $test->actingAs($owner)->post(route('move.approve'), ['code' => (string) $move->claim_code]);
+        }
+
+        return Http::response((string) $response->getContent(), $response->getStatusCode(), ['X-LR-Signature' => (string) $response->headers->get('X-LR-Signature'), 'Content-Type' => (string) $response->headers->get('Content-Type')]);
+    });
+
+    $this->artisan('launchroom:move:receive', ['--prove-server' => $daemon, '--state' => $state, '--json' => true])->assertSuccessful();
+    expect(json_decode((string) file_get_contents($state.'/server-proof'), true))->toHaveKeys(['move', 'publicKey', 'serverId', 'serverProof'])
+        ->and((string) file_get_contents($state.'/server-proof'))->not->toContain(base64_encode($seed));
+
+    $this->artisan('launchroom:move:receive', ['--join' => true, '--state' => $state, '--json' => true])
+        ->expectsOutputToContain('"connected":"netcup"')
+        ->assertSuccessful();
+
+    $move = ControlPlaneMove::query()->sole();
+    expect($move->status)->toBe(ControlPlaneMoveStatus::Joined)
+        ->and($move->target_server_id)->toBe($server->id)
+        ->and(file_exists($state.'/join-token'))->toBeFalse()
+        ->and(trim((string) file_get_contents($state.'/cp-key')))->toBe(resolve(Signer::class)->publicKey());
+});
+
+test('no move starts, connects or moves apps while no build server could deploy them on the new server', function (): void {
+    builtAppOn($this->team, $this->source);
+    // The dashboard's server doesn't build, and nothing else does.
+    $this->source->forceFill(['roles' => [ServerRole::Edge->value, ServerRole::Runtime->value]])->save();
+
+    $this->actingAs($this->owner)->get(route('move.edit'))
+        ->assertInertia(fn ($page) => $page->where('preflight', fn ($checks): bool => collect($checks)->contains(fn (array $check): bool => $check['key'] === 'builds'
+            && $check['status'] === 'blocker'
+            && str_contains($check['message'], 'No build server is online')
+            && $check['href'] === route('servers.index', absolute: false))));
+    $this->actingAs($this->owner)->post(route('move.start'))->assertSessionHasErrors();
+    expect(ControlPlaneMove::query()->exists())->toBeFalse();
+
+    // With the build role here, the new server takes it over: fine.
+    $this->source->forceFill(['roles' => [ServerRole::Edge->value, ServerRole::Runtime->value, ServerRole::Build->value]])->save();
+    $this->actingAs($this->owner)->get(route('move.edit'))
+        ->assertInertia(fn ($page) => $page->where('preflight', fn ($checks): bool => collect($checks)->contains(fn (array $check): bool => $check['key'] === 'builds' && $check['status'] === 'ok')));
+    $token = startMove($this, $this->owner);
+    [$move, , $code] = claimMove($this, $token, $this->receiverPublic);
+
+    // The build server went away before the code was confirmed; the new
+    // machine wouldn't build (the dashboard's server lost the role).
+    $this->source->forceFill(['roles' => [ServerRole::Edge->value, ServerRole::Runtime->value]])->save();
+    $this->actingAs($this->owner)->post(route('move.approve'), ['code' => $code])->assertSessionHasErrors('code');
+    expect($move->refresh()->status)->toBe(ControlPlaneMoveStatus::Claimed);
+
+    // A build server for the new machine's platform (arm64) is enough.
+    [$builder] = Projects::server($this->team, [ServerRole::Build], ip: '203.0.113.20');
+    $this->actingAs($this->owner)->post(route('move.approve'), ['code' => $code])->assertSessionHasNoErrors();
+    expect($move->refresh()->status)->toBe(ControlPlaneMoveStatus::Joining);
+
+    // Joined; the builder goes offline before the apps move: refused again.
+    [$target] = Projects::server($this->team, [ServerRole::Edge, ServerRole::Runtime], ip: '203.0.113.9');
+    ServerEnrollment::query()->update(['used_at' => now(), 'server_id' => $target->id]);
+    $this->actingAs($this->owner)->get(route('move.edit'));
+    expect($move->refresh()->status)->toBe(ControlPlaneMoveStatus::Joined);
+    $builder->transitionTo(ServerStatus::Offline);
+    InstanceSettings::current()->forceFill(['mesh_enabled_at' => now()])->save();
+    $this->actingAs($this->owner)->post(route('move.workloads'))->assertSessionHasErrors();
+    expect($move->refresh()->status)->toBe(ControlPlaneMoveStatus::Joined);
+    $this->actingAs($this->owner)->get(route('move.edit'))
+        ->assertInertia(fn ($page) => $page->where('plan.blockers', fn ($blockers): bool => collect($blockers)->contains(fn (string $blocker): bool => str_contains($blocker, 'turn on Build for '.$target->name))));
 });

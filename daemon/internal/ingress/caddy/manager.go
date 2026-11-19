@@ -123,6 +123,12 @@ type Manager struct {
 	// config (0: none, or the running Caddy has no module).
 	wafWanted int
 
+	// Request trace (docs/23 §3): whether the running Caddy carries the
+	// module, and the key of a config with the trace Caddy refused (not
+	// tried again until something changes).
+	traceSupport bool
+	traceFailed  string
+
 	// unreachableSince is when loading a config first failed in a row
 	// because Caddy's admin API wasn't reachable (zero: it was); unreachableErr
 	// is the last such error (docs/22 §6.6).
@@ -268,13 +274,20 @@ func (m *Manager) setFailure(f *failure) {
 	m.mu.Unlock()
 }
 
-// Features are the web firewall while the running, pinned Caddy carries
-// its module (docs/22 §6.1).
+// Features are the web firewall and the request trace while the running,
+// pinned Caddy carries their modules (docs/22 §6.1, docs/23 §3).
 func (m *Manager) Features() []state.DaemonFeature {
+	var out []state.DaemonFeature
 	if m.WafSupport().Available() {
-		return []state.DaemonFeature{state.FeatureWaf}
+		out = append(out, state.FeatureWaf)
 	}
-	return nil
+	m.mu.Lock()
+	trace := m.traceSupport
+	m.mu.Unlock()
+	if trace {
+		out = append(out, state.FeatureRequestTrace)
+	}
+	return out
 }
 
 // WafSupport is the firewall module of the running Caddy (zero: none, or
@@ -364,6 +377,7 @@ func (m *Manager) sync(ctx context.Context, sys state.SystemContainer, routes []
 		m.mu.Lock()
 		m.appliedKey, m.containerID, m.certs, m.storage = "", "", nil, nil
 		m.wafSupport, m.wafRoutes, m.wafErr, m.wafFailed, m.wafWanted = WafSupport{}, 0, "", "", 0
+		m.traceSupport, m.traceFailed = false, ""
 		m.unreachableSince, m.unreachableErr, m.failure, m.appliedCfg = time.Time{}, "", nil, nil
 		m.mu.Unlock()
 		return nil
@@ -406,10 +420,13 @@ func (m *Manager) sync(ctx context.Context, sys state.SystemContainer, routes []
 		return failWith(&failure{reason: reason}, "system caddy: %v", err)
 	}
 	files := plan.fingerprint()
+	// fallback has neither the request trace nor the firewall; base is
+	// what is served when only the firewall is refused.
 	fallback := cfg
+	base, render, traceKey := m.traceConfig(routes, plan, render, c, fallback)
 	cfg, wafKey, wafRoutes, wafErr := m.wafConfig(routes, plan.tls, render, c)
 	if cfg == nil {
-		cfg = fallback
+		cfg = base
 	}
 	sum := sha256.Sum256(cfg)
 	key := hex.EncodeToString(sum[:]) + "|" + files + "|" + c.ID + "|" + c.StartedAt.String()
@@ -450,16 +467,8 @@ func (m *Manager) sync(ctx context.Context, sys state.SystemContainer, routes []
 	if r, ok := m.o.Admin.(Reloader); ok && force {
 		load = r.Reload
 	}
-	if err := m.loadRetrying(ctx, load, cfg); err != nil {
-		if !IsConfigRefusal(err) {
-			// Caddy wasn't reachable (starting, restarting, slow after a
-			// reboot): that says nothing about the config. The next pass
-			// tries the same config, firewall included (docs/22 §6.6).
-			return unreachable(err)
-		}
-		if wafKey == "" {
-			return failWith(m.configRefused(ctx, c.ID, err), "load config: %v%s", err, m.keepsServing())
-		}
+	err = m.loadRetrying(ctx, load, cfg)
+	if err != nil && IsConfigRefusal(err) && wafKey != "" {
 		// Caddy refused the config with the firewall: serve the same routes
 		// without it (availability wins, docs/22 §6.6) and don't try this
 		// config again until something changes.
@@ -467,16 +476,29 @@ func (m *Manager) sync(ctx context.Context, sys state.SystemContainer, routes []
 		m.mu.Lock()
 		m.wafFailed, m.wafErr = wafKey, "Caddy refused the firewall config: "+err.Error()
 		m.mu.Unlock()
-		cfg, wafRoutes, wafErr = fallback, 0, m.wafErr
-		sum = sha256.Sum256(cfg)
-		key = hex.EncodeToString(sum[:]) + "|" + files + "|" + c.ID + "|" + c.StartedAt.String()
-		if err := m.loadRetrying(ctx, load, cfg); err != nil {
-			if !IsConfigRefusal(err) {
-				return unreachable(err)
-			}
-			return failWith(m.configRefused(ctx, c.ID, err), "load config: %v%s", err, m.keepsServing())
-		}
+		cfg, wafRoutes, wafErr = base, 0, m.wafErr
+		err = m.loadRetrying(ctx, load, cfg)
 	}
+	if err != nil && IsConfigRefusal(err) && traceKey != "" {
+		// The same for the request trace: the routes matter more.
+		m.o.Log.Warn("caddy refused the config with the request trace; serving the routes without it", "err", err)
+		m.mu.Lock()
+		m.traceFailed = traceKey
+		m.mu.Unlock()
+		cfg = fallback
+		err = m.loadRetrying(ctx, load, cfg)
+	}
+	if err != nil {
+		if !IsConfigRefusal(err) {
+			// Caddy wasn't reachable (starting, restarting, slow after a
+			// reboot): that says nothing about the config. The next pass
+			// tries the same config, firewall included (docs/22 §6.6).
+			return unreachable(err)
+		}
+		return failWith(m.configRefused(ctx, c.ID, err), "load config: %v%s", err, m.keepsServing())
+	}
+	sum = sha256.Sum256(cfg)
+	key = hex.EncodeToString(sum[:]) + "|" + files + "|" + c.ID + "|" + c.StartedAt.String()
 	if m.o.CacheDir != "" {
 		if err := os.MkdirAll(m.o.CacheDir, 0o700); err == nil {
 			if err := atomicfile.Write(filepath.Join(m.o.CacheDir, CacheFile), cfg, 0o600); err != nil {
@@ -609,6 +631,37 @@ func (m *Manager) wafConfig(routes []Route, t TLS, render Options, c docker.Cont
 		return nil, "", 0, failedErr
 	}
 	return cfg, key, n, ""
+}
+
+// traceConfig renders the config with the request trace when the running
+// Caddy carries the module and the edge's key is usable. Otherwise, or when
+// Caddy already refused this exact config, it returns fallback, render
+// unchanged and key "".
+func (m *Manager) traceConfig(routes []Route, p *tlsPlan, render Options, c docker.Container, fallback []byte) ([]byte, Options, string) {
+	supported := TraceSupported(c.Labels)
+	m.mu.Lock()
+	if supported != m.traceSupport {
+		m.traceFailed = "" // another Caddy: try again
+	}
+	m.traceSupport = supported
+	failed := m.traceFailed
+	m.mu.Unlock()
+	if !supported || p.trace == nil {
+		return fallback, render, ""
+	}
+	traced := render
+	traced.Trace = p.trace
+	cfg, err := RenderTLS(routes, p.tls, traced)
+	if err != nil {
+		m.o.Log.Warn("request trace config not rendered; serving the routes without it", "err", err)
+		return fallback, render, ""
+	}
+	sum := sha256.Sum256(cfg)
+	key := hex.EncodeToString(sum[:]) + "|" + c.ID + "|" + c.StartedAt.String()
+	if key == failed {
+		return fallback, render, ""
+	}
+	return cfg, traced, key
 }
 
 func (m *Manager) setWafWanted(n int) {

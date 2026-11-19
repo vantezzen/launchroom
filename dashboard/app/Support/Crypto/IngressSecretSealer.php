@@ -15,7 +15,7 @@ use SensitiveParameter;
  * refuses it anywhere else. Only edge servers ever receive one (the
  * client_auth edge secret only the control-plane server), except the
  * fallback_channel secret of system.watchdog (the control-plane server and
- * its one peer).
+ * its one peer). Every edge gets its own trace key (docs/23 §4).
  */
 final class IngressSecretSealer
 {
@@ -29,9 +29,12 @@ final class IngressSecretSealer
     /** The secret of the watchdog's fallback channel (system.watchdog.fallback.secret): "url", or "password" and an optional "username". */
     public const string FALLBACK_CHANNEL = 'fallback_channel';
 
+    /** The edge's request trace key (docs/23 §4): "key" (32 bytes, base64) and "keyId" (decimal uint32). */
+    public const string TRACE = 'trace';
+
     /**
      * @param  string  $sealingKey  `x25519:<base64>` from enrollment
-     * @param  self::DNS|self::CERT_STORAGE|self::CLIENT_AUTH|self::FALLBACK_CHANNEL  $purpose
+     * @param  self::DNS|self::CERT_STORAGE|self::CLIENT_AUTH|self::FALLBACK_CHANNEL|self::TRACE  $purpose
      * @param  array<string, string>  $values
      */
     public static function seal(string $sealingKey, string $serverId, string $purpose, #[SensitiveParameter] array $values): string

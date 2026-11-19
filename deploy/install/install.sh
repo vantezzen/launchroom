@@ -869,20 +869,47 @@ receive() {
 
 move_state_file() { dc run --rm --no-deps --user 0 --entrypoint sh dashboard -c "[ ! -f /data/backups/move/$1 ] || cat /data/backups/move/$1"; }
 
+# move_prove_server: this machine's launchroomd already enrolled with the old
+# dashboard (a cancelled move keeps the server it joined, D103) and can't
+# enroll again, so the claim names that server and proves it with its
+# identity key. A one-off root container reads the key (root's, 0600) from
+# the read-only data folder; only the signature is left in the move's state.
+move_prove_server() {
+	dc run --rm -T --user 0 -e LR_MOVE_TOKEN -v "$DIR/data/daemon:/run/launchroom-server:ro" \
+		dashboard php artisan launchroom:move:receive --prove-server=/run/launchroom-server --json >/dev/null
+}
+
 # move_join: claims the move (both sides show a code the owner compares),
 # then enrolls this server's launchroomd with the OLD dashboard as a regular
-# server, so every app, database and volume can move here first.
+# server, so every app, database and volume can move here first. A machine
+# that is already a server of the old dashboard continues as that server.
 move_join() {
 	say "connecting to the old dashboard"
-	out="$(receive --join)" || die "could not join the move (see above). Run the same command again to retry."
+	unenroll="as root: cd $DIR && docker compose stop launchroomd && rm -rf data/daemon"
+	if [ -f "$DIR/data/daemon/enrollment.json" ]; then
+		say "this machine is already connected to launchroom; checking which server it is"
+		move_prove_server || die "could not read this machine's connection (see above). If it belongs to another launchroom, remove it ($unenroll), then run the same command again."
+	fi
+	out="$(receive --join)" || {
+		[ ! -f "$DIR/data/daemon/enrollment.json" ] ||
+			warn "if the old dashboard refused this machine's existing connection, remove it ($unenroll), then run the same command again."
+		die "could not join the move (see above). Run the same command again to retry."
+	}
 	url="$(printf '%s' "$out" | json_field url)"
 	[ -n "$url" ] || die "the old dashboard's address is unknown"
 	key="$(move_state_file cp-key)"
 	[ -n "$key" ] || die "the old dashboard did not name its signing key"
 	printf '%s\n' "$key" >"$DIR/data/daemon/cp-key"
+	connected="$(printf '%s' "$out" | json_field connected)"
 	token="$(move_state_file join-token)"
 	env_set LR_CONTROL_PLANE_URL "$url"
-	if [ -n "$token" ] && [ ! -f "$DIR/data/daemon/enrollment.json" ]; then
+	if [ -n "$connected" ]; then
+		say "this machine is already connected to $url as $connected. The move continues with that server."
+	elif [ -n "$token" ] && [ -f "$DIR/data/daemon/enrollment.json" ]; then
+		# An older dashboard: it issued a join token this launchroomd can't use.
+		dc run --rm --no-deps --user 0 --entrypoint rm dashboard -f /data/backups/move/join-token
+		die "this machine is already connected to launchroom, so it can't use the join token, and the old dashboard can't continue the move with it (it runs an older release). Cancel the move there, update the old dashboard, then start a new move."
+	elif [ -n "$token" ]; then
 		printf '%s\n' "$token" >"$DIR/data/daemon/join-token"
 		env_set LR_JOIN_TOKEN_FILE /data/join-token
 		say "starting launchroomd for $url"
@@ -898,7 +925,7 @@ move_join() {
 	fi
 	env_set LR_JOIN_TOKEN_FILE ""
 	dc up -d launchroomd
-	say "this server joined launchroom at $url."
+	[ -n "$connected" ] || say "this server joined launchroom at $url."
 }
 
 # move_handover: waits (the apps and data move meanwhile, driven from the old

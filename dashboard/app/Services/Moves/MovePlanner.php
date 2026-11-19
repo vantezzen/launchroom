@@ -172,6 +172,13 @@ final readonly class MovePlanner
             }
         }
 
+        // Every app built from a repository is deployed again on the target,
+        // and a deployment needs an online build server for the target's
+        // platform even when it reuses the image (BuildRouting::platformFor).
+        if ($rebuilds === [] && ($refusal = $this->buildBlocker($source, $target, $targetPlatform, services: $services)) !== null) {
+            $blockers[] = $refusal;
+        }
+
         // Disk space: the target holds the data, the dashboard each file while it passes through.
         $copyBytes = null;
         $unknown = false;
@@ -254,6 +261,60 @@ final readonly class MovePlanner
             $copyBytes,
             BackupDestination::defaultFor($source->team_id) instanceof BackupDestination,
         );
+    }
+
+    /**
+     * Why the apps built from a repository on $source can't be deployed on
+     * the target of a move, or null (docs/14 §13.3). Each one is deployed
+     * again there, and BuildRouting needs an online build server for the
+     * target's platform for that, even when the image is reused. Before the
+     * target exists (a control-plane move before its new server joined),
+     * $platform is its platform when known and $inheritsBuild says whether it
+     * gets the build role (it takes the dashboard server's roles): it then
+     * builds its own platform once it joined.
+     *
+     * @param  list<array{instance: ServiceInstance, kind: MoveItemKind, expectedBytes: int|null}>|null  $services
+     */
+    public function buildBlocker(Server $source, ?Server $target, ?string $platform = null, bool $inheritsBuild = false, ?array $services = null): ?string
+    {
+        $count = $this->builtApps($source, $services);
+
+        if ($count === 0) {
+            return null;
+        }
+
+        $platform = $target instanceof Server ? ServerPlatform::of($target) : $platform;
+        $builders = $this->routing->builders($source->team_id);
+        $ok = match (true) {
+            $target instanceof Server => $this->canBuild($source->team_id, $platform, $target),
+            $inheritsBuild => true,
+            $platform === null => $builders !== [],
+            default => array_any($builders, static fn (BuildCandidate $builder): bool => $builder->builds($platform)),
+        };
+
+        if ($ok) {
+            return null;
+        }
+
+        $apps = $count === 1 ? '1 app' : "{$count} apps";
+        $there = $target instanceof Server ? $target->name : 'the new server';
+        $fix = $target instanceof Server
+            ? "turn on Build for {$target->name} in Servers"
+            : "turn on Build for {$source->name} in Servers (the new server takes over its roles)";
+
+        return $builders === [] || $platform === null
+            ? "No build server is online. The move deploys {$apps} from {$source->name} again on {$there}, and each deployment needs one. Bring a build server online, or {$fix}."
+            : "No online build server builds {$platform} images. The move deploys {$apps} from {$source->name} again on {$there}, which runs {$platform}. Bring a {$platform} build server online, or {$fix}.";
+    }
+
+    /**
+     * How many apps built from a repository move off $source.
+     *
+     * @param  list<array{instance: ServiceInstance, kind: MoveItemKind, expectedBytes: int|null}>|null  $services
+     */
+    public function builtApps(Server $source, ?array $services = null): int
+    {
+        return count(array_filter($services ?? $this->services($source), static fn (array $entry): bool => $entry['instance']->service->kind === ServiceKind::App));
     }
 
     /**
@@ -403,13 +464,19 @@ final readonly class MovePlanner
         };
     }
 
-    private function canBuild(int $teamId, string $platform, ?Server $target): bool
+    /**
+     * Whether something online builds $platform (any platform when null):
+     * the team's build servers, or $target once it has the build role.
+     */
+    private function canBuild(int $teamId, ?string $platform, ?Server $target): bool
     {
-        if ($target instanceof Server && $target->hasRole(ServerRole::Build) && in_array($platform, ServerPlatform::buildable($target), true)) {
+        if ($target instanceof Server && $target->status === ServerStatus::Online && $target->hasRole(ServerRole::Build) && ($platform === null || in_array($platform, ServerPlatform::buildable($target), true))) {
             return true;
         }
 
-        return array_any($this->routing->builders($teamId), fn (BuildCandidate $builder): bool => $builder->builds($platform));
+        $builders = $this->routing->builders($teamId);
+
+        return $platform === null ? $builders !== [] : array_any($builders, static fn (BuildCandidate $builder): bool => $builder->builds($platform));
     }
 
     /**

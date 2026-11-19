@@ -503,6 +503,11 @@ final class NodeStateValidator
                 $this->add("{$p}.upstreams[{$j}].workload", "references unknown workload {$workload}");
             }
 
+            // The request trace's server (docs/23 §5): workload upstreams run on this server.
+            if (is_string($workload) && array_key_exists('server', $upstream)) {
+                $this->add("{$p}.upstreams[{$j}].server", 'is only allowed with address');
+            }
+
             $this->unique("{$p}.upstreams", $j, $this->str($workload).'|'.$this->str($upstream['port'] ?? null).'|'.$this->str($address), $upstreams);
         }
 

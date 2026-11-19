@@ -1,0 +1,18 @@
+{
+  "description": "No domain on the edge matched the host: no route, service or upstream.",
+  "keyId": 42,
+  "nonce": "a0a1a2a3a4a5a6a7a8a9aa04",
+  "payload": "0108000001a1f3ad8e7b02103f1c9a2e8b7d4e6fa5b4c3d2e1f00a1b03100000000000000000000000000007360e070347455408012f0901030a0201940b01060c0400000136",
+  "fields": {
+    "receivedAt": 1795089600123,
+    "requestId": "3f1c9a2e-8b7d-4e6f-a5b4-c3d2e1f00a1b",
+    "edge": "srv_0000000000000000000000EDGE",
+    "method": "GET",
+    "path": "/",
+    "protocol": 3,
+    "status": 404,
+    "origin": 6,
+    "edgeTime": 310
+  },
+  "header": "AQAAACqgoaKjpKWmp6ipqgRLepKI2tcw_Tgd0P1Mps34Xaw1G4B8dMoHeNL95ZMNVf1u2-edh_LLcaqcMHJhTIzyA6wkka1d7qkupiPp8PzTAjFHIxLlG-JVoXO387BnJ0zxrHqcfQ"
+}

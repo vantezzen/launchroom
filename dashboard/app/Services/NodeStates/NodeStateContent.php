@@ -568,7 +568,7 @@ final readonly class NodeStateContent
         $rendered = array_flip(array_map(static fn (WorkloadSpec $workload): string => $workload->id, $workloads));
         $edges = EdgeServers::ids($server->team_id);
 
-        /** @var array<int, array{environment: Environment, spec: ServiceSpec, upstreams: list<array{workload: string, port: int}|array{address: string}>, local: bool, remote: bool, servers: array<int, true>}> $byInstance */
+        /** @var array<int, array{instance: ServiceInstance, environment: Environment, spec: ServiceSpec, upstreams: list<array{workload: string, port: int}|array{address: string, server?: string}>, local: bool, remote: bool, servers: array<int, true>}> $byInstance */
         $byInstance = [];
         $skipped = [];
 
@@ -596,8 +596,9 @@ final readonly class NodeStateContent
                 continue;
             }
 
-            $byInstance[$instance->id] ??= ['environment' => $instance->environment, 'spec' => $spec, 'upstreams' => [], 'local' => false, 'remote' => false, 'servers' => []];
-            $byInstance[$instance->id]['upstreams'][] = $local ? ['workload' => $placement->workload_id, 'port' => $port] : ['address' => (string) $address];
+            $byInstance[$instance->id] ??= ['instance' => $instance, 'environment' => $instance->environment, 'spec' => $spec, 'upstreams' => [], 'local' => false, 'remote' => false, 'servers' => []];
+            // `server` names the replica's server in the request trace (docs/23 §5).
+            $byInstance[$instance->id]['upstreams'][] = $local ? ['workload' => $placement->workload_id, 'port' => $port] : ['address' => (string) $address, 'server' => $placement->server->public_id];
             $byInstance[$instance->id][$local ? 'local' : 'remote'] = true;
             $byInstance[$instance->id]['servers'][$placement->server_id] = true;
         }
@@ -606,7 +607,7 @@ final readonly class NodeStateContent
 
         $routes = [];
 
-        foreach ($byInstance as ['environment' => $environment, 'spec' => $spec, 'upstreams' => $upstreams, 'local' => $hasLocal, 'remote' => $hasRemote, 'servers' => $servers]) {
+        foreach ($byInstance as ['instance' => $instance, 'environment' => $environment, 'spec' => $spec, 'upstreams' => $upstreams, 'local' => $hasLocal, 'remote' => $hasRemote, 'servers' => $servers]) {
             $preferLocal = $hasLocal && $hasRemote && array_diff($edges, array_keys($servers)) === [];
 
             // Previews are protected (docs/06 §5); unprotectable ones aren't routed.
@@ -626,6 +627,7 @@ final readonly class NodeStateContent
                     upstreams: $upstreams,
                     protection: $protection,
                     loadBalancing: $preferLocal ? 'prefer_local' : null,
+                    service: $instance->public_id,
                 );
             }
         }
@@ -649,6 +651,7 @@ final readonly class NodeStateContent
                         $hosts,
                         onDemand: $canonical->kind === DomainKind::Custom,
                         indexed: $instance->environment->kind === EnvironmentKind::Production,
+                        service: $instance->public_id,
                     );
                 }
             }

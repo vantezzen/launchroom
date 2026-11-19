@@ -164,6 +164,30 @@ func authJS(f Facts) []Decision {
 	return ds
 }
 
+// nextAuthURL points AUTH_URL at the environment's public URL for Auth.js v5
+// in a standalone Next server. There every request URL is
+// http(s)://$HOSTNAME:$PORT (Next builds it from the address server.js
+// listens on, 0.0.0.0:3000, not from the Host header), and next-auth's
+// route handlers build their sign-in and callback URLs from it, so trusting
+// the forwarded host is not enough. v4 gets NEXTAUTH_URL from authJS.
+func nextAuthURL(f Facts) []Decision {
+	v, ok := f.PackageJSON.Dep("next-auth")
+	if !ok {
+		return nil
+	}
+	if locked := f.JS.Locked["next-auth"]; locked != "" {
+		v = locked
+	}
+	if ma, _, ok := majorMinor(v); ok && ma < 5 {
+		return nil
+	}
+	return []Decision{{
+		ID: "auth-url", Title: "AUTH_URL follows the domain",
+		Detail: "AUTH_URL is the environment's public URL: the standalone Next.js server sees its own address (0.0.0.0:3000) as the request URL, so Auth.js would send visitors there after sign-in. Sign-in goes through the primary domain.",
+		Effect: Effect{EnvAliases: []state.EnvAlias{{Name: "AUTH_URL", From: state.AliasPublicURL}}},
+	}}
+}
+
 type nextjs struct{}
 
 func (nextjs) Name() string { return "nextjs" }
@@ -296,6 +320,9 @@ func (nextjs) Propose(f Facts, _ Info) Proposal {
 		})
 	}
 	p.Decisions = append(p.Decisions, authJS(f)...)
+	if adapter != nil || hasStandalone(f.NextConfig) {
+		p.Decisions = append(p.Decisions, nextAuthURL(f)...)
+	}
 	p.Decisions = append(p.Decisions, basePathDecision("next.config", "basePath", basePath(f.NextConfig, "basePath"))...)
 	// The dashboard shows this only for more than one replica (it knows the count).
 	p.Warnings = append(p.Warnings, Warning{Code: "isr-cache-warning", Message: "With more than one replica, ISR and revalidateTag need a shared cache handler (e.g. Redis)."})

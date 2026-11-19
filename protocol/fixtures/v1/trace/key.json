@@ -1,0 +1,6 @@
+{
+  "description": "The test key of every fixture in this directory: AES-256 key 00 01 … 1f (standard base64, as in the IngressSecret value), key id 42, owned by the edge server below.",
+  "keyId": 42,
+  "key": "AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8=",
+  "edge": "srv_0000000000000000000000EDGE"
+}

@@ -438,6 +438,17 @@
               "type": "null"
             }
           ]
+        },
+        "trace": {
+          "oneOf": [
+            {
+              "$ref": "#/$defs/Sealed",
+              "description": "Trace is the edge's request trace key (docs/23 §4): a sealed\nIngressSecret (purpose \"trace\") with \"key\" (32 random bytes, standard\nbase64) and \"keyId\" (decimal 1–4294967295). The edge encrypts the\nLaunchroom-Trace header of every response with it. Omitted: no trace\nheader (daemon feature requestTrace)."
+            },
+            {
+              "type": "null"
+            }
+          ]
         }
       },
       "additionalProperties": false,
@@ -809,6 +820,11 @@
               "type": "null"
             }
           ]
+        },
+        "service": {
+          "type": "string",
+          "pattern": "^sin_[0-7][0-9A-HJKMNP-TV-Z]{25}$",
+          "description": "Service is the service instance the route serves; the edge writes it\ninto the request trace (docs/23, daemon feature requestTrace).\nOmitted on the dashboard's own routes."
         }
       },
       "additionalProperties": false,
@@ -829,6 +845,11 @@
               {
                 "required": [
                   "address"
+                ]
+              },
+              {
+                "required": [
+                  "server"
                 ]
               }
             ]
@@ -874,6 +895,11 @@
           "type": "string",
           "pattern": "^(?:[0-9]{1,3}(?:\\.[0-9]{1,3}){3}|\\[[0-9a-f:.]{2,45}\\]):[0-9]{1,5}$",
           "description": "Address is a mesh ip:port (cross-server upstream)."
+        },
+        "server": {
+          "type": "string",
+          "pattern": "^srv_[0-7][0-9A-HJKMNP-TV-Z]{25}$",
+          "description": "Server is the server behind address, written into the request trace\n(docs/23, daemon feature requestTrace). Only with address; workload\nupstreams run on this server."
         }
       },
       "additionalProperties": false,

@@ -31,6 +31,7 @@ jobs:
       dashboard: ${{ steps.filter.outputs.dashboard }}
       daemon: ${{ steps.filter.outputs.daemon }}
       cli: ${{ steps.filter.outputs.cli }}
+      caddy-module: ${{ steps.filter.outputs.caddy-module }}
       next-adapter: ${{ steps.filter.outputs.next-adapter }}
       site: ${{ steps.filter.outputs.site }}
 
@@ -75,6 +76,8 @@ jobs:
           # The CLI's models and enums are checked against the API's OpenAPI
           # document; its dotenv and config-file tests read shared vectors.
           area cli 'cli/|dashboard/resources/api/openapi\.json$|protocol/fixtures/cli/'
+          # The trace module's tests read the shared trace fixtures.
+          area caddy-module 'deploy/images/caddy/lrtrace/|protocol/fixtures/v1/trace/'
           area next-adapter 'packages/next-adapter/|daemon/internal/build/nextadapter/'
           # prebuild copies the installer and the JSON Schemas into site/public.
           area site 'site/|deploy/install/install\.sh$|protocol/schema/|dashboard/resources/schema/|dashboard/public/images/devices/'
@@ -377,6 +380,38 @@ jobs:
       - name: govulncheck
         run: go run golang.org/x/vuln/cmd/govulncheck@v1.9.0 ./...
 
+  # launchroom-caddy's request trace module (docs/23 §3): its own Go module.
+  caddy-module:
+    needs: changes
+    if: needs.changes.outputs.caddy-module == 'true'
+    runs-on: ubuntu-latest
+
+    defaults:
+      run:
+        working-directory: deploy/images/caddy/lrtrace
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Setup Go
+        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: deploy/images/caddy/lrtrace/go.mod
+          cache-dependency-path: deploy/images/caddy/lrtrace/go.sum
+
+      - name: Test
+        run: go test -race ./...
+
+      - name: Lint
+        uses: golangci/golangci-lint-action@ba0d7d2ec06a0ea1cb5fa41b2e4a3ab91d21278a # v9.3.0
+        with:
+          version: v2.15.0
+          working-directory: deploy/images/caddy/lrtrace
+          args: --config ${{ github.workspace }}/daemon/.golangci.yml
+
   protocol:
     needs: changes
     if: needs.changes.outputs.daemon == 'true'
@@ -578,6 +613,7 @@ jobs:
       - daemon
       - daemon-lint
       - cli
+      - caddy-module
       - protocol
       - deploy
       - next-adapter

@@ -25,6 +25,7 @@ import (
 	"github.com/vantezzen/launchroom/daemon/internal/ingress/caddy"
 	"github.com/vantezzen/launchroom/daemon/internal/names"
 	"github.com/vantezzen/launchroom/daemon/internal/policy"
+	"github.com/vantezzen/launchroom/daemon/internal/secret"
 	"github.com/vantezzen/launchroom/daemon/internal/state"
 	"github.com/vantezzen/launchroom/daemon/internal/traffic"
 	"github.com/vantezzen/launchroom/daemon/internal/waf"
@@ -49,9 +50,17 @@ type wafEdge struct {
 	access *traffic.Collector // the access log: request metrics (docs/15 §1)
 	offset *atomic.Int64
 	image  state.ImageRef
+	// spec is what the edge reads as NodeState.ingress (nil: none).
+	spec *atomic.Pointer[state.IngressSpec]
 }
 
 func setupWafEdge(t *testing.T) *wafEdge {
+	t.Helper()
+	return setupWafEdgeOpen(t, nil)
+}
+
+// setupWafEdgeOpen is setupWafEdge with ingress secrets opened by open.
+func setupWafEdgeOpen(t *testing.T, open func(e *env) func(state.Sealed, state.IngressSecretPurpose) (map[string]secret.Secret, error)) *wafEdge {
 	t.Helper()
 	api, err := client.New(client.FromEnv)
 	if err != nil {
@@ -81,12 +90,14 @@ func setupWafEdge(t *testing.T) *wafEdge {
 			t.Errorf("access log receiver: %v", err)
 		}
 	}()
-	e := setupEdge(t, caddy.Options{AccessLogAddress: wafAccessAddr}, nil, nil, func(mo *caddy.ManagerOptions, pol *policy.Config) {
+	spec := &atomic.Pointer[state.IngressSpec]{}
+	e := setupEdge(t, caddy.Options{AccessLogAddress: wafAccessAddr}, nil, open, func(mo *caddy.ManagerOptions, pol *policy.Config) {
 		pol.SystemImageDigests[names.SystemCaddy] = append(pol.SystemImageDigests[names.SystemCaddy], digest)
 		mo.WafLogAddress = wafLogAddr
 		mo.WafDropped = col.Dropped
+		mo.Spec = spec.Load
 	})
-	return &wafEdge{env: e, col: col, access: access, offset: offset, image: state.ImageRef("docker.io/library/launchroom-dev-caddy@" + digest)}
+	return &wafEdge{env: e, col: col, access: access, offset: offset, image: state.ImageRef("docker.io/library/launchroom-dev-caddy@" + digest), spec: spec}
 }
 
 // wafState is the env's NodeState with launchroom's Caddy and three routes

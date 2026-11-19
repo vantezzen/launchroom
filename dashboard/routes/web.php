@@ -33,6 +33,7 @@ use App\Http\Controllers\Teams\InvitationController;
 use App\Http\Controllers\Teams\MembershipController;
 use App\Http\Controllers\Teams\TeamController;
 use App\Http\Controllers\Teams\TeamSettingsController;
+use App\Http\Controllers\Traces\RequestTraceController;
 use App\Http\Middleware\LocalOnly;
 use App\Models\Volume;
 use App\Support\PublicId;
@@ -141,6 +142,11 @@ Route::middleware(['auth', 'verified'])->group(function (): void {
     Route::get('logs/-/download', [LogDownloadController::class, 'team'])
         ->middleware('throttle:10,1')
         ->name('logs.download');
+
+    // Request trace: paste a Launchroom-Trace header, see the request's path (docs/23 §6).
+    Route::get('trace', [RequestTraceController::class, 'show'])
+        ->middleware('throttle:30,1')
+        ->name('trace');
 
     // Design sheets: every primitive in both themes, and the visual
     // primitives with sample data (docs/design-system.md).

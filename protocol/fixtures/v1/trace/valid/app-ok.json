@@ -1,0 +1,24 @@
+{
+  "description": "The app answered 200 over HTTP/2 through another server (the usual case).",
+  "keyId": 42,
+  "nonce": "a0a1a2a3a4a5a6a7a8a9aa01",
+  "payload": "0108000001a1f3ad8e7b02103f1c9a2e8b7d4e6fa5b4c3d2e1f00a1b03100000000000000000000000000007360e0410000000000000000000000000000063410510000000000000000000000000000ced81061000000000000000000000000000055ac00703474554080a2f75736572732f3a69640901030a0200c80b01010c040000474a0d0400003e1c0e0200c80f0101",
+  "fields": {
+    "receivedAt": 1795089600123,
+    "requestId": "3f1c9a2e-8b7d-4e6f-a5b4-c3d2e1f00a1b",
+    "edge": "srv_0000000000000000000000EDGE",
+    "route": "rt_00000000000000000000000RT1",
+    "service": "sin_0000000000000000000000SVC1",
+    "upstreamServer": "srv_0000000000000000000000APP0",
+    "method": "GET",
+    "path": "/users/:id",
+    "protocol": 3,
+    "status": 200,
+    "origin": 1,
+    "edgeTime": 18250,
+    "upstreamTime": 15900,
+    "upstreamStatus": 200,
+    "attempts": 1
+  },
+  "header": "AQAAACqgoaKjpKWmp6ipqgHdEbAhIyKEybHBVFPDydgOMOEPafdfUKCMGHQBzW7pSCVnz6a6t9N4ilXQsHoKragCAktugdtqiD5ZCF6T_BvjNIH6laH-Oz011aFRJVkIvdE3Fm58ChOze0NkAZjeN_YFor-q5ZILVtZ-ENmtLNKxc9-rmR7UbWpaMG-SJAIv2luHkpKM1NZoT61aoiyWm-D4g3ho-vB4L-notw4YoWZSjRI"
+}

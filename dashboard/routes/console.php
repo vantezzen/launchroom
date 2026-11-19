@@ -70,6 +70,9 @@ Schedule::command('launchroom:mesh:maintain')->everyFiveMinutes()->withoutOverla
 // Automatic shared certificate storage: the Valkey ACL user lives in memory only (docs/05 §5).
 Schedule::command('launchroom:ingress:cert-storage-user')->everyMinute()->withoutOverlapping(10);
 
+// Request trace keys: one per edge, rotated every 30 days, readable 90 days (docs/23 §4).
+Schedule::command('launchroom:traces:keys')->hourlyAt(13)->withoutOverlapping(60);
+
 // Usage metrics: 10-minute and daily rollups, retention 48 h / 30 days / 1 year (docs/07);
 // request analytics: hourly and daily rollups, retention 48 h / 7 days / 90 days (docs/15 §5.3);
 // web firewall: hourly rollups, retention 7 / 90 days, events 7 days (docs/22 §6.5).

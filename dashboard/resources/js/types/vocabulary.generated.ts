@@ -520,6 +520,30 @@ export const vocabulary = {
         developer: { label: 'Developer', summary: 'Deploys and edits projects', takesGrants: true },
         viewer: { label: 'Viewer', summary: 'Can view everything but not change it', takesGrants: false },
     },
+    Traces: {
+        TraceFailure: {
+            refused: { label: 'Connection refused' },
+            timeout: { label: 'Timed out' },
+            no_healthy_upstream: { label: 'No healthy replica' },
+            transport: { label: 'Connection error' },
+            client_closed: { label: 'Visitor closed the connection' },
+        },
+        TraceFirewallOutcome: {
+            clean: { label: 'Passed' },
+            detected: { label: 'Would have been blocked' },
+            blocked: { label: 'Blocked' },
+        },
+        TraceOrigin: {
+            app: { label: 'The app' },
+            firewall: { label: 'The firewall' },
+            upstream_failure: { label: 'The edge (app unreachable)' },
+            stopped: { label: 'The edge (service stopped)' },
+            redirect: { label: 'The edge (redirect)' },
+            no_route: { label: 'The edge (no app at this address)' },
+            access_refused: { label: 'The edge (access refused)' },
+            edge: { label: 'The edge' },
+        },
+    },
     Transfers: {
         ExportRunStatus: {
             preparing: { isTerminal: false },

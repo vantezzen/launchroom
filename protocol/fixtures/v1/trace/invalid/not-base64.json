@@ -1,0 +1,5 @@
+{
+  "description": "Not base64url at all (decoders refuse before anything else).",
+  "reason": "format",
+  "header": "AQAAACo+/!not a trace"
+}

@@ -202,6 +202,14 @@ function MoveSteps({
                                     <span className="type-small text-muted-foreground">
                                         {check.message}
                                     </span>
+                                    {check.href !== null && (
+                                        <Link
+                                            href={check.href}
+                                            className="type-small underline underline-offset-4"
+                                        >
+                                            {check.hrefLabel ?? 'Open'}
+                                        </Link>
+                                    )}
                                 </span>
                             </li>
                         ))}
@@ -274,14 +282,38 @@ function MoveSteps({
                         </>
                     )}
                     {status === 'claimed' && move !== null && (
-                        <ClaimApproval move={move} />
+                        <ClaimApproval
+                            move={move}
+                            blockers={preflight.filter(
+                                (check) => check.status === 'blocker',
+                            )}
+                        />
                     )}
-                    {status === 'joining' && (
-                        <p className="flex items-center gap-2 type-body">
-                            <Spinner />
-                            {target} is connecting.
-                        </p>
-                    )}
+                    {status === 'joining' &&
+                        (move?.error ? (
+                            <div
+                                role="status"
+                                className="flex gap-3 rounded-xl border px-4 py-3"
+                            >
+                                <TriangleAlert
+                                    aria-hidden="true"
+                                    className="mt-0.5 size-4 shrink-0 text-status-progress"
+                                />
+                                <span className="flex flex-col gap-1">
+                                    <span className="type-body font-medium">
+                                        {target} hasn’t connected yet
+                                    </span>
+                                    <span className="type-small text-muted-foreground">
+                                        {move.error}
+                                    </span>
+                                </span>
+                            </div>
+                        ) : (
+                            <p className="flex items-center gap-2 type-body">
+                                <Spinner />
+                                {target} is connecting.
+                            </p>
+                        ))}
                     {reached(status, 'joined') && (
                         <p className="type-body text-muted-foreground">
                             {target} is connected as a server of this dashboard
@@ -407,8 +439,15 @@ function MoveSteps({
     );
 }
 
-function ClaimApproval({ move }: { move: Move }) {
+function ClaimApproval({
+    move,
+    blockers,
+}: {
+    move: Move;
+    blockers: App.Data.Moves.MovePreflightCheckData[];
+}) {
     const [code, setCode] = useState('');
+    const connected = move.target;
 
     return (
         <div className="flex flex-col gap-4">
@@ -421,7 +460,42 @@ function ClaimApproval({ move }: { move: Move }) {
                     {move.receiverArch}
                     {move.receiverAddress}
                 </MetaLine>
+                {connected !== null && (
+                    <span className="type-small">
+                        The new server is already connected as{' '}
+                        <span className="font-medium">{connected.name}</span>.
+                        The move continues with it, without joining again.
+                    </span>
+                )}
             </div>
+            {blockers.map((check) => (
+                <div
+                    key={check.key}
+                    role="alert"
+                    className="flex gap-3 rounded-xl border px-4 py-3"
+                >
+                    {checkIcons.blocker}
+                    <span className="flex min-w-0 flex-col gap-1">
+                        <span className="type-body font-medium">
+                            {check.label}
+                            <span className="sr-only">
+                                : {checkWords.blocker}
+                            </span>
+                        </span>
+                        <span className="type-small text-muted-foreground">
+                            {check.message}
+                        </span>
+                        {check.href !== null && (
+                            <Link
+                                href={check.href}
+                                className="type-small underline underline-offset-4"
+                            >
+                                {check.hrefLabel ?? 'Open'}
+                            </Link>
+                        )}
+                    </span>
+                </div>
+            ))}
             <p className="max-w-[65ch] type-body">
                 Type the code the new server’s terminal shows. It only matches
                 if the machine that claimed the move is yours. If the terminal
@@ -449,10 +523,16 @@ function ClaimApproval({ move }: { move: Move }) {
                             />
                             <Button
                                 type="submit"
-                                disabled={processing || code.trim() === ''}
+                                disabled={
+                                    processing ||
+                                    code.trim() === '' ||
+                                    blockers.length > 0
+                                }
                             >
                                 {processing && <Spinner />}
-                                Connect the server
+                                {connected !== null
+                                    ? `Continue with ${connected.name}`
+                                    : 'Connect the server'}
                             </Button>
                         </div>
                         <InputError message={errors.code} />

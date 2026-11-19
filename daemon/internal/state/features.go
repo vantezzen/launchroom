@@ -101,6 +101,13 @@ const (
 	FeatureWaf DaemonFeature = "waf"
 )
 
+// FeatureRequestTrace announces NodeState.ingress.trace, RouteSpec.service
+// and RouteSpec.upstreams[].server: the edge writes an encrypted
+// Launchroom-Trace header on every response (docs/23). Announced only while
+// the running Caddy image carries the trace module (image label
+// io.vantezzen.launchroom.trace=1).
+const FeatureRequestTrace DaemonFeature = "requestTrace"
+
 // FeatureServiceStop announces RouteSpec.stopped: the edge answers a stopped
 // service's domains with its "stopped" page (D68).
 const FeatureServiceStop DaemonFeature = "serviceStop"

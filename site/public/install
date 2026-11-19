@@ -1249,7 +1249,10 @@ main() {
 		enroll_local_daemon
 	fi
 	rm -rf "$DIR/.tmp"
-	finish
+	# Handed over by this installer (supervised_update): the installer on
+	# the host prints the summary once the supervisor is done (a second
+	# setup link here would already be replaced by then).
+	[ "${LR_INSTALL_SUPERVISED:-}" = 1 ] || finish
 }
 
 main "$@"

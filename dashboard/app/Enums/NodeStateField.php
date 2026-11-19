@@ -28,6 +28,9 @@ enum NodeStateField: string
     case HealthHost = 'workloads[].health.host';
     case HealthRestartAfter = 'workloads[].health.restartAfter';
     case MountInitOwner = 'workloads[].mounts[].initOwner';
+    case IngressTrace = 'ingress.trace';
+    case RouteService = 'routes[].service';
+    case RouteUpstreamServer = 'routes[].upstreams[].server';
 
     public function feature(): DaemonFeature
     {
@@ -49,6 +52,7 @@ enum NodeStateField: string
             self::HealthHost => DaemonFeature::ProbeHost,
             self::HealthRestartAfter => DaemonFeature::LivenessRestart,
             self::MountInitOwner => DaemonFeature::VolumeInitOwner,
+            self::IngressTrace, self::RouteService, self::RouteUpstreamServer => DaemonFeature::RequestTrace,
         };
     }
 
@@ -62,14 +66,15 @@ enum NodeStateField: string
      * routes); generated domains get no wildcard certificate from a DNS
      * provider the daemon doesn't know; the watchdog is off; the probe
      * sends the container address as Host and never restarts; a new volume
-     * keeps Docker's owner.
+     * keeps Docker's owner; responses carry no request trace.
      */
     public function downgrade(): FeatureDowngrade
     {
         return match ($this) {
             self::LinkProbe, self::ControlPlane, self::RouteClientAuth, self::RouteWaf,
             self::WorkloadShipLogs, self::WorkloadFiles, self::SystemWatchdog, self::HealthHost,
-            self::HealthRestartAfter, self::MountInitOwner => FeatureDowngrade::DropField,
+            self::HealthRestartAfter, self::MountInitOwner, self::IngressTrace, self::RouteService,
+            self::RouteUpstreamServer => FeatureDowngrade::DropField,
             self::PreparedVolume => FeatureDowngrade::DropItem,
             self::RouteStopped, self::SharedVolume, self::WorkloadSchedule, self::WorkloadStop,
             self::WorkloadWalArchive, self::IngressDnsProvider => FeatureDowngrade::RenderWithout,

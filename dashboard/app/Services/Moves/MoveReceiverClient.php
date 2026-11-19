@@ -50,7 +50,7 @@ final readonly class MoveReceiverClient
     }
 
     /**
-     * @param  array{publicKey: string, hostname: string, arch: string, version: string|null}  $receiver
+     * @param  array{publicKey: string, hostname: string, arch: string, version: string|null, serverId?: string, serverProof?: string}  $receiver
      * @return array<string, mixed>
      */
     public function claim(array $receiver): array

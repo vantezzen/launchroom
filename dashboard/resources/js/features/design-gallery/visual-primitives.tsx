@@ -35,6 +35,7 @@ import {
 import { QueryBar } from '@/features/log-explorer/query-bar';
 import type { LogEntry, LogLevel } from '@/features/log-explorer/types';
 import type { QueryKey } from '@/features/log-explorer/query';
+import { TraceGallery } from '@/features/request-trace/trace-gallery';
 
 /*
  * Showcase of the visual primitives with fixed sample data
@@ -951,6 +952,18 @@ function MapSection() {
     );
 }
 
+function TraceSection() {
+    return (
+        <Section
+            id="trace"
+            title="Request trace"
+            description="A request's path through the edge and app servers, one per way it can end; drawn on once."
+        >
+            <TraceGallery />
+        </Section>
+    );
+}
+
 export const VISUAL_SECTIONS = [
     'devices',
     'metrics',
@@ -959,6 +972,7 @@ export const VISUAL_SECTIONS = [
     'steps',
     'logs',
     'map',
+    'trace',
 ];
 
 export default function VisualPrimitives() {
@@ -971,6 +985,7 @@ export default function VisualPrimitives() {
             <StepsSection />
             <LogsSection />
             <MapSection />
+            <TraceSection />
         </div>
     );
 }

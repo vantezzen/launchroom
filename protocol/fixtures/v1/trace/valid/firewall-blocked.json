@@ -1,0 +1,21 @@
+{
+  "description": "The firewall (Block) refused a POST over HTTP/1.1 with three detection rules; no upstream fields.",
+  "keyId": 42,
+  "nonce": "a0a1a2a3a4a5a6a7a8a9aa02",
+  "payload": "0108000001a1f3ad8e7b02103f1c9a2e8b7d4e6fa5b4c3d2e1f00a1b03100000000000000000000000000007360e0410000000000000000000000000000063410510000000000000000000000000000ced810704504f535408062f6c6f67696e0901020a0201930b01020c0400000960110f02020f000e6014000e3940000e5c2c",
+  "fields": {
+    "receivedAt": 1795089600123,
+    "requestId": "3f1c9a2e-8b7d-4e6f-a5b4-c3d2e1f00a1b",
+    "edge": "srv_0000000000000000000000EDGE",
+    "route": "rt_00000000000000000000000RT1",
+    "service": "sin_0000000000000000000000SVC1",
+    "method": "POST",
+    "path": "/login",
+    "protocol": 2,
+    "status": 403,
+    "origin": 2,
+    "edgeTime": 2400,
+    "firewall": {"mode": 2, "outcome": 2, "score": 15, "rules": [942100, 932160, 941100]}
+  },
+  "header": "AQAAACqgoaKjpKWmp6ipqgLYungHBNOIJc4QYISnRmpKvohn9MqOTihtpr1-hh_RNmys483gwlo4Hv5145d8hbUmH4jv5ji42avMeJY47tH-WGLFfYNftL4Mjr23JWRDHsdblL1k0G_KBEtzFS5STTtOs2qjZGUGipnVBZTNq0VkG4U5xj9-tzJfDrQo5f7XHewZd_BxzO-oIcMOjEkAUE0L"
+}

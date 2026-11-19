@@ -13,6 +13,7 @@ use App\Support\Hostname;
  * for hosts that are not under the platform domain or are immutable
  * deployment URLs, ACME otherwise), the www redirect to the canonical host
  * and `X-Robots-Tag: noindex` on every non-production host (docs/06 §5).
+ * `$service` is the `sin_` id the request trace names (docs/23 §5).
  */
 final class DomainRoute
 {
@@ -20,7 +21,7 @@ final class DomainRoute
 
     /**
      * @param  list<string>  $hosts  the canonical host and its aliases
-     * @param  list<array{workload: string, port: int}|array{address: string}>  $upstreams
+     * @param  list<array{workload: string, port: int}|array{address: string, server?: string}>  $upstreams
      * @param  array{forwardAuth: array{url: string, stripHeaders?: list<string>}}|null  $protection
      */
     public static function serving(
@@ -32,6 +33,7 @@ final class DomainRoute
         array $upstreams,
         ?array $protection = null,
         ?string $loadBalancing = null,
+        ?string $service = null,
     ): RouteSpec {
         return new RouteSpec(
             id: $id,
@@ -42,6 +44,7 @@ final class DomainRoute
             headers: $indexed ? null : [self::NOINDEX_HEADER => 'noindex'],
             protection: $protection,
             loadBalancing: $loadBalancing,
+            service: $service,
         );
     }
 
@@ -51,9 +54,9 @@ final class DomainRoute
      *
      * @param  list<string>  $hosts
      */
-    public static function stopped(string $id, string $canonical, array $hosts, bool $onDemand, bool $indexed): RouteSpec
+    public static function stopped(string $id, string $canonical, array $hosts, bool $onDemand, bool $indexed, ?string $service = null): RouteSpec
     {
-        $route = self::serving($id, $canonical, $hosts, $onDemand, $indexed, []);
+        $route = self::serving($id, $canonical, $hosts, $onDemand, $indexed, [], service: $service);
         $route->stopped = true;
 
         return $route;

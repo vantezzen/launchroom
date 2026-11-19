@@ -227,6 +227,14 @@ test-cli: dev/.env go-image ## CLI: go test -race ./... (cli/)
 lint-cli: dev/.env ## CLI: golangci-lint run (cli/)
 	$(COMPOSE) run --rm --no-deps -w /src/cli golangci-lint golangci-lint run ./...
 
+# launchroom-caddy's request trace module (deploy/images/caddy/lrtrace,
+# docs/23 §3): its own Go module, tested in the same Go tools container.
+test-caddy-module: dev/.env go-image ## launchroom-caddy trace module: go test -race ./... (deploy/images/caddy/lrtrace)
+	$(COMPOSE) run --rm --no-deps -w /src/deploy/images/caddy/lrtrace go go test -race ./...
+
+lint-caddy-module: dev/.env ## launchroom-caddy trace module: golangci-lint run (deploy/images/caddy/lrtrace)
+	$(COMPOSE) run --rm --no-deps -w /src/deploy/images/caddy/lrtrace golangci-lint golangci-lint run --config /src/daemon/.golangci.yml ./...
+
 # CLI_OS/CLI_ARCH default to this machine (cross-compiled in Linux, CGO off).
 CLI_OS   ?= $(shell uname -s | tr '[:upper:]' '[:lower:]')
 CLI_ARCH ?= $(shell uname -m | sed -e 's/x86_64/amd64/' -e 's/aarch64/arm64/')

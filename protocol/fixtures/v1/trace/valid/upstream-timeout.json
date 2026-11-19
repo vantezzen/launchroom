@@ -1,0 +1,23 @@
+{
+  "description": "The edge answered 504 after three attempts timed out.",
+  "keyId": 42,
+  "nonce": "a0a1a2a3a4a5a6a7a8a9aa03",
+  "payload": "0108000001a1f3ad8e7b02103f1c9a2e8b7d4e6fa5b4c3d2e1f00a1b03100000000000000000000000000007360e0410000000000000000000000000000063410510000000000000000000000000000ced81061000000000000000000000000000055ac00703474554080b2f6170692f7265706f72740901030a0201f80b01030c04004c7b790f0103100102",
+  "fields": {
+    "receivedAt": 1795089600123,
+    "requestId": "3f1c9a2e-8b7d-4e6f-a5b4-c3d2e1f00a1b",
+    "edge": "srv_0000000000000000000000EDGE",
+    "route": "rt_00000000000000000000000RT1",
+    "service": "sin_0000000000000000000000SVC1",
+    "upstreamServer": "srv_0000000000000000000000APP0",
+    "method": "GET",
+    "path": "/api/report",
+    "protocol": 3,
+    "status": 504,
+    "origin": 3,
+    "edgeTime": 5012345,
+    "attempts": 3,
+    "failure": 2
+  },
+  "header": "AQAAACqgoaKjpKWmp6ipqgOPFl6D7rqKs7VnDykJb-m0Yfr0kgXxmqjOjkt3W7zDqVbasj-3DYJ-pC4pzn3l-96yeav6Ussj0QlyIBuITbc9W6eCsbxQp6UFVrrGwaiRek-SWWJoV1JgN7-V7p699wCaF0uEZhIxTMLPNq0g9C9Oa2iwzIoupr6AOA_qxWPaYTjB9nEtWP2i7qL2wUs-_GTCXDEZ1msGJnxr7hs"
+}

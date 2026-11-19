@@ -8,9 +8,12 @@ use App\Data\Protocol\V1\IngressSpec;
 use App\Enums\DnsProvider;
 use App\Enums\IngressCredentialPurpose;
 use App\Enums\NodeStateField;
+use App\Enums\ServerRole;
 use App\Models\InstanceSettings;
 use App\Models\Server;
+use App\Models\Traces\TraceKey;
 use App\Services\NodeStates\FeatureGate;
+use App\Services\Traces\TraceKeys;
 use App\Support\Crypto\IngressSecretSealer;
 use App\Support\Hostname;
 use App\Support\Network\IpClassifier;
@@ -21,7 +24,8 @@ use App\Support\Network\IpClassifier;
  * platform domain, with credentials sealed to that edge only, and only to
  * edges an instance owner admitted (Server::isSharedEdge). Nothing is
  * sent unless the edge Caddy image has the modules (config
- * `launchroom.ingress.caddy_modules`).
+ * `launchroom.ingress.caddy_modules`). Every edge gets its own request
+ * trace key (docs/23 §4; dropped for servers without `requestTrace`).
  */
 final readonly class EdgeIngress
 {
@@ -31,6 +35,7 @@ final readonly class EdgeIngress
         private IngressSecrets $secrets,
         private DnsCredentials $dnsCredentials,
         private CertStorage $certStorage,
+        private TraceKeys $traceKeys,
     ) {}
 
     public function modulesAvailable(): bool
@@ -108,18 +113,43 @@ final readonly class EdgeIngress
     }
 
     /**
-     * Only for shared edges (the control plane, or admitted by an instance
-     * owner): these credentials are install-wide (docs/09 R14, review M2).
+     * Storage and DNS only for shared edges (the control plane, or admitted
+     * by an instance owner): these credentials are install-wide (docs/09
+     * R14, review M2). The trace key belongs to the edge alone.
      */
     public function for(Server $server): ?IngressSpec
     {
-        if (! $server->isSharedEdge()) {
+        $shared = $server->isSharedEdge();
+        $spec = new IngressSpec(
+            storage: $shared ? $this->storage($server) : null,
+            dns: $shared ? $this->dns($server) : null,
+            trace: $this->trace($server),
+        );
+
+        return $spec->isEmpty() ? null : $spec;
+    }
+
+    /**
+     * The edge's current trace key, sealed to it (values `key`, `keyId`).
+     * Provisioned outside rendering (App\Actions\Traces\ProvisionTraceKeys).
+     *
+     * @return array{sealed: string, fingerprint: string}|null
+     */
+    private function trace(Server $server): ?array
+    {
+        $key = $server->hasRole(ServerRole::Edge) ? $this->traceKeys->current($server) : null;
+
+        if (! $key instanceof TraceKey) {
             return null;
         }
 
-        $spec = new IngressSpec(storage: $this->storage($server), dns: $this->dns($server));
-
-        return $spec->isEmpty() ? null : $spec;
+        return [
+            'sealed' => IngressSecretSealer::seal($server->sealing_public_key, $server->public_id, IngressSecretSealer::TRACE, [
+                'key' => $this->traceKeys->encoded($key),
+                'keyId' => (string) $key->id,
+            ]),
+            'fingerprint' => TraceKeys::fingerprint($key),
+        ];
     }
 
     /**

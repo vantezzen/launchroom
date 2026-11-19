@@ -9,6 +9,7 @@ use App\Data\Moves\MovePreflightCheckData;
 use App\Data\Moves\MoveServerData;
 use App\Data\Moves\ServerMoveData;
 use App\Enums\Moves\ControlPlaneMoveStatus;
+use App\Enums\ServerRole;
 use App\Enums\ServerStatus;
 use App\Models\Backups\BackupDestination;
 use App\Models\InstanceSettings;
@@ -23,6 +24,7 @@ use App\Services\Transfers\TransferStore;
 use App\Support\ByteSize;
 use App\Support\Hostname;
 use App\Support\InstallCommands;
+use App\Support\ServerPlatform;
 use Inertia\Inertia;
 
 /**
@@ -56,9 +58,9 @@ final readonly class ControlPlaneMovePage
             'server' => $source instanceof Server ? MoveServerData::fromServer($source) : null,
             // Shown once, right after the move started.
             'command' => $token === null ? null : $this->command($token, $version),
-            'preflight' => $this->preflight($source),
+            'preflight' => $this->preflight($source, $move?->status->isOpen() === true ? $move : null),
             'plan' => $planned ? $this->planner->plan($move->source, $move->target, true) : null,
-            'dns' => Inertia::defer(fn (): array => $move instanceof ControlPlaneMove && $move->source instanceof Server && $move->target instanceof Server && $move->status->isOpen()
+            'dns' => Inertia::defer(fn (): array => $move instanceof ControlPlaneMove && $move->source instanceof Server && $move->target instanceof Server && $move->status->isOpen() && ! in_array($move->status, [ControlPlaneMoveStatus::Claimed, ControlPlaneMoveStatus::Joining], true)
                 ? $this->planner->plan($move->source, $move->target, true, checkDns: true)->dns
                 : []),
             'serverMove' => $serverMove instanceof ServerMove ? ServerMoveData::fromMove($serverMove) : null,
@@ -76,7 +78,7 @@ final readonly class ControlPlaneMovePage
     /**
      * @return list<MovePreflightCheckData>
      */
-    private function preflight(?Server $source): array
+    private function preflight(?Server $source, ?ControlPlaneMove $move): array
     {
         $checks = [];
         $url = $this->origin->canonical();
@@ -111,6 +113,10 @@ final readonly class ControlPlaneMovePage
             ? 'Data passes through this server’s disk one service at a time.'
             : 'Data passes through this server’s disk one service at a time; '.ByteSize::format($free).' are free.');
 
+        if ($source instanceof Server && ($builds = $this->builds($source, $move)) instanceof MovePreflightCheckData) {
+            $checks[] = $builds;
+        }
+
         $mesh = $settings->mesh_enabled_at !== null || config()->boolean('launchroom.mesh.auto_enable');
         $checks[] = new MovePreflightCheckData('mesh', 'Private network', $mesh ? 'ok' : 'blocker', $mesh
             ? 'Servers use the private network while apps move. It turns on automatically when the new server joins.'
@@ -129,5 +135,40 @@ final readonly class ControlPlaneMovePage
         }
 
         return $checks;
+    }
+
+    /**
+     * Apps built from a repository are deployed again on the new server, and
+     * each deployment needs an online build server (docs/14 §13.3). Before
+     * the new server joined it is checked as far as it is known: it takes
+     * over the dashboard server's roles, and its architecture is known once
+     * it claimed the move. Checked again when the move starts, when the code
+     * is confirmed and before the apps move.
+     */
+    private function builds(Server $source, ?ControlPlaneMove $move): ?MovePreflightCheckData
+    {
+        $services = $this->planner->services($source);
+
+        if ($this->planner->builtApps($source, $services) === 0) {
+            return null;
+        }
+
+        $target = $move?->target;
+        $arch = $move?->receiver?->arch;
+        $refusal = $this->planner->buildBlocker(
+            $source,
+            $target instanceof Server ? $target : null,
+            is_string($arch) ? ServerPlatform::fromArch($arch) : null,
+            $source->hasRole(ServerRole::Build),
+            $services,
+        );
+
+        if ($refusal !== null) {
+            return new MovePreflightCheckData('builds', 'Builds', 'blocker', $refusal, route('servers.index', absolute: false), 'Open Servers');
+        }
+
+        return new MovePreflightCheckData('builds', 'Builds', 'ok', $source->hasRole(ServerRole::Build)
+            ? "Your apps are deployed again on the new server. {$source->name} builds them meanwhile, and the new server takes over that role."
+            : 'Your apps are deployed again on the new server, built by your build servers.');
     }
 }

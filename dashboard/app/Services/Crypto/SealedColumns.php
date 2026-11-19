@@ -18,6 +18,7 @@ use App\Models\Mesh\MeshCredential;
 use App\Models\ProjectKey;
 use App\Models\Registry\RegistryCredential;
 use App\Models\Registry\RegistryStorage;
+use App\Models\Traces\TraceKey;
 use App\Models\Transfers\DataTransfer;
 use Illuminate\Database\Eloquent\Model;
 use JsonException;
@@ -49,6 +50,7 @@ final readonly class SealedColumns
         AiProviderSettings::class,
         DataTransfer::class,
         RegistryCredential::class,
+        TraceKey::class,
     ];
 
     public function __construct(

@@ -36,11 +36,26 @@ deploy_project() {
 	if [ "$DATABASE" = 1 ]; then db=""; else db="--without-database"; fi
 	out="$(art launchroom:dev:deploy-app --name="$1" --fixture="$CASE" --branch="$2" $db --replace --json 2>&1 | tail -n 1)"
 	PROJECT_ID="$(printf '%s' "$out" | json_field project)"
+	APP_SERVICE_ID="$(printf '%s' "$out" | json_field app)"
 	INSTANCE_ID="$(printf '%s' "$out" | json_field appInstance)"
 	DEPLOYMENT_ID="$(printf '%s' "$out" | sed -n 's/.*"deployments":\["\([^"]*\)".*/\1/p')"
 	HOST="$(printf '%s' "$out" | sed -n 's/.*"hostnames":\["\([^"]*\)".*/\1/p')"
 	[ -n "$PROJECT_ID" ] && [ -n "$INSTANCE_ID" ] && [ -n "$DEPLOYMENT_ID" ] && [ -n "$HOST" ] || { DETAIL="$out"; return 1; }
 }
+
+# root_dir_deploy DIR: points the app of the last deployed project at DIR
+# of its repository (Settings → Root directory) and deploys production again.
+# Sets DEPLOYMENT_ID. Stand-in for a --root option of launchroom:dev:deploy-app.
+root_dir_deploy() {
+	ok="$(tinker '$s = App\Models\Service::query()->where("public_id", "'"$APP_SERVICE_ID"'")->sole();
+app(App\Actions\Services\ChangeRootDirectory::class)->handle($s, "'"$1"'");
+echo "LR:ok\n";')"
+	[ "$ok" = ok ] || { DETAIL="could not set the root directory to $1"; return 1; }
+	redeploy "$PROJECT_ID" || { DETAIL="redeploy after setting the root directory failed"; return 1; }
+}
+
+# root_dir_deployed DIR: root_dir_deploy, then waits until that deployment is active.
+root_dir_deployed() { root_dir_deploy "$1" && wait_deployment "$INSTANCE_ID" "$DEPLOYMENT_ID"; }
 
 # wait_deployment INSTANCE DEPLOYMENT: until it is active (0) or ends otherwise (1).
 wait_deployment() {
@@ -205,7 +220,7 @@ todo() {
 
 run_case() {
 	CASE=$1
-	GAPS="" DATABASE=0 PREVIEW_BRANCH=main PROBE=0 SKIP="" BRANCH=main
+	GAPS="" DATABASE=0 PREVIEW_BRANCH=main PROBE=0 SKIP="" BRANCH=main ROOT_DIR=""
 	APP="" PREVIEW="" PROBE_HOST=""
 	check_main() { :; }
 	check_preview() { :; }
@@ -228,7 +243,13 @@ run_case() {
 	fi
 	APP=$HOST
 	MAIN_PROJECT=$PROJECT_ID
-	expect "$GAPS" "deploys green with no settings ($APP)" wait_deployment "$INSTANCE_ID" "$DEPLOYMENT_ID"
+	if [ -n "$ROOT_DIR" ]; then
+		# A monorepo: the root holds no single app to start, so the app is
+		# imported with its folder as the root directory (the only setting).
+		expect "$GAPS" "deploys green with root directory $ROOT_DIR ($APP)" root_dir_deployed "$ROOT_DIR"
+	else
+		expect "$GAPS" "deploys green with no settings ($APP)" wait_deployment "$INSTANCE_ID" "$DEPLOYMENT_ID"
+	fi
 	ok=$?
 	build_log "$INSTANCE_ID" "$DEPLOYMENT_ID"
 	if grep -q "^FAIL	[^	]*	$CASE	deploys green" "$RESULTS"; then

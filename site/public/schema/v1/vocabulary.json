@@ -117,6 +117,7 @@
     "remoteAccessSsh",
     "remoteAccessVolume",
     "requestAnalytics",
+    "requestTrace",
     "serviceStop",
     "sharedVolumes",
     "shipLogs",
@@ -127,8 +128,11 @@
     "watchdog"
   ],
   "fieldFeatures": {
+    "NodeState.ingress.trace": "requestTrace",
     "NodeState.routes[].clientAuth": "clientCertificates",
+    "NodeState.routes[].service": "requestTrace",
     "NodeState.routes[].stopped": "serviceStop",
+    "NodeState.routes[].upstreams[].server": "requestTrace",
     "NodeState.routes[].waf": "waf",
     "NodeState.system.controlPlane": "controlPlaneUrl",
     "NodeState.system.linkProbe": "linkProbe",

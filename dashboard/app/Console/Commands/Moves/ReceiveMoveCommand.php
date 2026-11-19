@@ -5,12 +5,14 @@ declare(strict_types=1);
 namespace App\Console\Commands\Moves;
 
 use App\Contracts\ControlPlaneDumps;
+use App\Models\Server;
 use App\Services\Backups\ControlPlaneKeyBundle;
 use App\Services\Backups\RestoredKeyFiles;
 use App\Services\Moves\HandoverStore;
 use App\Services\Moves\MoveReceiverClient;
 use App\Services\Moves\MoveToken;
 use App\Support\Crypto\PublicKeyFormat;
+use App\Support\PublicId;
 use Illuminate\Console\Attributes\Description;
 use Illuminate\Console\Attributes\Signature;
 use Illuminate\Console\Command;
@@ -37,7 +39,14 @@ use Throwable;
  *             `launchroom:restore` does);
  * --complete  tell the old dashboard the new one runs (it stays frozen
  *             and points browsers here);
- * --abort     tell it the hand-over failed (it takes changes again).
+ * --abort     tell it the hand-over failed (it takes changes again);
+ * --prove-server=DIR
+ *             this machine's launchroomd already enrolled with the old
+ *             dashboard (its data folder DIR, mounted read-only): sign the
+ *             claim with its identity key, so the move continues with that
+ *             server instead of a join token it can't use (D103). The
+ *             installer runs this step as root (the key is root's, 0600);
+ *             it only writes the proof (no secret) to the state folder.
  *
  * The token comes from LR_MOVE_TOKEN (never argv) or the state folder.
  */
@@ -46,6 +55,7 @@ use Throwable;
     {--handover : Wait for the hand-over, then restore the database and keys}
     {--complete= : Report that the new dashboard runs at this address}
     {--abort= : Report that the hand-over failed (reason)}
+    {--prove-server= : Prove that this machine is the server whose launchroomd data folder this is}
     {--state=/data/backups/move : Folder for the move\'s state}
     {--keys-out= : Folder for the restored key files (default: <state>/restore)}
     {--url= : Reach the old dashboard at this address instead of the one in the token}
@@ -58,6 +68,9 @@ final class ReceiveMoveCommand extends Command
 {
     private const int POLL_SECONDS = 3;
 
+    /** PKCS#8 header of an Ed25519 private key (RFC 8410), followed by the 32-byte seed. */
+    private const string PKCS8_ED25519 = "\x30\x2e\x02\x01\x00\x30\x05\x06\x03\x2b\x65\x70\x04\x22\x04\x20";
+
     public function handle(ControlPlaneDumps $database): int
     {
         try {
@@ -66,7 +79,8 @@ final class ReceiveMoveCommand extends Command
                 $this->option('handover') === true => $this->handover($database),
                 is_string($this->option('complete')) && $this->option('complete') !== '' => $this->reportComplete($this->option('complete')),
                 is_string($this->option('abort')) && $this->option('abort') !== '' => $this->reportAbort($this->option('abort')),
-                default => throw new RuntimeException('Pass --join, --handover, --complete=URL or --abort=REASON.'),
+                is_string($this->option('prove-server')) && $this->option('prove-server') !== '' => $this->proveServer($this->option('prove-server')),
+                default => throw new RuntimeException('Pass --join, --handover, --complete=URL, --abort=REASON or --prove-server=DIR.'),
             };
         } catch (RuntimeException $e) {
             $this->fail($e->getMessage());
@@ -82,11 +96,13 @@ final class ReceiveMoveCommand extends Command
         [$public] = $this->keyPair();
         $client = $this->client($state);
 
+        $proof = $this->serverProof($state['move'], $public);
         $claimed = $client->claim([
             'publicKey' => $public,
             'hostname' => $this->hostname(),
             'arch' => strtolower(php_uname('m')),
             'version' => config('launchroom.version') === null ? null : config()->string('launchroom.version'),
+            ...($proof ?? []),
         ]);
         $code = is_string($claimed['code'] ?? null) ? $claimed['code'] : '';
 
@@ -94,7 +110,20 @@ final class ReceiveMoveCommand extends Command
             throw new RuntimeException('The old dashboard showed another code than this machine computed. Nothing was changed; cancel the move there.');
         }
 
+        $connected = is_string($claimed['joined'] ?? null) ? $claimed['joined'] : null;
+
+        if ($proof !== null && $connected === null && ($claimed['status'] ?? null) === 'claimed') {
+            // An older dashboard ignores the server and would issue a join
+            // token this machine can't use (its launchroomd is enrolled).
+            throw new RuntimeException('This machine is already a server of the old dashboard, and the old dashboard can’t continue the move with it (it runs an older release). Cancel the move there, update it, and start a new move.');
+        }
+
         $this->say("This server’s code is {$code}.");
+
+        if ($connected !== null) {
+            $this->say("This machine is already connected to the old dashboard as {$connected}. The move continues with that server once you confirm the code.");
+        }
+
         $this->say("Confirm it in the old dashboard: Settings → Move launchroom ({$state['url']}).");
 
         $deadline = time() + max(60, (int) $this->option('wait'));
@@ -104,7 +133,7 @@ final class ReceiveMoveCommand extends Command
             $status = $client->status();
             $now = is_string($status['status'] ?? null) ? $status['status'] : '';
 
-            if ($now === 'joining' && is_string($status['joinToken'] ?? null)) {
+            if ($now === 'joining' && is_string($status['joinToken'] ?? null) && $connected === null) {
                 $token = $this->open($status['joinToken']);
                 $this->writeState('join-token', $token, 0600);
                 $this->writeState('cp-key', $this->pinnedKey($state, $status)."\n", 0644);
@@ -114,9 +143,11 @@ final class ReceiveMoveCommand extends Command
             }
 
             if (in_array($now, ['joined', 'moving', 'ready_to_hand_over', 'handing_over', 'handover_ready'], true)) {
-                // Already enrolled (a re-run): no new join token, only the pinned key.
+                // Already enrolled (a re-run, or a server of the old dashboard
+                // already): no new join token, only the pinned key.
                 $this->writeState('cp-key', $this->pinnedKey($state, $status)."\n", 0644);
-                $this->result(['move' => $state['move'], 'code' => $code, 'url' => $state['url'], 'joined' => true]);
+                File::delete($this->stateDir().'/join-token');
+                $this->result(array_filter(['move' => $state['move'], 'code' => $code, 'url' => $state['url'], 'joined' => true, 'connected' => $connected]));
 
                 return self::SUCCESS;
             }
@@ -137,6 +168,84 @@ final class ReceiveMoveCommand extends Command
 
             Sleep::sleep(self::POLL_SECONDS);
         }
+    }
+
+    /**
+     * Signs this move's claim with the identity key of the launchroomd whose
+     * data folder is $dir (`enrollment.json` names the server, `keys/signing.key`
+     * is its Ed25519 key, PKCS#8 PEM), and keeps the signature for --join.
+     * The key itself is read here only and never written anywhere.
+     */
+    private function proveServer(string $dir): int
+    {
+        $state = $this->state();
+        [$public] = $this->keyPair();
+        $dir = rtrim($dir, '/');
+        $enrollment = File::isFile($dir.'/enrollment.json') ? json_decode(File::get($dir.'/enrollment.json'), true) : null;
+        $serverId = is_array($enrollment) && is_string($enrollment['serverId'] ?? null) ? $enrollment['serverId'] : '';
+
+        if (preg_match(PublicId::regex(Server::publicIdPrefix()), $serverId) !== 1) {
+            throw new RuntimeException("{$dir}/enrollment.json doesn’t name a server.");
+        }
+
+        $seed = $this->identitySeed($dir.'/keys/signing.key');
+        $keypair = sodium_crypto_sign_seed_keypair($seed);
+        $secret = sodium_crypto_sign_secretkey($keypair);
+        $signature = sodium_crypto_sign_detached(MoveToken::serverProofMessage($state['move'], $serverId, $public), $secret);
+        sodium_memzero($seed);
+        sodium_memzero($secret);
+        sodium_memzero($keypair);
+
+        $this->writeState('server-proof', (string) json_encode(['move' => $state['move'], 'publicKey' => $public, 'serverId' => $serverId, 'serverProof' => base64_encode($signature)], JSON_UNESCAPED_SLASHES), 0644);
+        $this->result(['move' => $state['move'], 'serverId' => $serverId]);
+
+        return self::SUCCESS;
+    }
+
+    /**
+     * The 32-byte Ed25519 seed of launchroomd's identity key: PKCS#8 DER of
+     * an Ed25519 key is a fixed 16-byte header and the seed (RFC 8410).
+     *
+     * @return non-empty-string
+     */
+    private function identitySeed(string $file): string
+    {
+        $pem = File::isFile($file) ? File::get($file) : '';
+        $der = preg_match('/-----BEGIN PRIVATE KEY-----([A-Za-z0-9+\/=\s]+)-----END PRIVATE KEY-----/', $pem, $match) === 1
+            ? base64_decode((string) preg_replace('/\s+/', '', $match[1]), true)
+            : false;
+        sodium_memzero($pem);
+
+        if (! is_string($der) || strlen($der) !== 48 || ! str_starts_with($der, self::PKCS8_ED25519)) {
+            throw new RuntimeException("{$file} isn’t a launchroomd identity key this machine can read.");
+        }
+
+        $seed = substr($der, 16);
+        sodium_memzero($der);
+
+        if ($seed === '') {
+            throw new RuntimeException("{$file} isn’t a launchroomd identity key this machine can read.");
+        }
+
+        return $seed;
+    }
+
+    /**
+     * The proof --prove-server left for this move and key, as claim fields.
+     *
+     * @return array{serverId: string, serverProof: string}|null
+     */
+    private function serverProof(string $move, string $public): ?array
+    {
+        $file = $this->stateDir().'/server-proof';
+        $proof = File::isFile($file) ? json_decode(File::get($file), true) : null;
+
+        if (! is_array($proof) || ($proof['move'] ?? null) !== $move || ($proof['publicKey'] ?? null) !== $public
+            || ! is_string($proof['serverId'] ?? null) || ! is_string($proof['serverProof'] ?? null)) {
+            return null;
+        }
+
+        return ['serverId' => $proof['serverId'], 'serverProof' => $proof['serverProof']];
     }
 
     private function handover(ControlPlaneDumps $database): int
@@ -408,6 +517,7 @@ final class ReceiveMoveCommand extends Command
 
         if (! File::isDirectory($dir)) {
             File::ensureDirectoryExists($dir, 0700);
+            $this->ownLike($dir, dirname($dir));
         }
 
         return $dir;
@@ -422,9 +532,30 @@ final class ReceiveMoveCommand extends Command
 
     private function writeState(string $name, string $contents, int $mode): void
     {
-        $path = $this->stateDir().'/'.$name;
+        $dir = $this->stateDir();
+        $path = $dir.'/'.$name;
         File::put($path, $contents);
         @chmod($path, $mode);
+        $this->ownLike($path, $dir);
+    }
+
+    /**
+     * Run as root (--prove-server), files keep the owner of the folder they
+     * are in, so the next step, which runs as the dashboard's user, can
+     * read and replace them.
+     */
+    private function ownLike(string $path, string $reference): void
+    {
+        $owner = @fileowner($reference);
+
+        if (is_int($owner) && @fileowner($path) !== $owner) {
+            @chown($path, $owner);
+            $group = @filegroup($reference);
+
+            if (is_int($group)) {
+                @chgrp($path, $group);
+            }
+        }
     }
 
     /**

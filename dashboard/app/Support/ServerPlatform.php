@@ -25,7 +25,16 @@ final class ServerPlatform
 
     public static function of(Server $server): ?string
     {
-        return match (strtolower($server->facts->arch ?? '')) {
+        return self::fromArch($server->facts->arch ?? '');
+    }
+
+    /**
+     * The platform of a reported architecture (`amd64`, `x86_64`, `aarch64`,
+     * …), or null when unknown.
+     */
+    public static function fromArch(string $arch): ?string
+    {
+        return match (strtolower($arch)) {
             'amd64', 'x86_64', 'x86-64' => self::AMD64,
             'arm64', 'aarch64' => self::ARM64,
             default => null,

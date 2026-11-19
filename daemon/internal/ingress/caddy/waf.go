@@ -38,7 +38,8 @@ const WafRouteHeader = "X-Lr-Waf-Route"
 const wafLogger = "http.handlers.waf"
 
 // Local rule ids (docs/22 §6.3): generated rules use the fixed range
-// 10000–99999, outside CRS's 900000–999999.
+// 10000–99999, outside CRS's 900000–999999; the request trace's rules take
+// the last three (traceRuleFirst).
 const (
 	wafLocalRuleMin = 10000
 	wafLocalRuleMax = 99999
@@ -135,6 +136,12 @@ func (o Options) wafOn(r Route) bool {
 // grammar: a value that fails stops rendering (the manager then serves the
 // routes without the firewall, docs/22 §6.6).
 func wafDirectives(routes []Route, logAddress string) (string, error) {
+	return wafDirectivesTraced(routes, logAddress, false)
+}
+
+// wafDirectivesTraced is wafDirectives, with the request trace's rules
+// after CRS's when trace is set (docs/23 §3).
+func wafDirectivesTraced(routes []Route, logAddress string, trace bool) (string, error) {
 	ap, err := netip.ParseAddrPort(logAddress)
 	if err != nil || !ap.Addr().IsLoopback() || ap.Port() == 0 {
 		return "", errors.New("caddy: the firewall log address must be a loopback ip:port")
@@ -143,7 +150,7 @@ func wafDirectives(routes []Route, logAddress string) (string, error) {
 	fmt.Fprintf(&b, wafHead, "http://"+ap.String()+waf.Path)
 	id := wafFirstRouteRule
 	next := func() (int, error) {
-		if id > wafLocalRuleMax {
+		if id >= traceRuleFirst { // 99997–99999 are the request trace's
 			return 0, errors.New("caddy: too many firewall rules for the local rule id range")
 		}
 		id++
@@ -211,15 +218,24 @@ func wafDirectives(routes []Route, logAddress string) (string, error) {
 		}
 	}
 	b.WriteString(wafTail)
+	if trace {
+		b.WriteString(traceRules)
+	}
 	return b.String(), nil
 }
 
 // wafHandlers are the subroute entries of a firewalled route: the route
 // header, the firewall with the shared directives, the header removed again.
-func wafHandlers(id state.RouteID, directives string) []any {
+// With the request trace, the firewall's transaction id is the request id
+// the trace handler set (docs/23 §3), so the block page's reference is it too.
+func wafHandlers(id state.RouteID, directives string, trace bool) []any {
+	w := obj{"handler": "waf", "load_owasp_crs": true, "directives": directives}
+	if trace {
+		w["tx_id_req_header"] = traceRequestIDHeader
+	}
 	return []any{
 		obj{"handle": []any{obj{"handler": "headers", "request": obj{"set": obj{WafRouteHeader: []string{string(id)}}}}}},
-		obj{"handle": []any{obj{"handler": "waf", "load_owasp_crs": true, "directives": directives}}},
+		obj{"handle": []any{w}},
 		obj{"handle": []any{obj{"handler": "headers", "request": obj{"delete": []string{WafRouteHeader}}}}},
 	}
 }

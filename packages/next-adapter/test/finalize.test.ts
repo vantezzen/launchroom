@@ -8,6 +8,22 @@ import { fileURLToPath } from 'node:url';
 import adapter, { createAdapter, finalize, FinalizeError, MANIFEST_FILE, SUMMARY_MARKER, VERSION } from '../dist/index.js';
 import { buildCtx, fakeStandaloneBuild, sampleOutputs, tmpProject, write } from './helpers.ts';
 
+/** Outputs as Next 15.5 passes them: one flat list, every prerender with revalidate ≥ 1. */
+function flatOutputs() {
+  const out = (type: string, pathname: string) => ({ type, id: pathname, pathname, filePath: '/x' + pathname, runtime: 'nodejs' });
+  return [
+    out('STATIC_FILE', '/_next/static/chunks/a.js'),
+    out('APP_PAGE', '/'),
+    out('APP_PAGE', '/isr'),
+    out('APP_PAGE', '/_not-found'),
+    out('APP_ROUTE', '/api/health'),
+    out('PAGES_API', '/api/legacy'),
+    { ...out('MIDDLEWARE', '/_middleware'), config: { matchers: [{ source: '/((?!_next).*)' }] } },
+    { type: 'PRERENDER', id: '/', pathname: '/', fallback: { initialRevalidate: 1 } },
+    { type: 'PRERENDER', id: '/isr', pathname: '/isr', fallback: { initialRevalidate: 60 } },
+  ];
+}
+
 const pkgDir = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 
 describe('finalize', () => {
@@ -69,6 +85,36 @@ describe('adapter', () => {
     await a.onBuildComplete!(buildCtx(dir, { outputs: sampleOutputs() }));
     const m = JSON.parse(fs.readFileSync(path.join(dir, '.next', MANIFEST_FILE), 'utf8'));
     assert.equal(m.prerenders.isr[0].pathname, '/isr');
+  });
+
+  it('onBuildComplete with only routes and outputs (Next 15.4 and 15.5) uses the config modifyConfig returned', async () => {
+    const dir = tmpProject();
+    write(path.join(dir, '.next/BUILD_ID'), 'build-15\n');
+    write(path.join(dir, '.next/prerender-manifest.json'), JSON.stringify({ routes: { '/': { initialRevalidateSeconds: false }, '/isr': { initialRevalidateSeconds: 60 } } }));
+    const a = createAdapter({ env: { LAUNCHROOM_DEPLOYMENT_ID: 'dpl_15' }, log: () => {}, finalizeOnExit: false });
+    const cwd = process.cwd();
+    process.chdir(dir);
+    try {
+      await a.modifyConfig!({ images: { unoptimized: true } });
+      await a.onBuildComplete!({ routes: {}, outputs: flatOutputs() });
+    } finally {
+      process.chdir(cwd);
+    }
+    const m = JSON.parse(fs.readFileSync(path.join(dir, '.next', MANIFEST_FILE), 'utf8'));
+    assert.equal(m.buildId, 'build-15');
+    assert.equal(m.deploymentId, 'dpl_15');
+    assert.equal(m.output, 'standalone');
+    assert.equal(m.imageOptimization.enabled, false);
+    // Next 15's flat output list, grouped; revalidate from prerender-manifest.json.
+    assert.deepEqual(m.routes.list.map((r: { kind: string; pathname: string }) => `${r.kind} ${r.pathname}`), [
+      'app-page /',
+      'app-route /api/health',
+      'pages-api /api/legacy',
+      'app-page /isr',
+    ]);
+    assert.equal(m.routes.staticFiles, 1);
+    assert.deepEqual(m.prerenders, { static: 1, isr: [{ pathname: '/isr', route: null, revalidate: 60 }] });
+    assert.deepEqual(m.middleware, { present: true, runtime: 'nodejs', matchers: ['/((?!_next).*)'] });
   });
 
   // Next calls onBuildComplete BEFORE it writes .next/standalone (and wipes

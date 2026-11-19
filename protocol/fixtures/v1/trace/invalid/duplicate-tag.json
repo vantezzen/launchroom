@@ -1,0 +1,10 @@
+{
+  "description": "status twice.",
+  "reason": "payload",
+  "keyId": 42,
+  "version": 1,
+  "nonce": "b0b1b2b3b4b5b6b7b8b9ba00",
+  "payload": "0108000001a1f3ad8e7b02103f1c9a2e8b7d4e6fa5b4c3d2e1f00a1b03100000000000000000000000000007360e0a0201940b01060a0200c8",
+  "mutate": null,
+  "header": "AQAAACqwsbKztLW2t7i5ugAACm_Re3YOx2CMDlK2AbtdqARNimGVL9UvwTAUsjEYbaklFiyaAwhqdB4kC1xqg2_d37cRfZEfJFJM3LWI1xQpblCTPOIwQ2EB"
+}

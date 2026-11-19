@@ -89,6 +89,18 @@ final class MoveToken
         return substr($code, 0, 4).'-'.substr($code, 4);
     }
 
+    /**
+     * What a machine that is already a server of this dashboard signs with
+     * its launchroomd identity key (Ed25519, the key it signs every request
+     * with, docs/03 §3) when it claims a move: the move, the server and the
+     * key everything is sealed to. The prefix keeps it from ever passing for
+     * a request signature or a link probe.
+     */
+    public static function serverProofMessage(string $moveId, string $serverId, string $receiverPublicKey): string
+    {
+        return "launchroom-move-server/1\n{$moveId}\n{$serverId}\n{$receiverPublicKey}";
+    }
+
     private static function b64(string $raw): string
     {
         return rtrim(strtr(base64_encode($raw), '+/', '-_'), '=');

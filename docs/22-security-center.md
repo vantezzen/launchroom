@@ -301,7 +301,7 @@ One Coraza instance per edge:
 - Per route, inside the route's subroute after the www ↔ apex redirect and **before** preview forward auth: a `headers` handler sets `X-Lr-Waf-Route: <route id>` on the request (overwriting anything a client sent), then the `waf` handler, then a `headers` handler deletes `X-Lr-Waf-Route` before anything else sees the request.
 - Routes with mode Off, and routes of edges that don't announce `waf`, get none of this.
 
-Template (launchroomd fills the marked parts from validated fields only; ids of generated rules come from the fixed local range 10000–99999):
+Template (launchroomd fills the marked parts from validated fields only; ids of generated rules come from the fixed local range 10000–99996; 99997–99999 are the request trace's `lrtrace` actions, rendered after the CRS include on edges with the trace, [23](23-request-trace.md) §3):
 
 ```
 SecRuleEngine On
@@ -353,7 +353,7 @@ Include @owasp_crs/*.conf
 - Coraza collects at most 256 fields per collection (query, body, path). It has no per-request setting for this, so the limit is the same for every route and every body setting. Further fields pass uninspected.
 - Multipart uploads: Coraza writes file parts to a temporary file that no CRS 4.25 rule reads. Field names, file names, file sizes and the other fields are inspected, so a 1 MiB upload costs about as much as a small form.
 - WebSocket upgrades and server-sent events pass through (coraza-caddy unwraps hijacking; response bodies aren't buffered).
-- A blocked request gets status 403 and launchroom's edge page "This request was blocked by the web firewall" with the reference id (Coraza's transaction id, `{http.error.id}`), in the error-page style of [05](05-networking-ingress.md) §4 (plain line for non-HTML clients).
+- A blocked request gets status 403 and launchroom's edge page "This request was blocked by the web firewall" with the reference id (Coraza's transaction id, `{http.error.id}`; on edges with the request trace every `waf` handler has `tx_id_req_header: X-Request-Id`, so the reference and `WafEvent.reference` are the request id, a lowercase UUID, and the request's `Launchroom-Trace` shows the same id), in the error-page style of [05](05-networking-ingress.md) §4 (plain line for non-HTML clients).
 
 ### 6.4 Exclusions
 

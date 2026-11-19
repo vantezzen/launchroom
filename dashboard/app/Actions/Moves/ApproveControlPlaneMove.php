@@ -16,7 +16,10 @@ use App\Exceptions\DomainRuleViolation;
 use App\Models\Moves\ControlPlaneMove;
 use App\Models\Server;
 use App\Models\User;
+use App\Services\Moves\ConnectedMoveTarget;
+use App\Services\Moves\MovePlanner;
 use App\Support\Crypto\PublicKeyFormat;
+use App\Support\ServerPlatform;
 use Illuminate\Support\Facades\DB;
 
 /**
@@ -24,12 +27,18 @@ use Illuminate\Support\Facades\DB;
  * matches (docs/14 §13.4). The new machine gets a join token (sealed to its
  * key, so only it can read it) for the roles of the dashboard's server, and
  * its launchroomd enrolls as a regular server of this dashboard; everything
- * then moves onto it like a server move.
+ * then moves onto it like a server move. A machine that is already a server
+ * here (D103) needs no join token: the move is joined right away.
+ *
+ * Both refuse when no build server could deploy the apps on the new server
+ * (docs/14 §13.3): before it connects, not after.
  */
 final readonly class ApproveControlPlaneMove
 {
     public function __construct(
         private CreateEnrollment $enrollments,
+        private ConnectedMoveTarget $connected,
+        private MovePlanner $planner,
         private RecordAuditEvent $audit,
     ) {}
 
@@ -52,14 +61,28 @@ final readonly class ApproveControlPlaneMove
                 throw DomainRuleViolation::conflict('The dashboard’s server is gone.');
             }
 
+            $connected = $move->target_server_id === null ? null : Server::query()->find($move->target_server_id);
+
+            if ($connected instanceof Server) {
+                return $this->continueWith($move, $source, $connected, $user, $actor);
+            }
+
             $roles = array_values(array_filter(
                 array_map(static fn (ServerRole $role): string => $role->value, $source->roles->all()),
                 static fn (string $role): bool => in_array($role, ['edge', 'runtime', 'build'], true),
             ));
+            $roles = $roles === [] ? ['edge', 'runtime', 'build'] : $roles;
+            $arch = $move->receiver?->arch;
+            $builds = $this->planner->buildBlocker($source, null, is_string($arch) ? ServerPlatform::fromArch($arch) : null, in_array('build', $roles, true));
+
+            if ($builds !== null) {
+                throw DomainRuleViolation::on('code', $builds);
+            }
+
             $name = $move->receiver?->hostname;
             $issued = $this->enrollments->handle(
                 $source->team,
-                new CreateEnrollmentData($roles === [] ? ['edge', 'runtime', 'build'] : $roles, is_string($name) && preg_match('/^[\pL\pN ._-]{1,64}$/u', $name) === 1 ? $name : 'new server'),
+                new CreateEnrollmentData($roles, is_string($name) && preg_match('/^[\pL\pN ._-]{1,64}$/u', $name) === 1 ? $name : 'new server'),
                 $user,
                 $actor,
             );
@@ -81,5 +104,32 @@ final readonly class ApproveControlPlaneMove
 
             return $move;
         });
+    }
+
+    /**
+     * The machine is already a server of this dashboard (D103): no join
+     * token, the move continues with that server once it still qualifies.
+     */
+    private function continueWith(ControlPlaneMove $move, Server $source, Server $server, User $user, AuditActor $actor): ControlPlaneMove
+    {
+        $refusal = $this->connected->refusal($move, $server) ?? $this->planner->buildBlocker($source, $server);
+
+        if ($refusal !== null) {
+            throw DomainRuleViolation::on('code', $refusal);
+        }
+
+        $move->approved_by = $user->id;
+        $move->transitionTo(ControlPlaneMoveStatus::Joined);
+
+        $this->audit->handle(new AuditEntryData(
+            action: AuditAction::ControlPlaneMoveApproved,
+            actor: $actor,
+            teamId: $source->team_id,
+            subjectType: 'instance',
+            subjectId: 'instance',
+            meta: ['move' => $move->public_id, 'server' => $server->public_id, 'connected' => true],
+        ));
+
+        return $move;
     }
 }

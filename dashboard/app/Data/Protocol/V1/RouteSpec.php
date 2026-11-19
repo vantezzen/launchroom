@@ -18,12 +18,15 @@ use Spatie\LaravelData\Data;
  * web firewall's typed settings; omitted means off. `stopped` (edges with
  * the `serviceStop` feature, D68): the service was stopped in launchroom;
  * the edge answers with its "stopped" page and the route has no upstreams.
+ * `service` and `upstreams[].server` (edges with the `requestTrace` feature,
+ * docs/23 §5): the route's service instance and the server behind each
+ * address upstream, written into the request trace.
  */
 final class RouteSpec extends Data
 {
     /**
      * @param  list<string>  $hosts
-     * @param  list<array{workload: string, port: int}|array{address: string}>  $upstreams
+     * @param  list<array{workload: string, port: int}|array{address: string, server?: string}>  $upstreams
      * @param  array<string, string>|null  $headers  values must not contain { or }
      * @param  array{forwardAuth: array{url: string, stripHeaders?: list<string>}}|null  $protection  preview protection (forward auth to the dashboard, docs/06 §5)
      * @param  array{mode: string, caCertificates: list<string>, edgeSecret: array{sealed: string, fingerprint: string}}|null  $clientAuth
@@ -42,13 +45,21 @@ final class RouteSpec extends Data
         public ?array $clientAuth = null,
         public ?array $waf = null,
         public bool $stopped = false,
+        /** `sin_` id of the route's service instance; null for the dashboard's own routes. */
+        public ?string $service = null,
     ) {}
 
     public static function fromProtocol(object $wire): self
     {
-        $upstreams = array_map(static fn (object $upstream): array => Wire::nullableString($upstream, 'address') !== null
-            ? ['address' => Wire::string($upstream, 'address')]
-            : ['workload' => Wire::string($upstream, 'workload'), 'port' => Wire::int($upstream, 'port')], Wire::objects($wire, 'upstreams'));
+        $upstreams = array_map(static function (object $upstream): array {
+            if (Wire::nullableString($upstream, 'address') === null) {
+                return ['workload' => Wire::string($upstream, 'workload'), 'port' => Wire::int($upstream, 'port')];
+            }
+
+            $server = Wire::nullableString($upstream, 'server');
+
+            return ['address' => Wire::string($upstream, 'address'), ...($server === null ? [] : ['server' => $server])];
+        }, Wire::objects($wire, 'upstreams'));
 
         $protection = null;
         $forwardAuth = isset($wire->protection) && is_object($wire->protection) && isset($wire->protection->forwardAuth) && is_object($wire->protection->forwardAuth)
@@ -102,6 +113,7 @@ final class RouteSpec extends Data
             $clientAuth,
             $waf,
             Wire::nullableBool($wire, 'stopped') ?? false,
+            Wire::nullableString($wire, 'service'),
         );
     }
 
@@ -206,6 +218,10 @@ final class RouteSpec extends Data
 
         if ($this->stopped) {
             $wire['stopped'] = true;
+        }
+
+        if ($this->service !== null) {
+            $wire['service'] = $this->service;
         }
 
         return $wire;

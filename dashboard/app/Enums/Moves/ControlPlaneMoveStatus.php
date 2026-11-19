@@ -13,7 +13,9 @@ use App\Enums\Contracts\HasTransitionTable;
  *
  * waiting_for_server (the move command was shown) → claimed (the new
  * machine sent its key; both sides show a code) → joining (the owner
- * confirmed the code; the new machine's launchroomd enrolls) → joined →
+ * confirmed the code; the new machine's launchroomd enrolls) → joined
+ * (straight from claimed when the new machine is already a server of this
+ * dashboard, D103) →
  * moving (every app, database and volume moves like a server move) →
  * ready_to_hand_over → handing_over (writes frozen, final dump) →
  * handover_ready (sealed to the new machine) → handed_over (the new
@@ -41,7 +43,8 @@ enum ControlPlaneMoveStatus: string implements HasTransitionTable
     {
         return match ($this) {
             self::WaitingForServer => [self::Claimed, self::Cancelled],
-            self::Claimed => [self::Joining, self::Cancelled],
+            // Joined right away when the new machine is already a server here (D103).
+            self::Claimed => [self::Joining, self::Joined, self::Cancelled],
             self::Joining => [self::Joined, self::Cancelled],
             self::Joined => [self::Moving, self::Cancelled],
             // A retried service puts it back from ready_to_hand_over to moving.

@@ -1,9 +1,13 @@
 package state
 
 import (
+	"encoding/base64"
 	"encoding/json/v2"
+	"errors"
+	"fmt"
 	"regexp"
 	"slices"
+	"strconv"
 	"strings"
 	"time"
 
@@ -23,6 +27,12 @@ type IngressSpec struct {
 	// DNS enables DNS-01 wildcard certificates for routes with tls "wildcard".
 	// Omitted: such routes get per-host certificates (HTTP-01).
 	DNS *DNSChallengeSpec `json:"dns,omitzero" jsonschema:"nullable"`
+	// Trace is the edge's request trace key (docs/23 §4): a sealed
+	// IngressSecret (purpose "trace") with "key" (32 random bytes, standard
+	// base64) and "keyId" (decimal 1–4294967295). The edge encrypts the
+	// Launchroom-Trace header of every response with it. Omitted: no trace
+	// header (daemon feature requestTrace).
+	Trace *Sealed `json:"trace,omitzero" jsonschema:"nullable" lr:"feature=requestTrace"`
 }
 
 // CertStorageSpec is shared certificate storage (docs/05 §5). launchroomd
@@ -70,6 +80,9 @@ func (s *IngressSpec) validate(e *errs) {
 		}
 		unique(e, "ingress.dns.domains", s.DNS.Domains)
 		e.check("ingress.dns.credentials", s.DNS.Credentials)
+	}
+	if s.Trace != nil {
+		e.check("ingress.trace", *s.Trace)
 	}
 }
 
@@ -240,9 +253,14 @@ const (
 	// IngressSecretFallbackChannel is system.watchdog.fallback.secret: "url"
 	// (webhook, slack, discord) or "password" and optional "username" (email).
 	IngressSecretFallbackChannel IngressSecretPurpose = "fallback_channel"
+	// IngressSecretTrace is ingress.trace: "key" and "keyId" (TraceKeyOf, docs/23 §4).
+	IngressSecretTrace IngressSecretPurpose = "trace"
 )
 
-var ingressSecretPurposes = []string{string(IngressSecretDNS), string(IngressSecretCertStorage), string(IngressSecretClientAuth), string(IngressSecretFallbackChannel)}
+var ingressSecretPurposes = []string{
+	string(IngressSecretDNS), string(IngressSecretCertStorage), string(IngressSecretClientAuth),
+	string(IngressSecretFallbackChannel), string(IngressSecretTrace),
+}
 
 // ProtocolSchema implements SchemaDescriber.
 func (IngressSecretPurpose) ProtocolSchema() ScalarSchema { return enumSchema(ingressSecretPurposes) }
@@ -260,6 +278,7 @@ var ingressSecretKeys = map[IngressSecretPurpose]struct{ required, optional []st
 	IngressSecretClientAuth:  {required: []string{"secret"}},
 	// Which ones a channel needs depends on its kind (FallbackChannel.validateSecret).
 	IngressSecretFallbackChannel: {optional: []string{"url", "username", "password"}},
+	IngressSecretTrace:           {required: []string{"key", "keyId"}},
 }
 
 // IngressSecret is the plaintext of NodeState.ingress.*.credentials:
@@ -338,7 +357,64 @@ func (s *IngressSecret) Validate() error {
 			e.addf("values."+k, "must be at least 32 bytes")
 		}
 	}
+	if s.Purpose == IngressSecretTrace {
+		if _, err := traceKey(s.Values["key"]); err != nil && s.Values["key"].Reveal() != "" {
+			e.addf("values.key", "%v", err)
+		}
+		if _, err := ParseTraceKeyID(s.Values["keyId"].Reveal()); err != nil && s.Values["keyId"].Reveal() != "" {
+			e.addf("values.keyId", "%v", err)
+		}
+	}
 	return e.err()
+}
+
+// TraceKeyBytes is the size of a request trace key (AES-256, docs/23 §4).
+const TraceKeyBytes = 32
+
+// TraceKey is an opened request trace key.
+type TraceKey struct {
+	// ID is the key id the edge writes into every trace header.
+	ID uint32
+	// Key is the 32-byte AES-256 key.
+	Key secret.Secret
+}
+
+// TraceKeyOf reads the values of an opened IngressSecret of purpose
+// "trace". Errors never contain the key.
+func TraceKeyOf(vals map[string]secret.Secret) (TraceKey, error) {
+	for k := range vals {
+		if k != "key" && k != "keyId" {
+			return TraceKey{}, fmt.Errorf("unknown value %q for purpose trace", truncate(k))
+		}
+	}
+	key, err := traceKey(vals["key"])
+	if err != nil {
+		return TraceKey{}, err
+	}
+	id, err := ParseTraceKeyID(vals["keyId"].Reveal())
+	if err != nil {
+		return TraceKey{}, err
+	}
+	return TraceKey{ID: id, Key: key}, nil
+}
+
+// traceKey decodes the standard base64 key (exactly TraceKeyBytes bytes).
+func traceKey(v secret.Secret) (secret.Secret, error) {
+	raw, err := base64.StdEncoding.Strict().DecodeString(v.Reveal())
+	if err != nil || len(raw) != TraceKeyBytes {
+		return "", errors.New("must be 32 bytes in standard base64")
+	}
+	return secret.Secret(raw), nil
+}
+
+// ParseTraceKeyID parses a trace key id: decimal 1–4294967295 without
+// leading zeros.
+func ParseTraceKeyID(v string) (uint32, error) {
+	n, err := strconv.ParseUint(v, 10, 32)
+	if err != nil || n == 0 || strconv.FormatUint(n, 10) != v {
+		return 0, errors.New("must be a decimal number from 1 to 4294967295")
+	}
+	return uint32(n), nil
 }
 
 // ---- Report: certificate state (docs/05 §5) ----

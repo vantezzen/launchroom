@@ -99,16 +99,22 @@ func TestNextVersionGates(t *testing.T) {
 func TestAuthJSv5(t *testing.T) {
 	f := mapRepo(map[string]string{"package.json": `{"dependencies":{"next":"16.2.0","next-auth":"5.0.0-beta.29"}}`})
 	r := resolveJS(t, f, nodeInfo, "nextjs")
-	if r.RuntimeEnv["AUTH_TRUST_HOST"] != "true" || len(r.EnvAliases) != 0 {
-		t.Fatalf("env %v aliases %v (v5 trusts the host and needs no AUTH_URL)", r.RuntimeEnv, r.EnvAliases)
+	// The standalone server sees 0.0.0.0:3000 as the request URL: AUTH_URL follows the domain.
+	if r.RuntimeEnv["AUTH_TRUST_HOST"] != "true" || !slices.Equal(r.EnvAliases, []state.EnvAlias{{Name: "AUTH_URL", From: state.AliasPublicURL}}) {
+		t.Fatalf("env %v aliases %v", r.RuntimeEnv, r.EnvAliases)
 	}
 	if !slices.ContainsFunc(r.GeneratedSecrets, func(g state.GeneratedSecret) bool { return g.Name == "AUTH_SECRET" && g.Scope == "" }) {
 		t.Fatalf("generated = %+v", r.GeneratedSecrets)
 	}
 	// Removable like every decision.
-	r, _ = Resolve(f, nodeInfo, "", []string{"auth-secret", "auth-trust-host", "server-actions-key"})
-	if r.GeneratedSecrets != nil || r.RuntimeEnv["AUTH_TRUST_HOST"] != "" {
+	r, _ = Resolve(f, nodeInfo, "", []string{"auth-secret", "auth-trust-host", "server-actions-key", "auth-url"})
+	if r.GeneratedSecrets != nil || r.RuntimeEnv["AUTH_TRUST_HOST"] != "" || len(r.EnvAliases) != 0 {
 		t.Fatalf("removed decisions still apply: %+v %v", r.GeneratedSecrets, r.RuntimeEnv)
+	}
+	// next start (Next 15.3 without standalone) sees the Host header: no AUTH_URL.
+	r = resolveJS(t, mapRepo(map[string]string{"package.json": `{"dependencies":{"next":"15.3.0","next-auth":"5.0.0-beta.29"}}`}), nodeInfo, "nextjs")
+	if hasDecision(r, "auth-url") || !hasDecision(r, "auth-trust-host") {
+		t.Fatalf("decisions = %v", decisionIDs(r))
 	}
 	// No auth library: nothing.
 	r = resolveJS(t, mapRepo(map[string]string{"package.json": `{"dependencies":{"next":"16.2.0"}}`}), nodeInfo, "nextjs")

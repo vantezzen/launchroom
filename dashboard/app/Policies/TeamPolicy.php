@@ -54,6 +54,16 @@ final class TeamPolicy
             && $user->hasTeamPermission($team, Permission::ManageServers);
     }
 
+    /**
+     * Request traces of the dashboard's own routes (docs/23 §6): they are
+     * launchroom's, not a service's, so they need servers.manage.
+     */
+    public function viewSystemTraces(User $user, Team $team): bool
+    {
+        return $user->hasTeamPermission($team, Permission::View)
+            && $user->hasTeamPermission($team, Permission::ManageServers);
+    }
+
     public function manageMembers(User $user, Team $team): bool
     {
         return $user->hasTeamPermission($team, Permission::ManageMembers);

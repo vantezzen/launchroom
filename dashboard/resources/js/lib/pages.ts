@@ -61,6 +61,7 @@ export const PAGE_NAMES = [
     'settings/team',
     'settings/updates',
     'setup',
+    'trace',
 ] as const;
 
 export type PageName = (typeof PAGE_NAMES)[number];

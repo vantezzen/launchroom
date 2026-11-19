@@ -24,6 +24,7 @@ import {
     Undo2,
     UserPlus,
     Variable,
+    Waypoints,
 } from 'lucide-react';
 import type { ReactNode } from 'react';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
@@ -59,6 +60,8 @@ import services from '@/routes/projects/services';
 import { create as serversCreate, show as serverShow } from '@/routes/servers';
 import { edit as teamSettings } from '@/routes/team';
 import { teamNavItems } from '@/features/app-shell/nav-items';
+import { traceHref } from '@/features/request-trace/links';
+import { normaliseTrace } from '@/features/request-trace/trace-model';
 import type { TeamNavItem } from '@/features/app-shell/nav-items';
 import { readRecent, recordVisit } from './recent';
 import { SETTINGS_PAGES } from './settings-pages';
@@ -260,6 +263,15 @@ export function CommandPalette() {
     };
 
     const searching = search.trim() !== '';
+    // A pasted Launchroom-Trace header (about 300 characters) opens its trace.
+    const pastedTrace = useMemo(() => {
+        const trace = normaliseTrace(search);
+
+        return trace !== null &&
+            (trace.length >= 100 || /^\s*launchroom-trace/i.test(search))
+            ? trace
+            : null;
+    }, [search]);
     const allServices = data?.services ?? [];
     const projectServices = useMemo(
         () =>
@@ -741,7 +753,35 @@ export function CommandPalette() {
                     }
                 />
                 <CommandList>
-                    <CommandEmpty>Nothing found.</CommandEmpty>
+                    {!pastedTrace && (
+                        <CommandEmpty>Nothing found.</CommandEmpty>
+                    )}
+
+                    {searching && !confirm && (
+                        <CommandGroup
+                            heading="Trace"
+                            forceMount={!!pastedTrace}
+                        >
+                            {pastedTrace ? (
+                                <CommandItem
+                                    forceMount
+                                    value="trace this pasted request"
+                                    onSelect={() => go(traceHref(pastedTrace))}
+                                >
+                                    <Waypoints aria-hidden="true" />
+                                    Trace this request
+                                    <CommandShortcut>↵</CommandShortcut>
+                                </CommandItem>
+                            ) : (
+                                navigateRow(
+                                    'trace a request launchroom-trace header',
+                                    <Waypoints aria-hidden="true" />,
+                                    'Trace a request',
+                                    traceHref(),
+                                )
+                            )}
+                        </CommandGroup>
+                    )}
 
                     {confirm ? (
                         <CommandGroup heading="Confirm">
@@ -986,6 +1026,13 @@ export function CommandPalette() {
                                         item.shortcut,
                                     ),
                                 )}
+                                {!searching &&
+                                    navigateRow(
+                                        'go trace a request',
+                                        <Waypoints aria-hidden="true" />,
+                                        'Trace a request',
+                                        traceHref(),
+                                    )}
                                 <CommandItem
                                     value="keyboard shortcuts help"
                                     onSelect={() => {

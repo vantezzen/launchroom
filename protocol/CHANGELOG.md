@@ -4,6 +4,16 @@ All changes to launchroomd ↔ dashboard contract. Format: one section per proto
 
 ## v1 (unreleased)
 
+### Request trace (2026-11-19, D102)
+
+Additive. New daemon feature `requestTrace`, announced while the edge's Caddy image carries the trace module (label `io.vantezzen.launchroom.trace=1`); the dashboard renders all three fields only for servers that announce it.
+
+- `NodeState.ingress.trace?: Sealed`: an IngressSecret of the new purpose `trace` with `key` (32 random bytes, standard base64) and `keyId` (decimal 1–4294967295, no leading zeros). launchroomd writes the key to a file in the Caddy container's secrets dir; it never appears in the Caddy config.
+- `RouteSpec.service?: ServiceInstanceID` (`sin_…`): the service instance the route serves; absent on the dashboard's own routes.
+- `RouteUpstream.server?: ServerID`: the server behind an `address` upstream (refused on `workload` upstreams, which run on the edge itself).
+- The header format and its shared vectors live in `protocol/fixtures/v1/trace/` (docs/23 §2). The firewall's transaction id is now the request id (`X-Request-Id`, a UUID), so `WafEvent.reference` and the block page's reference are that id on edges with the feature.
+- Fixtures: `node-state.trace.json`; invalid `node-state.trace-server-on-workload`, `.trace-route-service-id`. Design: docs/23.
+
 ### Operations: runtime visibility, self-recovery, control-plane care, framework runtime contract (2026-11-17)
 
 Additive. Report and build-summary fields are launchroomd → dashboard only, so they need no daemon feature (the dashboard updates first and reads unknown codes leniently, D76). Every NodeState field and task has a feature, defined now and announced by launchroomd once it implements it (none is in `SupportedFeatures` yet).

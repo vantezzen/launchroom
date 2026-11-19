@@ -21,7 +21,8 @@ Move a server that still runs. If a server is gone for good, [replace it](/docs/
 
 - **The new machine**: Linux with Docker Engine 24 or later and the compose plugin, ports 80 and 443 free, as for a [new install](/docs/getting-started/install). Give it at least as much disk as your data uses on the old server, plus 1 GB.
 - **Lower your DNS TTLs** a day ahead, to 60 to 300 seconds: the dashboard's domain, your apps' custom domains and the wildcard of your platform domain. The switch to the new address then takes minutes. Raise them again after the move.
-- **Check the pre-flight**: open **Settings → Move launchroom** in your current dashboard. It checks the server, the dashboard's address, disk space and the private network, and says what to expect for app images and your recovery kit.
+- **Check the pre-flight**: open **Settings → Move launchroom** in your current dashboard. It checks the server, the dashboard's address, disk space, the private network and builds, and says what to expect for app images and your recovery kit.
+- **A build server**: every app built from a repository is deployed again on the new server, and each deployment needs an online build server. The new server takes over the build role of the server that runs the dashboard. If that server doesn't build and no other build server is online, the move doesn't start: bring a build server online, or turn on **Build** for it in **Servers**.
 - **Dashboard address**: if your dashboard runs at a domain of your own, it keeps that address and you point it at the new server. If it runs at an address that contains the old server's IP (`…sslip.io`), the dashboard gets the new server's address. Other servers then need one change each, the same as after a restore: set `LR_CONTROL_PLANE_URL` in their `launchroomd/.env` and run `docker compose up -d` there.
 - **Generated addresses**: app addresses ending in `<old-ip>.sslip.io` stop working when the old server is deleted. Set a platform domain in **Settings → Network**, or add custom domains, before you delete it.
 
@@ -49,6 +50,8 @@ launchroom: This server’s code is K7QM-3XRT.
 The dashboard shows the new machine's name, architecture and address. Type the code from the terminal into the dashboard to confirm. The dashboard never shows the code itself: it only accepts the code of the machine that claimed the move. If the terminal shows an error instead of a code, or the dashboard refuses your code, someone else used the token: cancel the move and start again.
 
 The new machine then joins as a server. Keep the command running: it finishes the move later. If it stops, run the same command again; it continues where it stopped.
+
+If the new machine is already connected to your dashboard as a server (for example after you cancelled an earlier move to it), the terminal and the dashboard say so ("already connected as …"). The move then continues with that server, and it doesn't join again.
 </Step>
 <Step>
 ### Move the apps and data
@@ -112,13 +115,16 @@ Images built from your code run on one CPU architecture. When the new server has
 - **Databases and images from a registry** are pulled for the new architecture.
 - **An image that exists for one architecture only** can't run on the new server. That service fails to start there and keeps running on the old server.
 
-Builds take as long as a normal build. A build server for the new architecture is needed: the new server builds by itself when it has the build role, which it gets when it joins for a dashboard move.
+Builds take as long as a normal build. A build server for the new architecture is needed: the new server builds by itself when it has the build role, which it gets when it joins for a dashboard move. The dashboard checks this before the new server connects and again before apps move.
 
 ## If something goes wrong
 
 | When | What happens | What to do |
 |---|---|---|
 | Before you confirm the code | Nothing changed | Cancel the move in Settings |
+| No build server is online | The move doesn't start or continue, and the page says why | Bring a build server online, or turn on **Build** in **Servers** |
+| The new server stays at "connecting" | After 5 minutes the page says so | Run the move command on the new machine again, or cancel the move |
+| The new machine belongs to another launchroom | The installer stops with the reason | On the new machine, as root: `docker compose stop launchroomd` in the install folder, remove its `data/daemon` folder, then run the command again |
 | An app fails to start on the new server | It keeps running on the old server | **Retry** |
 | A database or volume fails | It runs on the old server again, with its data as it was | **Retry** |
 | You want to stop halfway | Services that moved stay on the new server, the rest stay on the old one | **Cancel move** |

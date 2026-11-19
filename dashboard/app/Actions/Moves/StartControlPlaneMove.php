@@ -9,6 +9,7 @@ use App\Data\Audit\AuditActor;
 use App\Data\Audit\AuditEntryData;
 use App\Enums\AuditAction;
 use App\Enums\Moves\ControlPlaneMoveStatus;
+use App\Enums\ServerRole;
 use App\Enums\ServerStatus;
 use App\Exceptions\DomainRuleViolation;
 use App\Models\Moves\ControlPlaneMove;
@@ -62,6 +63,14 @@ final readonly class StartControlPlaneMove
 
             if ($this->planner->openMove($source) instanceof ServerMove) {
                 throw DomainRuleViolation::conflict("{$source->name} is already part of a server move.");
+            }
+
+            // The new server takes over this server's roles; without a build
+            // server the apps couldn't be deployed on it (docs/14 §13.3).
+            $builds = $this->planner->buildBlocker($source, null, null, $source->hasRole(ServerRole::Build));
+
+            if ($builds !== null) {
+                throw DomainRuleViolation::conflict($builds);
             }
 
             $move = new ControlPlaneMove(['source_server_id' => $source->id, 'created_by' => $user->id]);

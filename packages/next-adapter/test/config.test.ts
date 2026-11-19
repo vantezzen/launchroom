@@ -96,3 +96,19 @@ describe('modifyConfig without a context (Next 15.4 and 15.5)', () => {
     assert.equal(config.deploymentId, undefined);
   });
 });
+
+describe('modifyConfig with only the phase (Next 16)', () => {
+  it('takes the project from the working directory', async () => {
+    const { createAdapter, completeConfigContext } = await import('../dist/index.js');
+    const adapter = createAdapter({ env: { LAUNCHROOM_REPO_ROOT: process.cwd() }, log: () => {} });
+    const config = await adapter.modifyConfig!({}, { phase: 'phase-production-build' });
+    assert.equal(config.output, 'standalone');
+    assert.equal(config.outputFileTracingRoot, process.cwd());
+
+    assert.deepEqual(completeConfigContext({ phase: 'phase-production-build' }, {}, '/repo/apps/web'), {
+      phase: 'phase-production-build',
+      nextVersion: '',
+      projectDir: '/repo/apps/web',
+    });
+  });
+});

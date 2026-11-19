@@ -22,11 +22,17 @@ use Illuminate\Support\Facades\DB;
  *
  * - an unclaimed token expires after 24 hours;
  * - joining → joined once the new machine's launchroomd enrolled (it is
- *   approved right away: the owner confirmed its code);
+ *   approved right away: the owner confirmed its code); a join token
+ *   unused after 5 minutes is reported with the way out (D103);
  * - moving ↔ ready_to_hand_over follows the workload move.
  */
 final readonly class AdvanceControlPlaneMoves
 {
+    /** How long the new machine may take to use its join token before the page says so. */
+    public const int JOINING_PATIENCE_SECONDS = 300;
+
+    public const string STALLED = 'The new server hasn’t used its join token for 5 minutes. If its terminal says it joined, it was already connected to this dashboard: run the move command there again, and the move continues with that server. Otherwise check the terminal for errors, or cancel the move.';
+
     public function __construct(
         private ApproveServer $approve,
     ) {}
@@ -59,6 +65,8 @@ final readonly class AdvanceControlPlaneMoves
         $server = $enrollment?->server_id === null ? null : Server::query()->find($enrollment->server_id);
 
         if (! $server instanceof Server) {
+            $this->flagStalled($move, $enrollment);
+
             return;
         }
 
@@ -74,6 +82,22 @@ final readonly class AdvanceControlPlaneMoves
         // The join token was used: nothing sealed is kept.
         $move->sealed_join_token = null;
         $move->transitionTo(ControlPlaneMoveStatus::Joined);
+    }
+
+    /**
+     * Joining doesn't wait silently: when the join token stays unused for a
+     * few minutes, the page (and the new machine's installer) say why that
+     * usually happens and what to do. Cleared once it joined.
+     */
+    private function flagStalled(ControlPlaneMove $move, ?ServerEnrollment $enrollment): void
+    {
+        $since = $enrollment->created_at ?? $move->claimed_at;
+
+        if ($move->error !== null || $since === null || $since->gt(now()->subSeconds(self::JOINING_PATIENCE_SECONDS))) {
+            return;
+        }
+
+        $move->forceFill(['error' => self::STALLED])->save();
     }
 
     private function follow(ControlPlaneMove $move): void

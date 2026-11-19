@@ -97,7 +97,7 @@ final class PreviewRoutes
      */
     public function deploymentRoutes(array $placements, array $rendered, array $remote = [], ?callable $address = null): array
     {
-        /** @var array<int, array{deployment: Deployment, service: Service, upstreams: list<array{workload: string, port: int}|array{address: string}>}> $byDeployment */
+        /** @var array<int, array{deployment: Deployment, service: Service, instance: string, upstreams: list<array{workload: string, port: int}|array{address: string, server?: string}>}> $byDeployment */
         $byDeployment = [];
         $local = array_flip(array_map(static fn (Placement $placement): int => $placement->id, $placements));
 
@@ -130,16 +130,16 @@ final class PreviewRoutes
                     continue;
                 }
 
-                $upstream = ['address' => $mesh];
+                $upstream = ['address' => $mesh, 'server' => $placement->server->public_id];
             }
 
-            $byDeployment[$deployment->id] ??= ['deployment' => $deployment, 'service' => $placement->serviceInstance->service, 'upstreams' => []];
+            $byDeployment[$deployment->id] ??= ['deployment' => $deployment, 'service' => $placement->serviceInstance->service, 'instance' => $placement->serviceInstance->public_id, 'upstreams' => []];
             $byDeployment[$deployment->id]['upstreams'][] = $upstream;
         }
 
         $routes = [];
 
-        foreach ($byDeployment as ['deployment' => $deployment, 'service' => $service, 'upstreams' => $upstreams]) {
+        foreach ($byDeployment as ['deployment' => $deployment, 'service' => $service, 'instance' => $instance, 'upstreams' => $upstreams]) {
             $environment = $deployment->environment;
             $host = $this->urls->deploymentHostname($service, $deployment, $environment->project);
             $protection = $this->protectionFor($environment);
@@ -156,6 +156,7 @@ final class PreviewRoutes
                 indexed: false,
                 upstreams: $upstreams,
                 protection: $protection,
+                service: $instance,
             );
         }
 

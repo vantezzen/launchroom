@@ -83,6 +83,7 @@ var (
 	reVolumeID      = idRegexp("vol")
 	reWorkloadID    = idRegexp("wl")
 	reServiceID     = idRegexp("svc")
+	reInstanceID    = idRegexp("sin")
 	reEnvironmentID = idRegexp("env")
 	reDeploymentID  = idRegexp("dpl")
 	reRouteID       = idRegexp("rt")
@@ -133,6 +134,18 @@ func (ServiceID) ProtocolSchema() ScalarSchema { return strSchema(reServiceID, 0
 
 // Validate checks the grammar.
 func (v ServiceID) Validate() error { return checkPattern("service id", string(v), reServiceID, 0) }
+
+// ServiceInstanceID is a service instance id ("sin_…"): a service in one
+// environment.
+type ServiceInstanceID string
+
+// ProtocolSchema implements SchemaDescriber.
+func (ServiceInstanceID) ProtocolSchema() ScalarSchema { return strSchema(reInstanceID, 0) }
+
+// Validate checks the grammar.
+func (v ServiceInstanceID) Validate() error {
+	return checkPattern("service instance id", string(v), reInstanceID, 0)
+}
 
 // EnvironmentID is an environment id ("env_…").
 type EnvironmentID string
