@@ -9,7 +9,7 @@ use App\Enums\Traces\TraceFirewallOutcome;
 use App\Enums\Traces\TraceOrigin;
 
 /**
- * The fields of a decrypted `Launchroom-Trace` payload (docs/23 §2), as the
+ * The fields of a decrypted `X-Launchroom-Ray` payload (docs/23 §2), as the
  * edge wrote them: ids are public ids (`srv_…`, `rt_…`, `sin_…`), optional
  * fields are null when absent. Nothing here is looked up or checked against a team;
  * App\Queries\Traces\RequestTraceView does that.

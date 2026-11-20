@@ -7,6 +7,7 @@ namespace App\Queries;
 use App\Data\Moves\CutoverMachineData;
 use App\Data\Moves\MoveChecklistData;
 use App\Models\InstanceSettings;
+use App\Models\Moves\ControlPlaneMove;
 use App\Models\Server;
 use App\Services\Dns\EdgeAddresses;
 use App\Services\Instance\DashboardOrigin;
@@ -17,7 +18,8 @@ use Carbon\CarbonImmutable;
  * Settings → Move launchroom): DNS of the dashboard, the apps domain and
  * custom domains now points here; images the new registry doesn't have
  * yet; whether other servers reconnected; the old machine, which can be
- * deleted; and a new recovery kit when the address changed.
+ * deleted; and a new recovery kit when the address changed. The DNS switch
+ * (records and values to set) comes from the move (MoveDnsSwitch).
  */
 final readonly class MoveChecklist
 {
@@ -25,6 +27,7 @@ final readonly class MoveChecklist
         private ControlPlaneCutoverChecks $cutover,
         private EdgeAddresses $edges,
         private DashboardOrigin $origin,
+        private MoveDnsSwitch $dnsSwitch,
     ) {}
 
     public function get(bool $check): MoveChecklistData
@@ -40,6 +43,7 @@ final readonly class MoveChecklist
         $images = $check ? $this->cutover->images() : null;
         $checks = $this->cutover->checks($expected, $records, $this->cutover->servers($current, $startedAt), $images);
         $needsRecoveryKit = $settings->recovery_passphrase_set_at !== null && $settings->recovery_kit_confirmed_at === null;
+        $move = $state?->moveId !== null ? ControlPlaneMove::query()->where('public_id', $state->moveId)->first() : null;
 
         return new MoveChecklistData(
             startedAt: $startedAt?->toIso8601String(),
@@ -50,6 +54,7 @@ final readonly class MoveChecklist
             checks: $checks,
             needsRecoveryKit: $needsRecoveryKit,
             openSteps: [...$checks->openSteps(), ...($needsRecoveryKit ? ['recovery-kit'] : [])],
+            dnsSwitch: $move instanceof ControlPlaneMove ? $this->dnsSwitch->get($move->dns_switch, $this->origin->canonical(), $check) : null,
         );
     }
 }

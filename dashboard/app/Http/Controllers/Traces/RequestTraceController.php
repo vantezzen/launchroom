@@ -20,10 +20,11 @@ use Inertia\Inertia;
 use Inertia\Response;
 
 /**
- * `/trace` (docs/23 §6): paste a `Launchroom-Trace` header and see the
- * request's path. With `?t=` the trace is decoded here, so a trace link can
- * be shared with a teammate; anything the member can't see, or that isn't
- * a trace, gets one answer (DecodeTrace::NOT_READABLE).
+ * `/trace` (docs/23 §6): paste a ray (the `X-Launchroom-Ray` header) and see
+ * the request's path. With `?t=` the ray is decoded here, so a link can be
+ * shared with a teammate; anything the member can't see, or that isn't a
+ * ray, gets one answer (DecodeTrace::NOT_READABLE), a ray in a newer format
+ * DecodeTrace::NEWER.
  */
 final class RequestTraceController extends Controller
 {
@@ -42,7 +43,7 @@ final class RequestTraceController extends Controller
         return Inertia::render('trace', [
             'team' => ['name' => $team->name],
             'input' => mb_substr($input, 0, TraceCodec::MAX_INPUT),
-            ...($trace instanceof RequestTraceData ? ['trace' => $trace] : ['error' => DecodeTrace::NOT_READABLE]),
+            ...($trace instanceof RequestTraceData ? ['trace' => $trace] : ['error' => $decode->refusal($input)]),
         ]);
     }
 }

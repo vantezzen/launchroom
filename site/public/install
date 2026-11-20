@@ -45,9 +45,13 @@
 #                          or test S3 only; implies --restore)
 #   --move TOKEN           move launchroom here from another server (docs/14 §13.4):
 #                          the one-time token from Settings → Move launchroom there.
-#                          Run the same command again to continue an interrupted move.
+#                          Continue an interrupted move with ./launchroom move continue
+#                          in the install folder (or run the same command again).
 #   --move-url URL         reach the old dashboard at this address instead of the
 #                          one in the token (for example over a private network)
+#   --move-continue        continue the move in --dir from wherever it stopped (what
+#                          `./launchroom move continue` runs; the token and the
+#                          options come from the move's state there)
 #   -h, --help
 #
 # Environment overrides for image pins (testing / mirrors): LR_DASHBOARD_IMAGE,
@@ -99,6 +103,7 @@ RESTORE_HTTP=0
 KIT=""
 MOVE=0
 MOVE_URL=""
+MOVE_CONTINUE=0
 UNSTABLE=0
 # Docker when it is missing: ask (default), or 1 = install without asking.
 # NO_INSTALL_DOCKER=1 never installs and wins over both.
@@ -239,6 +244,7 @@ parse_args() {
 		--restore-allow-http) RESTORE_HTTP=1; RESTORE=1 ;;
 		--move) LR_MOVE_TOKEN="${2:?--move needs the token from Settings → Move launchroom}"; export LR_MOVE_TOKEN; MOVE=1; shift ;;
 		--move-url) MOVE_URL="${2:?--move-url needs an address}"; MOVE=1; shift ;;
+		--move-continue) MOVE_CONTINUE=1; MOVE=1 ;;
 		-h | --help) usage; exit 0 ;;
 		*) die "unknown option $1 (see --help)" ;;
 		esac
@@ -678,6 +684,11 @@ fetch_bundle() {
 			# Started by launchroomd's update supervisor, which verified this
 			# bundle against the pinned release identity (docs/11 §4).
 			say "using the release bundle verified by launchroomd ($BUNDLE)"
+		elif [ "$MOVE_CONTINUE" = 1 ] && [ "$BUNDLE" = "$(move_option bundle)" ]; then
+			# `./launchroom move continue`: the bundle this move started
+			# with (a downloaded one was verified then, and stays in the
+			# install folder until the move finished).
+			say "continuing with the bundle this move started with ($BUNDLE)"
 		else
 			warn "using the local bundle $BUNDLE; it is NOT signature-verified."
 		fi
@@ -847,14 +858,42 @@ apply_url() {
 }
 
 # A move (docs/14 §13.4) goes into a fresh folder, or continues one it started (its state in
-# data/backups/move). It never overwrites a running install.
+# data/backups/move, its options in .move). It never overwrites a running install.
+# --move-continue (`./launchroom move continue`) takes the token from the state
+# and the options from .move.
 check_move_target() {
-	[ -n "${LR_MOVE_TOKEN:-}" ] || die "--move needs the token from Settings → Move launchroom in the old dashboard"
 	[ "$RESTORE" = 0 ] || die "--move and --restore can't be combined"
+	if [ "$MOVE_CONTINUE" = 1 ]; then
+		[ -f "$DIR/.move" ] || die "no move is in progress in $DIR. Moves start with the command from Settings → Move launchroom in the old dashboard."
+		[ -n "$DOMAIN" ] || DOMAIN="$(move_option domain)"
+		[ -n "$MOVE_URL" ] || MOVE_URL="$(move_option move-url)"
+		[ "$(move_option detect-ip)" != 0 ] || DETECT_IP=0
+		[ "$(move_option port-check)" != 0 ] || PORT_CHECK=0
+		say "continuing the move in $DIR"
+		return
+	fi
+	[ -n "${LR_MOVE_TOKEN:-}" ] || die "--move needs the token from Settings → Move launchroom in the old dashboard"
 	if [ -f "$DIR/.env" ] && [ ! -f "$DIR/data/backups/move/token" ] && [ ! -f "$DIR/.move" ]; then
 		die "$DIR already holds a launchroom install. A move needs a new server (or an empty --dir)."
 	fi
-	: >"$DIR/.move"
+	[ -f "$DIR/.move" ] || : >"$DIR/.move"
+}
+
+# move_option KEY: a value .move recorded for `./launchroom move continue`.
+move_option() { sed -n "s/^$1=//p" "$DIR/.move" 2>/dev/null | tail -n 1; }
+
+# move_record: what a continued move needs again (.move, next to .env): the
+# bundle this move runs from (a downloaded one stays in .tmp until the move
+# finished) and the options that change what the installer writes.
+move_record() {
+	{
+		printf 'bundle=%s\n' "$BUNDLE"
+		printf 'domain=%s\n' "$DOMAIN"
+		printf 'move-url=%s\n' "$MOVE_URL"
+		printf 'detect-ip=%s\n' "$DETECT_IP"
+		printf 'port-check=%s\n' "$PORT_CHECK"
+	} >"$DIR/.move.tmp"
+	mv "$DIR/.move.tmp" "$DIR/.move"
 }
 
 # receive ARGS...: launchroom:move:receive in a one-off dashboard container
@@ -869,20 +908,48 @@ receive() {
 
 move_state_file() { dc run --rm --no-deps --user 0 --entrypoint sh dashboard -c "[ ! -f /data/backups/move/$1 ] || cat /data/backups/move/$1"; }
 
+# move_prove_server: this machine's launchroomd already enrolled with the old
+# dashboard (a cancelled move keeps the server it joined, D103) and can't
+# enroll again, so the claim names that server and proves it with its
+# identity key. A one-off root container reads the key (root's, 0600) from
+# the read-only data folder; only the signature is left in the move's state.
+move_prove_server() {
+	dc run --rm -T --user 0 -e LR_MOVE_TOKEN -v "$DIR/data/daemon:/run/launchroom-server:ro" \
+		dashboard php artisan launchroom:move:receive --prove-server=/run/launchroom-server --json >/dev/null
+}
+
 # move_join: claims the move (both sides show a code the owner compares),
 # then enrolls this server's launchroomd with the OLD dashboard as a regular
-# server, so every app, database and volume can move here first.
+# server, so every app, database and volume can move here first. A machine
+# that is already a server of the old dashboard continues as that server.
 move_join() {
 	say "connecting to the old dashboard"
-	out="$(receive --join)" || die "could not join the move (see above). Run the same command again to retry."
+	unenroll="as root: cd $DIR && docker compose stop launchroomd && rm -rf data/daemon"
+	again="cd $DIR && ./launchroom move continue"
+	if [ -f "$DIR/data/daemon/enrollment.json" ]; then
+		say "this machine is already connected to launchroom; checking which server it is"
+		move_prove_server || die "could not read this machine's connection (see above). If it belongs to another launchroom, remove it ($unenroll), then run: $again"
+	fi
+	out="$(receive --join)" || {
+		[ ! -f "$DIR/data/daemon/enrollment.json" ] ||
+			warn "if the old dashboard refused this machine's existing connection, remove it ($unenroll), then run: $again"
+		die "could not join the move (see above). To retry, run: $again"
+	}
 	url="$(printf '%s' "$out" | json_field url)"
 	[ -n "$url" ] || die "the old dashboard's address is unknown"
 	key="$(move_state_file cp-key)"
 	[ -n "$key" ] || die "the old dashboard did not name its signing key"
 	printf '%s\n' "$key" >"$DIR/data/daemon/cp-key"
+	connected="$(printf '%s' "$out" | json_field connected)"
 	token="$(move_state_file join-token)"
 	env_set LR_CONTROL_PLANE_URL "$url"
-	if [ -n "$token" ] && [ ! -f "$DIR/data/daemon/enrollment.json" ]; then
+	if [ -n "$connected" ]; then
+		say "this machine is already connected to $url as $connected. The move continues with that server."
+	elif [ -n "$token" ] && [ -f "$DIR/data/daemon/enrollment.json" ]; then
+		# An older dashboard: it issued a join token this launchroomd can't use.
+		dc run --rm --no-deps --user 0 --entrypoint rm dashboard -f /data/backups/move/join-token
+		die "this machine is already connected to launchroom, so it can't use the join token, and the old dashboard can't continue the move with it (it runs an older release). Cancel the move there, update the old dashboard, then start a new move."
+	elif [ -n "$token" ]; then
 		printf '%s\n' "$token" >"$DIR/data/daemon/join-token"
 		env_set LR_JOIN_TOKEN_FILE /data/join-token
 		say "starting launchroomd for $url"
@@ -898,7 +965,7 @@ move_join() {
 	fi
 	env_set LR_JOIN_TOKEN_FILE ""
 	dc up -d launchroomd
-	say "this server joined launchroom at $url."
+	[ -n "$connected" ] || say "this server joined launchroom at $url."
 }
 
 # move_handover: waits (the apps and data move meanwhile, driven from the old
@@ -906,26 +973,55 @@ move_join() {
 move_handover() {
 	echo
 	say "now continue in the old dashboard: Settings → Move launchroom. Keep this running;"
-	say "it finishes the move when you hand over (run the same command again if it stops)."
+	say "it finishes the move when you hand over. If it stops, run: cd $DIR && ./launchroom move continue"
 	receive --handover --force >/dev/null || {
 		receive --abort="the new server could not restore the hand-over" >/dev/null 2>&1 || true
-		die "the hand-over failed (see above). The old dashboard takes changes again; run the same command to try again."
+		die "the hand-over failed (see above). The old dashboard takes changes again; to try again, run: cd $DIR && ./launchroom move continue"
 	}
 	say "the old dashboard's data and keys are here"
+}
+
+# move_local_state: where the move stands in this server's database: none
+# (nothing restored yet), ready (restored, not taken over) or done (taken
+# over). Releases without the check answer nothing, which counts as none.
+move_local_state() {
+	dc run --rm -T dashboard php artisan launchroom:move:takeover --status --json 2>/dev/null | json_field state || true
+}
+
+# move_install: the restored keys, secrets and mesh state into place. The
+# installer that restored them is the one that installs them (the restore
+# folder holds plaintext keys and goes when it exits).
+move_install() {
+	dc stop launchroomd >/dev/null 2>&1 || true
+	rm -f "$DIR/data/daemon/control-plane.json"
+	env_set LR_CONTROL_PLANE_URL ""
+	install_restored_files /data/backups/move/restore
+	dc run --rm --no-deps --user 0 --entrypoint rm dashboard -rf /data/backups/move/restore
 }
 
 # move_take_over: this server becomes the control plane. launchroomd stops
 # talking to the old dashboard (its address and the origin it may have
 # adopted from there are dropped) and keeps its identity, which is in the
-# restored database.
+# restored database. A refusal is printed with its reason; the old dashboard
+# takes changes again (the hand-over is aborted there) so it can be fixed,
+# and `./launchroom move continue` then picks up the next hand-over.
 move_take_over() {
-	dc stop launchroomd >/dev/null 2>&1 || true
-	rm -f "$DIR/data/daemon/control-plane.json"
-	env_set LR_CONTROL_PLANE_URL ""
-	install_restored_files /data/backups/move/restore
 	start_stack
 	say "taking over as the control plane"
-	artisan launchroom:move:takeover --json >/dev/null || die "the takeover failed (see ./launchroom logs dashboard). Fix it, then run $DIR/launchroom move-takeover"
+	out="$(artisan launchroom:move:takeover --json)" && return 0
+	reason="$(printf '%s' "$out" | json_field error)"
+	[ -n "$reason" ] || reason="see $DIR/launchroom logs dashboard"
+	receive --abort="$(printf 'the new server refused to take over: %s' "$reason" | cut -c1-480)" >/dev/null 2>&1 || true
+	dc stop dashboard horizon reverb scheduler >/dev/null 2>&1 || true
+	die "the new server refused to take over: $reason
+  The old dashboard takes changes again and shows this. Fix it there (Settings → Move launchroom),
+  hand over again, then run: cd $DIR && ./launchroom move continue"
+}
+
+# move_finish: the local launchroomd connects to this dashboard, the old one
+# hears that the move finished (it stays frozen and points here), and the
+# move's state goes. Every step can run again.
+move_finish() {
 	enroll_local_daemon
 	i=0
 	until receive --complete="$(dashboard_address)" >/dev/null 2>&1; do
@@ -940,12 +1036,26 @@ move_take_over() {
 	rm -f "$DIR/.move"
 }
 
+# move_control_plane: join → hand-over → takeover → finish, from wherever an
+# earlier run stopped. Until this server took over, the old dashboard is in
+# charge: the hand-over is fetched again (it may be a new one after an
+# aborted takeover) and restored over what is here.
 move_control_plane() {
 	trap 'dc run --rm --no-deps --user 0 --entrypoint rm dashboard -rf /data/backups/move/restore >/dev/null 2>&1 || true' EXIT
 	trap 'exit 130' INT TERM HUP
-	move_join
-	move_handover
-	move_take_over
+	state="$(move_local_state)"
+	if [ "$state" = "done" ]; then
+		say "this server already took over; finishing the move"
+		start_stack
+	else
+		# A dashboard restored by an earlier run must not hold the database open.
+		[ "$state" != ready ] || dc stop dashboard horizon reverb scheduler >/dev/null 2>&1 || true
+		move_join
+		move_handover
+		move_install
+		move_take_over
+	fi
+	move_finish
 	trap - EXIT INT TERM HUP
 }
 
@@ -1178,6 +1288,16 @@ finish() {
 		ip="$(detect_public_ip 2>/dev/null || true)"
 		echo "  launchroom moved here. Point $host${ip:+ (A/AAAA) to $ip} if it isn't yet, then sign"
 		echo "  in and open the checklist ($url/settings/move): DNS, images, the old server."
+		# A domain only reaches this server once its record changed (an IP or sslip.io address works now).
+		case "$host" in
+		*.sslip.io) ;;
+		*[!0-9.:]*)
+			if [ -n "$ip" ]; then
+				echo "  Until $host points here, reach this dashboard through an SSH tunnel from your computer:"
+				echo "    ssh -L 8000:127.0.0.1:8000 root@$ip   then open http://localhost:8000"
+			fi
+			;;
+		esac
 	fi
 	echo
 	echo "  Back up $DIR/.env and $DIR/data/keys/ now: they decrypt every secret."
@@ -1234,6 +1354,7 @@ main() {
 	DIR="$(cd "$DIR" && pwd)"
 	[ "$MOVE" = 0 ] || check_move_target
 	fetch_bundle
+	[ "$MOVE" = 0 ] || move_record
 	if supervised_update; then
 		rm -rf "$DIR/.tmp"
 		finish

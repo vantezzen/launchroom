@@ -189,15 +189,18 @@ Tests: `make test-install-sh` and `make test-server-sh` with `/proc/meminfo` and
 
 ### 2.2a `--move` ([14](14-backup-and-restore.md) §13.4)
 
-`install.sh --move <token> [--move-url URL] [--domain HOST] [--version V]` on a new server moves launchroom there from the old one. Settings → Move launchroom shows the command with the token (and `--version` of the running release).
+`install.sh --move <token> [--move-url URL] [--domain HOST] [--version V]` on a new server moves launchroom there from the old one. Settings → Move launchroom shows the command with the token (and `--version` of the running release). `install.sh --move-continue` (what `./launchroom move continue` runs) continues the move in `--dir` from wherever it stopped.
 
 - **`check_move_target`**: needs the token, refuses `--restore`, and refuses a folder that already holds an install unless it is a move in progress (`.move` marker or `data/backups/move/token`). A re-run continues where the move stopped.
+- **`.move`** records the move's options (`bundle`, `domain`, `move-url`, `detect-ip`, `port-check`; `move_record`, `move_option`), so a continue runs with the same options and the bundle the move started with.
+- **`move_local_state`** (`launchroom:move:takeover --status`: `none`, `ready` or `done`; a database without tables is `none`) decides where `move_control_plane` resumes: not taken over → stop a restored stack's PHP containers, then join, hand-over, `move_install` (restored files in place, the restore folder removed right after) and `move_take_over`; taken over → start the stack. Both end with `move_finish`.
 - After the bundle, `.env`, Postgres and Valkey (steps 1 to 4), nothing else of the stack starts until the hand-over.
 - **`move_join`**: `launchroom:move:receive --join` in a one-off dashboard container (the token as `LR_MOVE_TOKEN`, never argv; `LR_MOVE_HOSTNAME` = the host's name) claims the move and prints the code to compare in the old dashboard, then waits for the approval. It writes the old dashboard's signing key to `data/daemon/cp-key` and the join token (only once) to `data/daemon/join-token`, sets `LR_CONTROL_PLANE_URL` in `.env` to the old address (compose: `${LR_CONTROL_PLANE_URL:-http://127.0.0.1:${LR_DASHBOARD_PORT}}`) and starts only dockerd-guard and launchroomd, which enroll with the old dashboard as a regular server.
 - **`move_handover`**: `launchroom:move:receive --handover --force` waits (it prints the old dashboard's progress) until the hand-over is ready, restores the final dump into the new Postgres and writes the key bundle to `data/backups/move/restore`. On failure it calls `--abort` (the old dashboard thaws) and stops.
-- **`move_take_over`**: stops launchroomd, removes `data/daemon/control-plane.json` (an origin it may have adopted from the old dashboard, D43) and clears `LR_CONTROL_PLANE_URL`; `install_restored_files` (shared with `--restore`) puts keys, secrets and Headscale's state in place; the stack starts (migrations run on top of the restored schema); `launchroom:move:takeover` makes this server the control plane; `enroll_local_daemon` finds it enrolled and starts launchroomd against the local dashboard with the same identity; `--complete=<address>` tells the old dashboard (5 tries; on failure it stays frozen, which is harmless); `data/backups/move` (token, key pair, restored files) is deleted.
+- **`move_take_over`**: stops launchroomd, removes `data/daemon/control-plane.json` (an origin it may have adopted from the old dashboard, D43) and clears `LR_CONTROL_PLANE_URL`; the stack starts (migrations run on top of the restored schema); `launchroom:move:takeover` makes this server the control plane (idempotent). A refusal (for example a service still on the old server) is printed with its reason, the hand-over is aborted with it (the old dashboard thaws and shows it), the PHP containers stop, and the message names `cd DIR && ./launchroom move continue`.
+- **`move_finish`**: `enroll_local_daemon` finds this server enrolled and starts launchroomd against the local dashboard with the same identity; `--complete=<address>` tells the old dashboard (5 tries; on failure it stays frozen, which is harmless); `data/backups/move` (token, key pair, restored files) and `.move` are deleted. For a domain address it prints the SSH tunnel to reach the new dashboard before DNS switched.
 - **Address** (`restored_app_url`): `--domain` wins; else a restored domain of your own is kept, and an IP or `<ip>.sslip.io` address becomes this server's (`dashboard_url`). `--restore` keeps the restored address as before.
-- **`./launchroom move-takeover`** runs the takeover by hand when the installer stopped after the restore.
+- **`./launchroom move continue`** (alias `move-takeover`) runs the recorded bundle's installer with `--move-continue` (else `.tmp/bundle`; it says so when there is no move or the bundle is gone). Every move error names it.
 - An `EXIT` trap removes `data/backups/move/restore` (plaintext keys) when the installer fails or is interrupted.
 
 ### 2.3 Helper CLI (`launchroom/launchroom`)
@@ -214,7 +217,8 @@ Tests: `make test-install-sh` and `make test-server-sh` with `/proc/meminfo` and
 | `setup-token` | Print the setup link. |
 | `dashboard-domain-reset [--forget-old]` | Typed confirmation, then `launchroom:dashboard-domain:reset --force`: `APP_URL` becomes the dashboard's address again when its own domain locks you out ([05](05-networking-ingress.md) §4.1). |
 | `reset-owner-2fa EMAIL` | Typed confirmation, then `launchroom:owner:reset-2fa`: clears the owner's TOTP secret and recovery codes, invalidates remember-me, audited `instance.owner_two_factor_reset`. The owner enrolls again at the next sign-in. |
-| `move-takeover` | After `install.sh --move` restored the old dashboard but stopped before taking over: `launchroom:move:takeover`, drops the adopted origin and `LR_CONTROL_PLANE_URL`, restarts launchroomd (§2.2a). |
+| `move continue` | Alias `move-takeover`. Continues moving launchroom to this server from wherever it stopped: the recorded bundle's installer with `--move-continue` (§2.2a). Safe to run again. |
+| `tinker` | `php artisan tinker` in the dashboard container, for repairs by hand. Changes skip checks and the audit log. |
 | `uninstall` | See below. |
 
 **`./launchroom doctor`** (`daemon/internal/doctor`, `launchroomd doctor`):

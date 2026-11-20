@@ -11,7 +11,7 @@ use App\Support\Traces\TraceEnvelope;
 use Tests\Support\Traces;
 
 /*
-| The PHP decoder of the Launchroom-Trace header (docs/23 §2) against the
+| The PHP decoder of the X-Launchroom-Ray header (docs/23 §2) against the
 | shared vectors the Caddy module's Go encoder runs too
 | (protocol/fixtures/v1/trace).
 */
@@ -102,13 +102,36 @@ test('every invalid fixture is refused', function (): void {
     }
 });
 
-test('a pasted header line or value with whitespace is accepted, anything else is not', function (): void {
-    expect(TraceCodec::value("  AQAAACo-_x  \n"))->toBe('AQAAACo-_x')
+test('a pasted header line or value with whitespace or quotes is accepted, anything else is not', function (): void {
+    expect(TraceCodec::value("  lr1.AQAAACo-_x  \n"))->toBe('lr1.AQAAACo-_x')
+        ->and(TraceCodec::value('X-Launchroom-Ray: lr1.AQAAACo-_x'))->toBe('lr1.AQAAACo-_x')
+        ->and(TraceCodec::value('x-launchroom-ray:"lr1.AQAAACo"'))->toBe('lr1.AQAAACo')
+        ->and(TraceCodec::value('"lr1.AQAAACo"'))->toBe('lr1.AQAAACo')
+        ->and(TraceCodec::value("'lr2.AQAAACo'"))->toBe('lr2.AQAAACo')
         ->and(TraceCodec::value('Launchroom-Trace: AQAAACo-_x'))->toBe('AQAAACo-_x')
         ->and(TraceCodec::value('launchroom-trace:AQAAACo'))->toBe('AQAAACo')
         ->and(TraceCodec::value('X-Other: AQAAACo'))->toBeNull()
         ->and(TraceCodec::value('AQAA ACo'))->toBeNull()
+        ->and(TraceCodec::value('lr.AQAAACo'))->toBeNull()
+        ->and(TraceCodec::value('lr1.lr1.AQAAACo'))->toBeNull()
         ->and(TraceCodec::value(str_repeat('A', TraceCodec::MAX_INPUT + 1)))->toBeNull();
+});
+
+test('a ray reads with the lr1. prefix and without it, and another prefix is a newer format', function (): void {
+    [$keyId, $key] = Traces::fixtureKey();
+    $legacy = Traces::fixtures('valid')['legacy-unprefixed.json'];
+    $newer = Traces::fixtures('invalid')['newer-prefix.json'];
+    $value = Traces::header($legacy, $key);
+
+    expect($value)->not->toStartWith('lr')
+        ->and(decodeTraceFixture($value, $keyId, $key))->toBeInstanceOf(DecodedTrace::class)
+        ->and(decodeTraceFixture(TraceCodec::PREFIX.$value, $keyId, $key))->toBeInstanceOf(DecodedTrace::class)
+        ->and(decodeTraceFixture('lr2.'.$value, $keyId, $key))->toBeNull()
+        ->and(decodeTraceFixture(Traces::header($newer, $key), $keyId, $key))->toBeNull()
+        ->and(TraceCodec::newer(Traces::header($newer, $key)))->toBeTrue()
+        ->and(TraceCodec::newer('lr10.AQAAACo'))->toBeTrue()
+        ->and(TraceCodec::newer('lr1.AQAAACo'))->toBeFalse()
+        ->and(TraceCodec::newer($value))->toBeFalse();
 });
 
 test('a wrong key fails authentication', function (): void {

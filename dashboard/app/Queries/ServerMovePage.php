@@ -58,6 +58,8 @@ final readonly class ServerMovePage
             'dns' => Inertia::defer(fn (): array => $target instanceof Server ? $this->planner->plan($server, $target, $move?->control_plane === true, checkDns: true)->dns : []),
             'move' => $move instanceof ServerMove && ($open instanceof ServerMove || $move->status === ServerMoveStatus::Completed || $move->finished_at?->gt(now()->subDay()) === true) ? ServerMoveData::fromMove($move) : null,
             'canEnroll' => $user->can('create', [Server::class, $server->team]),
+            // What Retire would refuse on (RetireServer checks the same).
+            'retireBlockers' => $open instanceof ServerMove && $open->status === ServerMoveStatus::Ready ? ServicesOnServer::blocking($server) : [],
         ];
     }
 }

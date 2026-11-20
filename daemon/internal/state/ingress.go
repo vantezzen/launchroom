@@ -30,7 +30,7 @@ type IngressSpec struct {
 	// Trace is the edge's request trace key (docs/23 §4): a sealed
 	// IngressSecret (purpose "trace") with "key" (32 random bytes, standard
 	// base64) and "keyId" (decimal 1–4294967295). The edge encrypts the
-	// Launchroom-Trace header of every response with it. Omitted: no trace
+	// X-Launchroom-Ray header of every response with it. Omitted: no trace
 	// header (daemon feature requestTrace).
 	Trace *Sealed `json:"trace,omitzero" jsonschema:"nullable" lr:"feature=requestTrace"`
 }

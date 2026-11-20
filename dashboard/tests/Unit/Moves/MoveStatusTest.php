@@ -39,6 +39,18 @@ test('a stateful item can only go back after the cutover, never once it is done'
     }
 });
 
+test('a stateless service left stopped settles the item for good', function (): void {
+    expect(MoveItemStatus::Failed->canTransitionTo(MoveItemStatus::Stopped))->toBeTrue()
+        ->and(MoveItemStatus::Pending->canTransitionTo(MoveItemStatus::Stopped))->toBeTrue()
+        ->and(MoveItemStatus::Starting->canTransitionTo(MoveItemStatus::Stopped))->toBeTrue()
+        // Never once data is being copied.
+        ->and(MoveItemStatus::Exporting->canTransitionTo(MoveItemStatus::Stopped))->toBeFalse()
+        ->and(MoveItemStatus::Importing->canTransitionTo(MoveItemStatus::Stopped))->toBeFalse()
+        ->and(MoveItemStatus::Stopped->isTerminal())->toBeTrue()
+        ->and(MoveItemStatus::Stopped->isSettled())->toBeTrue()
+        ->and(MoveItemStatus::Stopped->isActive())->toBeFalse();
+});
+
 test('a move is ready once everything moved, and ends retired or cancelled', function (): void {
     expect(ServerMoveStatus::Running->canTransitionTo(ServerMoveStatus::Ready))->toBeTrue()
         ->and(ServerMoveStatus::Running->canTransitionTo(ServerMoveStatus::Completed))->toBeFalse()

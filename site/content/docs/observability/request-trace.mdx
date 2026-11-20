@@ -1,19 +1,19 @@
 ---
-title: Trace a request
-description: Every response through your edge servers carries a Launchroom-Trace header. Paste it into launchroom to see the request's path from the visitor to your app.
+title: Rays
+description: Every response through your edge servers carries a ray in its X-Launchroom-Ray header. Paste it into launchroom to see the request's path from the visitor to your app.
 ---
 
-When a request fails, is blocked or is slow, you usually only have the response in front of you. launchroom puts a record of what happened into that response. Paste it into the dashboard and you see the request's path: which edge server took it, what the web firewall decided, which server ran the app, and how the app answered.
+When a request fails, is blocked or is slow, you usually only have the response in front of you. launchroom puts a record of what happened into that response: the ray. Paste it into the dashboard and you see the request's path: which edge server took it, what the web firewall decided, which server ran the app, and how the app answered.
 
-## The Launchroom-Trace header
+## The X-Launchroom-Ray header
 
-Every response that passes through one of your edge servers carries a `Launchroom-Trace` header. That includes redirects, error pages, firewall blocks and requests for addresses that no service uses. It looks like this:
+Every response that passes through one of your edge servers carries a ray in its `X-Launchroom-Ray` header. That includes redirects, error pages, firewall blocks and requests for addresses that no service uses. It looks like this:
 
 ```http
-Launchroom-Trace: AQAAACq3vN0yM1x2...
+X-Launchroom-Ray: lr1.AQAAACq3vN0yM1x2...
 ```
 
-The value is encrypted with a key only your launchroom knows. Visitors see the header but can't read it. It records:
+The ray is encrypted with a key only your launchroom knows. Visitors see the header but can't read it. `lr1.` at the start is the format's version. It records:
 
 - when the edge server received the request, and the request id it gave it
 - the edge server, the server the app ran on, the domain's route and the service
@@ -24,44 +24,46 @@ The value is encrypted with a key only your launchroom knows. Visitors see the h
 
 It contains no visitor address, no query string, no headers, cookies or bodies.
 
-A response without the header didn't pass through a launchroom edge server: the request may have been stopped earlier, for example by DNS, a proxy in front of your server or a failed TLS handshake. Servers on an older launchroom version don't add the header yet. Update them in **Settings → Updates**.
+A response without the header didn't pass through a launchroom edge server: the request may have been stopped earlier, for example by DNS, a proxy in front of your server or a failed TLS handshake. Servers on an older launchroom version don't add the header yet. Some send it as `Launchroom-Trace` without `lr1.` in front; those rays open the same way. Update the servers in **Settings → Updates**.
 
-## Find the header
+## Find the ray
 
 ### In the browser
 
 1. Open your browser's developer tools and switch to the **Network** tab.
 2. Load the page again, or repeat what failed.
-3. Select the request and look at its **Response Headers**. Copy the value of `launchroom-trace` (browsers often show header names in lowercase).
+3. Select the request and look at its **Response Headers**. Copy the value of `x-launchroom-ray` (browsers often show header names in lowercase).
 
 ### With curl
 
 ```sh
-curl -sI https://shop.example.com/products/42 | grep -i launchroom-trace
+curl -sI https://shop.example.com/products/42 | grep -i x-launchroom-ray
 ```
 
 `curl -I` sends a `HEAD` request. To trace the request you actually make, print the headers of that one:
 
 ```sh
-curl -s -D - -o /dev/null -X POST https://shop.example.com/api/orders | grep -i launchroom-trace
+curl -s -D - -o /dev/null -X POST https://shop.example.com/api/orders | grep -i x-launchroom-ray
 ```
 
-## Open the trace
+You don't have to cut it out: pasting the whole output of `curl -i`, the header line or a HAR entry works too.
 
-Paste the value in one of these places. The header name in front of it is fine too.
+## Open the ray
 
-- **Logs**: in a project's Logs tab or the team's Logs page, select **Trace a request** in the toolbar.
-- **Search ⌘K**: paste the header into the search field and choose **Trace this request**, or search for "Trace a request".
+Paste the ray in one of these places.
 
-The trace opens on its own page with an address you can send to a teammate. **Copy link** copies it, **Trace another** opens a new paste field.
+- **Logs**: in a project's Logs tab or the team's Logs page, select **Paste a ray** in the toolbar.
+- **Search ⌘K**: paste the ray into the search field and choose **Open this ray**, or search for "Paste a ray".
 
-## What the trace shows
+The ray opens on its own page with an address you can send to a teammate. **Copy link** copies it, **Paste another ray** opens a new paste field. A ray that says it was made by a newer version of launchroom comes from a server that's ahead of your dashboard: update launchroom to read it.
+
+## What the ray shows
 
 At the top, one sentence says what happened, for example "The firewall blocked this request. 2 rules matched." or "web answered with 200.".
 
 Below it, the path of the request from the visitor to the edge server, through the web firewall, to the server the app ran on and the service. Each hop shows how long it took. Where the request ended is marked with its status, and the steps it never reached are dimmed. When the edge server and the app's server are the same machine, it is shown once with both roles. A request to an address no service uses ends at the edge server.
 
-A bar shows the time until the response headers, split into the edge server's share and the app's. The trace is written when the response starts, so it doesn't include the time the body took to download.
+A bar shows the time until the response headers, split into the edge server's share and the app's. The ray is written when the response starts, so it doesn't include the time the body took to download.
 
 **Details** lists the time, the request id, the domain, protocol and status, the attempts and the reason when the app couldn't be reached, and the firewall's mode and score. When the firewall matched rules, they are listed with their names.
 
@@ -74,7 +76,7 @@ A bar shows the time until the response headers, split into the edge server's sh
 
 ## The request id in your app
 
-The edge server gives every request a new id and sends it to your app as the `X-Request-Id` header. It replaces any `X-Request-Id` the visitor or a proxy in front sent. The trace shows the same id, and on a firewall block page it is the reference.
+The edge server gives every request a new id and sends it to your app as the `X-Request-Id` header. It replaces any `X-Request-Id` the visitor or a proxy in front sent. The ray shows the same id, and on a firewall block page it is the reference.
 
 Write the id into your log lines and **Open logs** finds them for that request:
 
@@ -115,15 +117,15 @@ logger.info(
 
 Lines are searchable after the fact only in environments that [keep runtime logs](/docs/observability/logs#keep-runtime-logs). Production does by default.
 
-## Who can read a trace
+## Who can read a ray
 
-Anyone on your team who can see the service can open its traces, firewall rules included. Traces of requests to the launchroom dashboard itself are for owners and admins. A trace from another team's server, or one you can't see, shows "This trace isn't from one of your services.", the same as a value that isn't a trace.
+Anyone on your team who can see the service can open its rays, firewall rules included. Rays of requests to the launchroom dashboard itself are for owners and admins. A ray from another team's server, or one you can't see, shows "This ray isn't from one of your services.", the same as a value that isn't a ray.
 
-Traces stay readable for at least 90 days. Each edge server's key changes every 30 days, and an old key is deleted 90 days after it was replaced. After that, its traces can't be opened anymore.
+Rays stay readable for at least 90 days. Each edge server's key changes every 30 days, and an old key is deleted 90 days after it was replaced. After that, its rays can't be opened anymore.
 
 ## Nothing is stored
 
-launchroom keeps no record of single requests. The trace travels in the response, and the dashboard reads it only when you paste it. Request metrics and analytics stay counts per minute.
+launchroom keeps no record of single requests. The ray travels in the response, and the dashboard reads it only when you paste it. Request metrics and analytics stay counts per minute.
 
 <Cards>
   <Card title="Logs" href="/docs/observability/logs" description="Search and follow what your services write." />

@@ -13,6 +13,8 @@ use App\Enums\WorkloadPhase;
 use App\Enums\WorkloadRole;
 use App\Models\Concerns\BelongsToTeam;
 use Illuminate\Database\Eloquent\Attributes\Fillable;
+use Illuminate\Database\Eloquent\Attributes\Scope;
+use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Support\Carbon;
@@ -60,6 +62,28 @@ final class Placement extends Model
         'phase' => 'pending',
         'restart_count' => 0,
     ];
+
+    /**
+     * Not a leftover: launchroomd reported the container `removed`, so the
+     * row only remembers a workload that is gone. It never counts as
+     * running somewhere ("still runs on", docs/14 §13.2, §13.4).
+     *
+     * @param  Builder<self>  $query
+     */
+    #[Scope]
+    protected function present(Builder $query): void
+    {
+        $query->where('phase', '!=', WorkloadPhase::Removed->value);
+    }
+
+    /**
+     * @param  Builder<self>  $query
+     */
+    #[Scope]
+    protected function leftover(Builder $query): void
+    {
+        $query->where('phase', WorkloadPhase::Removed->value);
+    }
 
     /**
      * @return BelongsTo<Deployment, $this>

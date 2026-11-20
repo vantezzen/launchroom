@@ -253,11 +253,28 @@ final readonly class AdvanceServerMoves
             return true;
         }
 
+        if ($instance->stopped_at !== null) {
+            // Stopped from the move page or elsewhere: it runs nowhere.
+            Placement::query()->leftover()->where('service_instance_id', $instance->id)->where('server_id', $move->source_server_id)->delete();
+            $item->transitionTo(MoveItemStatus::Stopped, $move->stoppedItemMessage());
+
+            return true;
+        }
+
         if ($item->status === MoveItemStatus::Pending) {
             $item->forceFill(['attempts' => $item->attempts + 1, 'started_at' => $item->started_at ?? now()]);
 
             if (! $this->runsOn($instance, $move->source_server_id)) {
-                $item->transitionTo(MoveItemStatus::Done, 'Already runs on another server.');
+                $elsewhere = $this->servers($instance);
+                Placement::query()->leftover()->where('service_instance_id', $instance->id)->where('server_id', $move->source_server_id)->delete();
+
+                if ($elsewhere === []) {
+                    $item->transitionTo(MoveItemStatus::Skipped, 'It doesn’t run on any server, so there is nothing to move.');
+
+                    return true;
+                }
+
+                $item->transitionTo(MoveItemStatus::Done, 'Already runs on '.implode(', ', $elsewhere).'.');
 
                 return true;
             }
@@ -717,6 +734,11 @@ final readonly class AdvanceServerMoves
 
         $instance = $this->instance($item);
 
+        if ($instance instanceof ServiceInstance) {
+            // Rows of containers launchroomd already removed on the source would block its retirement.
+            Placement::query()->leftover()->where('service_instance_id', $instance->id)->where('server_id', $move->source_server_id)->delete();
+        }
+
         $this->audit->handle(new AuditEntryData(
             action: AuditAction::ServerMoveItemFinished,
             actor: AuditActor::system(),
@@ -781,6 +803,7 @@ final readonly class AdvanceServerMoves
     private function runsOn(ServiceInstance $instance, int $serverId): bool
     {
         return Placement::query()
+            ->present()
             ->where('service_instance_id', $instance->id)
             ->where('server_id', $serverId)
             ->where('role', WorkloadRole::Serving->value)
@@ -789,7 +812,21 @@ final readonly class AdvanceServerMoves
 
     private function where(ServiceInstance $instance, ServerMove $move): string
     {
+        $names = $this->servers($instance);
+
+        return $names === [] ? $move->target->name : implode(', ', $names);
+    }
+
+    /**
+     * Names of the servers it serves from (leftover rows don't count).
+     *
+     * @return list<string>
+     */
+    private function servers(ServiceInstance $instance): array
+    {
+        /** @var list<string> $names */
         $names = Placement::query()
+            ->present()
             ->where('service_instance_id', $instance->id)
             ->where('role', WorkloadRole::Serving->value)
             ->with('server')
@@ -799,7 +836,7 @@ final readonly class AdvanceServerMoves
             ->values()
             ->all();
 
-        return $names === [] ? $move->target->name : implode(', ', $names);
+        return $names;
     }
 
     private function engineLabel(ServiceInstance $instance): string

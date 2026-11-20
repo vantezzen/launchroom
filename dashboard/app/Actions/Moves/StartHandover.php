@@ -23,8 +23,12 @@ use App\Models\DaemonTask;
 use App\Models\Deployment;
 use App\Models\Moves\ControlPlaneMove;
 use App\Models\Moves\ServerMove;
+use App\Models\Placement;
+use App\Models\Server;
 use App\Models\Transfers\DataExportRun;
 use App\Models\Transfers\DataImportRun;
+use App\Queries\MoveDnsSwitch;
+use App\Queries\ServicesOnServer;
 use App\Services\Moves\InstanceFreeze;
 use Illuminate\Support\Facades\DB;
 
@@ -37,8 +41,11 @@ use Illuminate\Support\Facades\DB;
  * throughout (they already run on the new server).
  *
  * Refused while something is in flight (a deploy, a build, a backup, a
- * restore, an import or export, another move) and when the new server's
- * installer isn't waiting (it asks every few seconds).
+ * restore, an import or export, another move), when the new server's
+ * installer isn't waiting (it asks every few seconds), and while a service
+ * still runs or keeps data on this server (the takeover would refuse, the
+ * same check as RetireServer). The DNS records to change are kept on the
+ * move for the old dashboard's last page.
  */
 final readonly class StartHandover
 {
@@ -47,6 +54,7 @@ final readonly class StartHandover
 
     public function __construct(
         private RecordAuditEvent $audit,
+        private MoveDnsSwitch $dnsSwitch,
     ) {}
 
     public function handle(ControlPlaneMove $move, string $confirmation, AuditActor $actor): ControlPlaneMove
@@ -63,7 +71,7 @@ final readonly class StartHandover
             }
 
             if ($move->receiver_seen_at === null || $move->receiver_seen_at->lt(now()->subSeconds(self::RECEIVER_WINDOW_SECONDS))) {
-                throw DomainRuleViolation::conflict('The new server’s installer isn’t waiting. Run the install command there again (it continues where it stopped), then hand over.');
+                throw DomainRuleViolation::conflict('The new server’s installer isn’t waiting. Run ./launchroom move continue in its install folder (it continues where it stopped), then hand over.');
             }
 
             $busy = $this->busy($move);
@@ -72,8 +80,23 @@ final readonly class StartHandover
                 throw DomainRuleViolation::conflict('Wait for these to finish first: '.implode(', ', $busy).'.');
             }
 
+            // What would make the takeover on the new server refuse (RetireServer):
+            // checked here, before anything freezes.
+            $source = $move->source_server_id === null ? null : Server::query()->find($move->source_server_id);
+
+            if ($source instanceof Server) {
+                Placement::query()->leftover()->where('server_id', $source->id)->delete();
+                $blockers = ServicesOnServer::blocking($source);
+
+                if ($blockers !== []) {
+                    throw DomainRuleViolation::conflict(ServicesOnServer::refusal($blockers, 'Move, stop or remove it first: the new server can’t take over while it is there.'));
+                }
+            }
+
             InstanceFreeze::freeze("Moving launchroom to a new server ({$move->public_id})");
             $move->frozen_at = now();
+            // The old dashboard shows these after the hand-over, when its copy of the new server goes quiet.
+            $move->dns_switch = $this->dnsSwitch->snapshot($move);
             $move->handover = null;
             $move->transitionTo(ControlPlaneMoveStatus::HandingOver);
 

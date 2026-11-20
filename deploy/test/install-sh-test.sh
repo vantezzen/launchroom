@@ -36,7 +36,13 @@ info) [ "${STUB_INFO_FAIL:-}" != 1 ] ;;
 "compose exec -T postgres psql"*) [ "${STUB_PSQL_FAIL:-}" != 1 ] || exit 1; printf 'srv_01 online\n' ;;
 # A move (install.sh --move): the receiver's answers come from STUB_MOVE_*.
 *"launchroom:move:receive --join"*) printf '%s\n' "${STUB_MOVE_JOIN:-}" ;;
-*"launchroom:move:receive --handover"*) exit 1 ;;
+*"launchroom:move:receive --handover"*) [ "${STUB_MOVE_HANDOVER:-}" = ok ] || exit 1 ;;
+# Where the move stands in this server's database, and the takeover's answer.
+*"launchroom:move:takeover --status --json"*) printf '[launchroom] warming caches\n{"state":"%s"}\n' "${STUB_MOVE_STATE:-none}" ;;
+*"launchroom:move:takeover --json"*)
+	[ -z "${STUB_TAKEOVER_ERROR:-}" ] || { printf '{"error":"%s"}\n' "$STUB_TAKEOVER_ERROR"; exit 1; }
+	printf '{"move":"cpm_1"}\n' ;;
+*"launchroom:servers:bootstrap-local"*) printf '%s\n' "${STUB_BOOTSTRAP:-}" ;;
 *"cat /data/backups/move/cp-key") printf 'ed25519:c3R1Yg==\n' ;;
 *"cat /data/backups/move/join-token") printf '%s' "${STUB_MOVE_JOIN_TOKEN:-}" ;;
 "compose"*) ;;
@@ -551,6 +557,47 @@ STUB_MOVE_JOIN="$JOINED}" run move-new --move lrmv1.tok --bundle "$BUNDLE_DIR"
 lacks "$WORK/move-new/log" 'prove-server'
 has "$WORK/move-new.out" 'this server joined launchroom at https://old.example.com.'
 
+# The takeover refuses: the reason is printed, the old dashboard gets it
+# (the hand-over is aborted there) and the continue command is named.
+STUB_MOVE_JOIN="$JOINED}" STUB_MOVE_HANDOVER=ok STUB_TAKEOVER_ERROR='web (Shop / production) still runs on old-box. Move, stop or remove it first.' \
+	run move-refused --move lrmv1.tok --bundle "$BUNDLE_DIR"
+refused move-refused 'the new server refused to take over: web (Shop / production) still runs on old-box. Move, stop or remove it first.'
+has "$WORK/move-refused.out" "run: cd $WORK/move-refused/lr && ./launchroom move continue"
+has "$WORK/move-refused/log" 'launchroom:move:receive --abort=the new server refused to take over: web (Shop / production) still runs on old-box'
+has "$WORK/move-refused/log" 'compose stop dashboard horizon reverb scheduler'
+has "$WORK/move-refused/lr/.move" "^bundle=$BUNDLE_DIR\$"
+has "$WORK/move-refused/lr/.move" '^domain=test.example.com$'
+has "$WORK/move-refused/lr/.move" '^port-check=0$'
+
+# Continued after an interrupted takeover: not taken over yet, so the old
+# dashboard's (next) hand-over is fetched and restored again.
+STUB_MOVE_STATE=ready STUB_MOVE_JOIN="$JOINED}" STUB_MOVE_HANDOVER=ok STUB_TAKEOVER_ERROR=again \
+	run move-refused --move-continue --bundle "$BUNDLE_DIR"
+refused move-refused 'the new server refused to take over: again'
+has "$WORK/move-refused.out" 'continuing the move in'
+has "$WORK/move-refused.out" 'continuing with the bundle this move started with'
+lacks "$WORK/move-refused.out" 'NOT signature-verified'
+
+# Continued once it took over: no join, no hand-over; the local launchroomd
+# connects, the old dashboard hears that the move finished, the state goes.
+mkdir -p "$WORK/move-done/lr/data/daemon"
+printf '{"serverId":"srv_1"}\n' >"$WORK/move-done/lr/data/daemon/enrollment.json"
+printf 'bundle=%s\ndomain=test.example.com\nmove-url=\ndetect-ip=0\nport-check=0\n' "$BUNDLE_DIR" >"$WORK/move-done/lr/.move"
+STUB_MOVE_STATE="done" STUB_BOOTSTRAP='{"serverId":"srv_1","cpKey":"ed25519:c3R1Yg=="}' \
+	run move-done --move-continue --bundle "$BUNDLE_DIR"
+[ "$STATUS" = 0 ] || fail "move-done exited $STATUS: $(cat "$WORK/move-done.out")"
+has "$WORK/move-done.out" 'this server already took over; finishing the move'
+lacks "$WORK/move-done/log" 'move:receive --join'
+lacks "$WORK/move-done/log" 'move:receive --handover'
+lacks "$WORK/move-done/log" 'launchroom:move:takeover --json'
+has "$WORK/move-done/log" 'launchroom:move:receive --complete=https://test.example.com'
+has "$WORK/move-done/log" 'entrypoint rm dashboard -rf /data/backups/move$'
+[ ! -f "$WORK/move-done/lr/.move" ] || fail "move-done kept .move"
+
+# Nothing to continue without a move here.
+run move-nothing --move-continue --bundle "$BUNDLE_DIR"
+refused move-nothing 'no move is in progress in'
+
 # --- public IP detection -------------------------------------------------
 # Every run passes --no-public-ip-detect: launchroomd follows it (.env)…
 has "$WORK/channel-stable/lr/.env" '^LR_PUBLIC_IP_DETECT=off$'
@@ -636,6 +683,29 @@ has "$WORK/doctor-run/log" "--entrypoint /usr/local/bin/launchroomd ghcr.io/vant
 
 STUB_IMAGE=1 STUB_DF_KB=500000 helper doctor-full doctor
 has "$WORK/doctor-full.out" 'the disk is almost full'
+
+# ./launchroom move continue: the installer of the bundle the move started
+# with, in continue mode; move-takeover is the same command.
+helper move-none move continue
+refused move-none 'no move is in progress on this server'
+mkdir -p "$WORK/fake-bundle/install"
+cat >"$WORK/fake-bundle/install/install.sh" <<'EOF'
+#!/bin/sh
+# Stands in for an installer that knows --move-continue.
+printf 'installer %s\n' "$*"
+EOF
+for cmd in "move continue" move-takeover; do
+	name="move-cli-$(printf '%s' "$cmd" | tr ' ' -)"
+	mkdir -p "$WORK/$name/lr"
+	printf 'bundle=%s\n' "$WORK/fake-bundle" >"$WORK/$name/lr/.move"
+	# shellcheck disable=SC2086 # the command's words
+	helper "$name" $cmd
+	[ "$STATUS" = 0 ] || fail "$name exited $STATUS: $(cat "$WORK/$name.out")"
+	has "$WORK/$name.out" "installer --dir $WORK/$name/lr --bundle $WORK/fake-bundle --move-continue"
+done
+helper tinker tinker
+has "$WORK/tinker/log" 'compose exec dashboard php artisan tinker'
+has "$WORK/tinker.out" 'skip launchroom.s checks and the audit log'
 
 STUB_PSQL_FAIL=1 helper status-db-down status
 has "$WORK/status-db-down.out" "launchroomd: unknown (the database isn't answering"

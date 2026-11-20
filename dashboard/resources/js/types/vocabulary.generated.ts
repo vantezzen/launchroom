@@ -326,6 +326,7 @@ export const vocabulary = {
             rolled_back: { isTerminal: true },
             cancelled: { isTerminal: true },
             skipped: { isTerminal: true },
+            stopped: { isTerminal: true },
         },
         ServerMoveStatus: {
             running: { isTerminal: false, isOpen: true, isAdvancing: true },

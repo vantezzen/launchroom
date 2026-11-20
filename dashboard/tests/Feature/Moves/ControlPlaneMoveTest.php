@@ -11,6 +11,7 @@ use App\Data\Moves\HandoverDatabaseData;
 use App\Data\Moves\HandoverKeysData;
 use App\Data\Moves\HandoverManifestData;
 use App\Enums\AuditAction;
+use App\Enums\DeploymentStatus;
 use App\Enums\Moves\ControlPlaneMoveStatus;
 use App\Enums\Moves\ServerMoveStatus;
 use App\Enums\ServerRole;
@@ -19,9 +20,11 @@ use App\Enums\ServiceKind;
 use App\Enums\TeamRole;
 use App\Exceptions\DomainRuleViolation;
 use App\Models\AuditEvent;
+use App\Models\Deployment;
 use App\Models\InstanceSettings;
 use App\Models\Moves\ControlPlaneMove;
 use App\Models\Moves\ServerMove;
+use App\Models\Placement;
 use App\Models\Server;
 use App\Models\ServerEnrollment;
 use App\Models\ServiceInstance;
@@ -38,6 +41,7 @@ use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Sleep;
 use Illuminate\Testing\TestResponse;
 use Symfony\Component\HttpFoundation\Response;
+use Tests\Support\FakeDns;
 use Tests\Support\Projects;
 use Tests\Support\Transfers;
 use Tests\TestCase;
@@ -345,7 +349,7 @@ test('the new dashboard takes over: its server becomes the control plane, the ol
         ->and(AuditEvent::query()->where('action', AuditAction::ControlPlaneTakenOver->value)->exists())->toBeTrue();
 
     $this->actingAs($this->owner)->get(route('move.edit'))
-        ->assertInertia(fn ($page) => $page->where('checklist.previous.name', 'droplet')->where('checklist.needsRecoveryKit', true)->where('checklist.openSteps', fn ($open): bool => in_array('recovery-kit', collect($open)->all(), true)));
+        ->assertInertia(fn ($page) => $page->where('checklist.previous.name', 'droplet')->has('checklist.previous.device.kind')->where('checklist.needsRecoveryKit', true)->where('checklist.openSteps', fn ($open): bool => in_array('recovery-kit', collect($open)->all(), true)));
     $this->actingAs($this->owner)->post(route('move.finish'), ['open' => ['<forged>']])->assertRedirect(route('servers.index'));
     expect(InstanceSettings::current()->move_checklist)->toBeNull()
         ->and(AuditEvent::query()->where('action', AuditAction::ControlPlaneMoveFinished->value)->sole()->meta['open'])->toContain('recovery-kit')->not->toContain('<forged>');
@@ -661,4 +665,151 @@ test('no move starts, connects or moves apps while no build server could deploy 
     expect($move->refresh()->status)->toBe(ControlPlaneMoveStatus::Joined);
     $this->actingAs($this->owner)->get(route('move.edit'))
         ->assertInertia(fn ($page) => $page->where('plan.blockers', fn ($blockers): bool => collect($blockers)->contains(fn (string $blocker): bool => str_contains($blocker, 'turn on Build for '.$target->name))));
+});
+
+/*
+| Round 2 of moving the control plane (D104): the hand-over refuses what
+| would make the takeover refuse, the old dashboard keeps the DNS switch for
+| its last page, and the takeover tells the installer why it refused.
+*/
+
+/**
+ * Starts, claims and approves a move to a new server (203.0.113.9) and
+ * moves the (no) workloads: the move is ready to hand over.
+ *
+ * @return array{ControlPlaneMove, string, Server} [move, receiver secret, target]
+ */
+function readyToHandOver(TestCase $test, User $owner, string $receiverPublic, Team $team): array
+{
+    $token = startMove($test, $owner);
+    [$move, $secret, $code] = claimMove($test, $token, $receiverPublic);
+    $test->actingAs($owner)->post(route('move.approve'), ['code' => $code]);
+    [$target] = Projects::server($team, ip: '203.0.113.9');
+    $target->forceFill(['name' => 'netcup'])->save();
+    ServerEnrollment::query()->update(['used_at' => now(), 'server_id' => $target->id]);
+    receiver($test, 'GET', "/move/v1/{$move->public_id}", $secret);
+    $test->actingAs($owner)->post(route('move.workloads'));
+    $test->get(route('move.edit'));
+    expect($move->refresh()->status)->toBe(ControlPlaneMoveStatus::ReadyToHandOver);
+
+    return [$move, $secret, $target->refresh()];
+}
+
+test('the hand-over lists and refuses what the takeover would refuse; leftover rows of removed containers don’t count', function (): void {
+    fakeDumps('PGDMP');
+    [$move, $secret, $target] = readyToHandOver($this, $this->owner, $this->receiverPublic, $this->team);
+
+    // An app still serving from the dashboard's server (deployed there after the apps moved).
+    $project = Projects::create($this->team, 'shop');
+    $web = Projects::image($project, 'web');
+    resolve(DeployEnvironment::class)->handle($project->production()->sole(), null, AuditActor::system());
+
+    for ($i = 0; $i < 4; $i++) {
+        Projects::report($target);
+    }
+
+    $instance = ServiceInstance::query()->where('service_id', $web->id)->sole();
+    expect($instance->active_deployment_id)->not->toBeNull();
+    // (Past its probation: nothing is in flight.)
+    Deployment::query()->where('service_instance_id', $instance->id)->update(['status' => DeploymentStatus::Active->value]);
+    Placement::query()->where('service_instance_id', $instance->id)->update(['server_id' => $this->source->id, 'phase' => 'healthy']);
+
+    $this->actingAs($this->owner)->get(route('move.edit'))
+        ->assertInertia(fn ($page) => $page->where('handoverBlockers.0.service', 'web')
+            ->where('handoverBlockers.0.project', 'shop')
+            ->where('handoverBlockers.0.server', 'droplet')
+            ->where('handoverBlockers.0.reason', 'runs')
+            ->where('handoverBlockers.0.message', 'web (shop / production) still runs on droplet.')
+            ->where('continueCommand', './launchroom move continue'));
+    $this->actingAs($this->owner)->post(route('move.handover'), ['confirmation' => 'hand over'])
+        ->assertSessionHasErrors(['general' => 'web (shop / production) still runs on droplet. Move, stop or remove it first: the new server can’t take over while it is there.']);
+    expect($move->refresh()->status)->toBe(ControlPlaneMoveStatus::ReadyToHandOver)
+        ->and(InstanceSettings::current()->frozen_at)->toBeNull();
+
+    // Its container is gone (launchroomd reported it removed): only a leftover row, cleaned up by the hand-over.
+    Placement::query()->where('service_instance_id', $instance->id)->update(['phase' => 'removed']);
+    $this->actingAs($this->owner)->get(route('move.edit'))->assertInertia(fn ($page) => $page->where('handoverBlockers', []));
+    $this->actingAs($this->owner)->post(route('move.handover'), ['confirmation' => 'hand over'])->assertRedirect();
+    expect($move->refresh()->status)->toBe(ControlPlaneMoveStatus::HandoverReady)
+        ->and(Placement::query()->where('service_instance_id', $instance->id)->exists())->toBeFalse();
+});
+
+test('the old dashboard keeps the DNS switch for its last page, which signed-in owners still reach after the hand-over', function (): void {
+    fakeDumps('PGDMP');
+    [$move, $secret] = readyToHandOver($this, $this->owner, $this->receiverPublic, $this->team);
+    // The dashboard at a domain of its own (Settings → Dashboard domain), apps under a platform domain.
+    InstanceSettings::current()->forceFill(['apps_domain' => 'apps.example.com', 'dashboard_url' => 'https://dash.example.com'])->save();
+    $this->actingAs($this->owner)->post(route('move.handover'), ['confirmation' => 'hand over'])->assertRedirect();
+
+    $snapshot = $move->refresh()->dns_switch;
+    expect($snapshot?->addresses)->toBe(['203.0.113.9'])
+        ->and($snapshot?->oldAddresses)->toBe(['203.0.113.7'])
+        ->and(collect($snapshot?->records)->map(fn ($record): string => "{$record->kind} {$record->name} ".implode(',', $record->addresses))->all())
+        ->toBe(['dashboard dash.example.com 203.0.113.9', 'apps *.apps.example.com 203.0.113.9']);
+
+    receiver($this, 'POST', "/move/v1/{$move->public_id}/complete", $secret, ['url' => 'https://dash.example.com'])->assertOk();
+    // The address now points at the new server: DNS still answers with the old one for the dashboard.
+    FakeDns::set('dash.example.com', ['203.0.113.7']);
+    FakeDns::set('*.apps.example.com', ['203.0.113.9']);
+
+    // Visitors see where launchroom went, with the way to the owners' page.
+    $this->get('/')->assertInertia(fn ($page) => $page->component('moved')->where('movedTo', 'https://dash.example.com')->where('summaryHref', '/settings/move'));
+    $this->actingAs($this->owner)->get(route('servers.index'))->assertInertia(fn ($page) => $page->component('moved'));
+
+    // Owners still reach Settings → Move launchroom: the move as handed over, and the records to change.
+    $this->actingAs($this->owner)->get(route('move.edit', ['check' => 1]))
+        ->assertInertia(fn ($page) => $page->component('settings/move')
+            ->where('move.status', 'handed_over')
+            ->where('move.newUrl', 'https://dash.example.com')
+            ->loadDeferredProps('dns-switch', fn ($reload) => $reload
+                ->where('dnsSwitch.newUrl', 'https://dash.example.com')
+                ->where('dnsSwitch.addresses', [['type' => 'A', 'value' => '203.0.113.9']])
+                ->where('dnsSwitch.records.0.name', 'dash.example.com')
+                ->where('dnsSwitch.records.0.remove', ['203.0.113.7'])
+                ->where('dnsSwitch.records.0.check.status', 'mismatch')
+                ->where('dnsSwitch.records.1.name', '*.apps.example.com')
+                ->where('dnsSwitch.records.1.check.status', 'ok')
+                ->where('dnsSwitch.checked', true)
+                ->where('dnsSwitch.pointed', 1)
+                ->where('dnsSwitch.total', 2)
+                ->where('dnsSwitch.reachBeforeDns.command', 'ssh -L 8000:127.0.0.1:8000 root@203.0.113.9')
+                ->where('dnsSwitch.reachBeforeDns.url', 'http://localhost:8000')
+                ->etc()));
+
+    // Nothing changes there any more (the move page's writes are refused once moved).
+    $this->actingAs($this->owner)->post(route('move.start'))->assertSessionHasErrors(['general' => 'launchroom moved to https://dash.example.com.']);
+    expect(ControlPlaneMove::query()->count())->toBe(1);
+
+    // Guests are sent to sign in, and the sign-in page works.
+    auth()->logout();
+    $this->get(route('move.edit'))->assertRedirect(route('login'));
+    $this->get(route('login'))->assertOk()->assertInertia(fn ($page) => $page->component('auth/login'));
+});
+
+test('the takeover reports where the move stands, names what blocks it, and runs once (launchroom:move:takeover)', function (): void {
+    $this->artisan('launchroom:move:takeover', ['--status' => true, '--json' => true])->expectsOutput('{"state":"none","move":null}')->assertSuccessful();
+
+    [$target] = Projects::server($this->team, [ServerRole::Runtime], ip: '203.0.113.9');
+    $serverMove = ServerMove::query()->create(['team_id' => $this->team->id, 'source_server_id' => $this->source->id, 'target_server_id' => $target->id, 'control_plane' => true]);
+    $serverMove->transitionTo(ServerMoveStatus::Ready);
+    $move = new ControlPlaneMove(['source_server_id' => $this->source->id]);
+    $move->forceFill(['token_hash' => str_repeat('a', 64), 'token_expires_at' => now()->addDay(), 'target_server_id' => $target->id, 'server_move_id' => $serverMove->id, 'receiver_public_key' => $this->receiverPublic]);
+    $move->status = ControlPlaneMoveStatus::HandingOver;
+    $move->save();
+    $this->artisan('launchroom:move:takeover', ['--status' => true, '--json' => true])->expectsOutput('{"state":"ready","move":"'.$move->public_id.'"}')->assertSuccessful();
+
+    // A service still on the old server: the reason goes to the installer.
+    $instance = builtAppOn($this->team, $this->source);
+    Placement::query()->where('service_instance_id', $instance->id)->update(['server_id' => $this->source->id, 'phase' => 'healthy']);
+    $this->artisan('launchroom:move:takeover', ['--json' => true])
+        ->expectsOutputToContain('{"error":"web (shop / production) still runs on droplet. Move, stop or remove it first."}')
+        ->assertFailed();
+    expect($move->refresh()->status)->toBe(ControlPlaneMoveStatus::HandingOver);
+
+    // Gone (only leftover rows): it takes over, and a second run says it already did.
+    Placement::query()->where('service_instance_id', $instance->id)->update(['phase' => 'removed']);
+    $this->artisan('launchroom:move:takeover', ['--json' => true])->assertSuccessful();
+    expect($move->refresh()->status)->toBe(ControlPlaneMoveStatus::HandedOver);
+    $this->artisan('launchroom:move:takeover', ['--json' => true])->expectsOutput('{"already":true,"move":"'.$move->public_id.'"}')->assertSuccessful();
+    $this->artisan('launchroom:move:takeover', ['--status' => true, '--json' => true])->expectsOutput('{"state":"done","move":"'.$move->public_id.'"}')->assertSuccessful();
 });

@@ -1,10 +1,12 @@
 # 23: Request trace
 
-Every response that passes through an edge server carries a `Launchroom-Trace` header. It is an encrypted, self-contained
-record of what happened to the request at the edge: when it arrived, which edge and app server handled it, what the web
-firewall decided and why, and how the app answered. A team member pastes it into launchroom and sees the request's path.
+Every response that passes through an edge server carries an `X-Launchroom-Ray` header. Its value, the **ray**, is an
+encrypted, self-contained record of what happened to the request at the edge: when it arrived, which edge and app server
+handled it, what the web firewall decided and why, and how the app answered. A team member pastes the ray into launchroom
+and sees the request's path. In the UI and the user docs the value is called a ray; inside the code the feature stays the
+request trace (`TraceCodec`, `trace_keys`, `lr_trace`, feature `requestTrace`, `/trace`).
 
-Nothing per request is stored. The trace lives in the response; whoever has the response has its trace. This keeps the
+Nothing per request is stored. The ray lives in the response; whoever has the response has its ray. This keeps the
 rule of docs/15 §1 (request metrics are aggregates, no per-request log) and of D63 (no addresses, bodies or query strings).
 
 Decisions: D102 (docs/README.md).
@@ -14,7 +16,7 @@ Decisions: D102 (docs/README.md).
 - Answer "what happened to this request?" for any request that reached an edge: firewall blocks (with the rules, so an
   exception can be added for all of them), 502/503/504 (which upstream, refused or timed out, how many attempts), slow
   responses (edge time vs. app time), and "which edge and app server served this?".
-- Every response gets a trace, including redirects, 404s of unknown hosts and edge error pages.
+- Every response gets a ray, including redirects, 404s of unknown hosts and edge error pages.
 - Connect the request to the app's own logs: the edge sends the request id to the app as `X-Request-Id`; the trace view
   opens the service's logs around the request's time, searched for that id.
 - Not covered: requests that never reached an edge (DNS, TLS handshake, closed port). A response without the header did
@@ -24,7 +26,10 @@ Decisions: D102 (docs/README.md).
 
 ## 2. Header format (v1)
 
-Header: `Launchroom-Trace: <base64url without padding>` of
+Header: `X-Launchroom-Ray: lr1.<base64url without padding>`. The text prefix `lr1.` names the format version before
+anything is decoded, so a dashboard can tell a ray from a newer launchroom (`lr2.` and up: "made by a newer version of
+launchroom") from a broken one. Edges up to v0.1.6-rc.3 sent the header `Launchroom-Trace` with the envelope alone, no
+prefix; decoders still read such a value as v1. The envelope after the prefix is
 
 | Bytes | Field |
 |---|---|
@@ -33,9 +38,11 @@ Header: `Launchroom-Trace: <base64url without padding>` of
 | 12 | nonce, random |
 | n + 16 | AES-256-GCM ciphertext and tag of the payload |
 
-The first 5 bytes (version and key id) are the additional authenticated data. The encoding is strict base64url: padding,
-whitespace or another alphabet is refused, and so is anything shorter than 33 bytes. Decoders refuse other versions,
-unknown key ids and failed authentication without saying which (one "not a trace we can read" answer).
+The first 5 bytes (version and key id) are the additional authenticated data; the text prefix is not part of it (the
+version byte inside already is). The encoding is strict base64url: padding, whitespace or another alphabet is refused,
+and so is anything shorter than 33 bytes. Decoders refuse another `lr<n>.` prefix with its own answer (the prefix is
+public, so this says nothing about the content), and other version bytes, unknown key ids and failed authentication
+without saying which (one "not a ray we can read" answer).
 
 **Payload**: a sequence of fields `tag (1 byte) | length (1 byte) | value`, in any order. Integers are big-endian unsigned.
 Decoders skip unknown tags (newer edges can add fields) and refuse a length that runs past the end, a known tag with a wrong
@@ -64,7 +71,7 @@ the ULID behind the public id; the tag fixes the prefix. The UUID is written low
 | `0x10` | failure | 1 byte, why the upstream failed (§2.3) |
 | `0x11` | firewall | 1 byte mode (1 log only, 2 block), 1 byte outcome (0 clean, 1 detected, 2 blocked), 1 byte inbound anomaly score (capped at 255), then 0–8 rule ids of 4 bytes each |
 
-A typical header is 200–290 characters.
+A typical value is 200–290 characters.
 
 ### 2.1 Path normalisation
 
@@ -95,9 +102,9 @@ client closed the connection.
 ### 2.4 Fixtures
 
 `protocol/fixtures/v1/trace/` (layout and decoder rules in its `README.md`): the test key (`key.json`), valid field sets
-with their payload, nonce and encoded header (`valid/`, an unknown tag included), headers every decoder refuses with the
-reason (`invalid/`: format, key, auth or payload; truncated, padded, wrong key id, tampered tag, duplicate tag, values out
-of range, missing required fields …) and the path vectors (`paths.json`). The Go encoder, the PHP decoder and launchroomd's
+with their payload, nonce and encoded header (`valid/`, an unknown tag and an unprefixed value of an older edge
+included), headers every decoder refuses with the reason (`invalid/`: format, newer, key, auth or payload; truncated,
+padded, `lr2.` prefix, wrong key id, tampered tag, duplicate tag, values out of range, missing required fields …) and the path vectors (`paths.json`). The Go encoder, the PHP decoder and launchroomd's
 `NormalizePath` test run them; the Go test fails on a stale header and rewrites them with `LR_TRACE_FIXTURES_UPDATE=1`.
 
 ## 3. Edge (launchroom-caddy)
@@ -186,45 +193,79 @@ All three are dropped for servers without the feature (`NodeStateField`, `DropFi
 
 ## 6. Dashboard
 
-- **Decode** (`App\Support\Traces\TraceCodec`, `App\Actions\Traces\DecodeTrace`): normalise the input (a pasted
-  `Launchroom-Trace:` line and whitespace are stripped; more than 2048 characters is not a trace), parse the envelope, find
+- **Decode** (`App\Support\Traces\TraceCodec`, `App\Actions\Traces\DecodeTrace`): normalise the input (surrounding
+  whitespace and quotes and a pasted `X-Launchroom-Ray:` or `Launchroom-Trace:` header name are stripped; more than 2048
+  characters is not a ray; the paste field already picks the ray out of a whole `curl -i` output or a HAR entry), strip
+  `lr1.` (a value without a prefix is an older edge's v1; another prefix answers "This ray was made by a newer version
+  of launchroom."), parse the envelope, find
   the key by id, check that its server is in the current team and the key not retired more than 90 days ago, decrypt (AES-256-GCM, the
   5-byte AAD), check the payload's `edge` equals the key's server, decode the fields.
 - **Access** (`App\Queries\Traces\RequestTraceView`): the edge must be viewable (View). With a service, the instance must
   be in the team and viewable; every such member sees the whole trace, firewall rules included (as with firewall events,
   docs/22). Traces of a route without a service (the dashboard's own routes) need View and ManageServers
   (`TeamPolicy::viewSystemTraces`). A trace without a route (no domain matched) only needs View on the edge. Everything
-  else (malformed, unknown or expired key, tampered, another team, not allowed) answers "This trace isn't from one of your
-  services.", the same answer as an unreadable trace.
+  else (malformed, unknown or expired key, tampered, another team, not allowed) answers "This ray isn't from one of your
+  services.", the same answer as an unreadable ray.
 - **Page** `GET /trace?t=<header>` (route `trace`, `throttle:30,1`, Inertia page `trace` with `trace?`, `error?`,
-  `input?`): with `t` the server decodes it and passes `RequestTraceData` as props, so a trace link can be shared with a
-  teammate. Without `t` it shows the paste field. The server computes the summary sentence, the request class and where
+  `input?`): with `t` the server decodes it and passes `RequestTraceData` as props, so a link to a ray can be shared
+  with a teammate. Without `t` it shows the paste field ("Paste a ray"); a decoded ray is always titled "Ray" (§7). The server computes the summary sentence, the request class and where
   the path ends (`TraceStop`: edge, firewall, app server, service); the page renders them.
-- **Entry points**: a "Trace a request" button in the log explorer's toolbar (team and project logs, not the service
-  panel) that opens a paste popover and goes to the page; "Trace a request" in ⌘K (Navigate; while searching in its own
-  group first), and a pasted header in ⌘K offers "Trace this request".
+- **Entry points**: a "Paste a ray" button in the log explorer's toolbar (team and project logs, not the service
+  panel) that opens a paste popover and goes to the page; "Paste a ray" in ⌘K (Navigate; while searching in its own
+  group first), and a pasted ray in ⌘K offers "Open this ray".
 - **Actions from the trace**: "Open logs" (the service's logs from 1 minute before to 1 minute after `receivedAt`,
   searching for the request id); for detected or blocked firewall outcomes "Open firewall" and "Allow requests like this"
   (one exclusion per matched rule that can be excepted, for the static prefix of the normalised path and no target, since
   the trace carries none; `AddWafExclusions`, ManageProjects); the edge, app server and service pages; "Copy link" and
-  "Trace another".
+  "Paste another ray".
 
 ## 7. The trace view
 
-A visual path, not a table (`features/request-trace`, docs/design-system.md §13.9):
+The decoded ray as a picture, not a table (`features/request-trace`, docs/design-system.md §13.9). Every fact sits on
+the thing it belongs to; there is no separate details table.
 
-- Header: the summary sentence as the title ("The firewall blocked this request. 2 rules matched.", "web answered with
-  200.", "The dashboard answered with 200."), with the actions of §6 on the right.
-- Left to right: **Visitor** (method and protocol) → **Edge server** (device art, name) with the firewall as a gate on its
-  far side → **App server** (device art) → **Service** (glyph, name, project and environment), or **Dashboard**, or a
-  dashed ghost when no domain matched. When the edge and app server are the same server, it is one device with both roles.
-- Hops are drawn as curves like the fleet topology, with timing pills (`edgeTime − upstreamTime` at the edge,
-  `upstreamTime` to the app). The path draws on once, hop by hop (300 ms each, docs/design-system.md §8; instant with
-  reduced motion). No looping animation.
-- Where the request ended is marked with the outcome's colour and word (request classes of `request-breakdown.ts`: 2xx
-  signal, 4xx amber, 5xx error, blocked violet hatched); the nodes after it are dimmed with "Not reached" and their hops
-  dashed. A failed upstream hop is red and dashed with ✕ and the failure.
-- Above the path the request line (method, domain and path, time ago); below it the time to the response headers as a
-  segmented bar (edge, app). Then the facts in a short grid (received, request id with copy, domain, protocol, status,
-  upstream failure, attempts, firewall mode and score) and the matched rules with their CRS names.
-- Columns while the nodes fit; on phones and in narrow panes one column with the path on a rail at the left.
+- **Header**: the title is always "Ray" (the page never retitles itself per ray). Under it the request's identity:
+  the status pill the visitor got (icon and words, tone by request class), method, domain and path in mono, when it
+  arrived (relative, the exact time with milliseconds in a tooltip) and the request id (short, mono, linking to the
+  logs filtered by it, with copy). Then the server's summary sentence as a muted lead ("The firewall blocked this
+  request. 2 rules matched."). Actions right: Open logs (primary unless the firewall flagged the request), Open
+  firewall; Copy link and Paste another ray in the top bar.
+- **Canvas**: one card with a dotted recessed canvas holding the path as cards left to right. Each card has its picture
+  on a recessed stage, the name with its state, labelled rows (icon, label, value right) and, on the card that sent a
+  response, an "Answered" foot with the status pill and why.
+  - **Visitor**: Method, Protocol.
+  - **Edge server**: device art, name (links to the server), "Edge server" or "Edge and app server", its state, Time
+    here (`edgeTime − upstreamTime`).
+  - **Firewall** (only when the trace carries one): its own card, "on fra-1", the decision as an explicit mark
+    (check "Allowed", ✕ "Blocked", eye "Would block" in log mode), rows Mode, Score, Rules matched (links to the rules).
+  - **Service** (or **Dashboard** for launchroom's own routes): logo, name (links), "project / environment", "Runs on"
+    with a small device when the app runs on another server than the edge (its state under it when not online), Time
+    here (`upstreamTime`). When the edge could not get an answer the card says why instead of "Not reached":
+    Refused, No answer, Unhealthy. A stopped service says Stopped. When the app's status differs from what the visitor
+    got, its foot shows the app's answer ("The edge sent 502").
+  - **No service**: a dashed ghost when no domain matched.
+  - Cards after where the request got are dashed and quieter ("Not reached").
+- **Where it ended**: the edge answers redirects ("Redirected to HTTPS or the main domain"), refused sign-ins, stopped
+  services, unknown addresses and upstream failures ("Couldn't reach web, tried 3 times"); the firewall answers what it
+  blocked (and "Blocked web's response" when it refused the app's response).
+- **Lines**: solid where the request went, dashed beyond, red dashed with ✕ and the failure where the edge couldn't
+  connect (✕ alone when the row is tight). Times are not on the lines: each card says its own ("Time here") and the
+  TTFB bar adds them up.
+- **Motion**: everything renders in its final state at once (no entrance animation). The only motion is the flying
+  dot.
+- **Flying dot**: a 5 px dot in the foreground colour at low emphasis travels the lines the request took, 1.6 s per
+  line, one at a time, with a rest between runs. It stops halfway into a failed connection, goes back to the card that
+  answered when that came earlier (the firewall refusing a response, the edge answering after its firewall), and fades
+  where the request ended; a blocking mark (the firewall's ✕, a failed line's ✕) pulses once as it arrives. Web
+  Animations on one shared cycle, paused while the tab is hidden, none with reduced motion. This is the one looping
+  animation in the dashboard (docs/design-system.md §8).
+- **TTFB** in the canvas card's footer: "TTFB" with an info tooltip ("Time to first byte: from the edge receiving the
+  request until it sent the response headers."), the total large on the right, one segmented bar (Edge grey, the
+  service signal blue) with each segment named with its duration above it ("3 attempts" on the service's when the edge
+  retried) and ticks below for Received, Sent to web, First byte. One segment when nothing upstream answered.
+- **Rules that matched** (`#trace-rules`): the decision mark and "Score 10 in Block mode." in the header with "Allow
+  requests like this" (primary) on the right; each rule a row with its id (mono, muted), the CRS message and its
+  category as a chip with an icon.
+- Cards side by side while they fit (widths shrink to a minimum, lines keep room for their pills); on phones and narrow
+  panes one column with the picture on the left and vertical lines, the dot moving down. An sr-only ordered list
+  repeats the path with what each card answered.

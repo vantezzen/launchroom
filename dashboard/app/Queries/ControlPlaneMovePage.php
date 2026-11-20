@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Queries;
 
 use App\Data\Moves\ControlPlaneMoveData;
+use App\Data\Moves\DnsSwitchData;
 use App\Data\Moves\MovePreflightCheckData;
 use App\Data\Moves\MoveServerData;
 use App\Data\Moves\ServerMoveData;
@@ -19,6 +20,7 @@ use App\Models\Registry\RegistryStorage;
 use App\Models\Server;
 use App\Services\Instance\DashboardOrigin;
 use App\Services\Instance\RecoveryMode;
+use App\Services\Moves\InstanceFreeze;
 use App\Services\Moves\MovePlanner;
 use App\Services\Transfers\TransferStore;
 use App\Support\ByteSize;
@@ -35,11 +37,14 @@ use Inertia\Inertia;
  */
 final readonly class ControlPlaneMovePage
 {
+    public const string CONTINUE_COMMAND = './launchroom move continue';
+
     public function __construct(
         private MovePlanner $planner,
         private DashboardOrigin $origin,
         private TransferStore $transfers,
         private MoveChecklist $checklist,
+        private MoveDnsSwitch $dnsSwitch,
     ) {}
 
     /**
@@ -47,7 +52,10 @@ final readonly class ControlPlaneMovePage
      */
     public function get(?string $token, bool $checkDns): array
     {
-        $move = ControlPlaneMove::open() ?? ControlPlaneMove::query()->where('finished_at', '>', now()->subDay())->latest('id')->first();
+        // The old dashboard keeps showing the move it handed over (its last page, with the DNS switch).
+        $move = ControlPlaneMove::open()
+            ?? (InstanceFreeze::movedTo() !== null ? ControlPlaneMove::query()->where('status', ControlPlaneMoveStatus::HandedOver->value)->latest('id')->first() : null)
+            ?? ControlPlaneMove::query()->where('finished_at', '>', now()->subDay())->latest('id')->first();
         $source = Server::currentControlPlane();
         $serverMove = $move?->server_move_id === null ? null : ServerMove::query()->find($move->server_move_id);
         $planned = $move instanceof ControlPlaneMove && $move->status === ControlPlaneMoveStatus::Joined && $move->source instanceof Server && $move->target instanceof Server;
@@ -64,6 +72,16 @@ final readonly class ControlPlaneMovePage
                 ? $this->planner->plan($move->source, $move->target, true, checkDns: true)->dns
                 : []),
             'serverMove' => $serverMove instanceof ServerMove ? ServerMoveData::fromMove($serverMove) : null,
+            // What would make the takeover refuse (StartHandover checks the same).
+            'handoverBlockers' => $move instanceof ControlPlaneMove && in_array($move->status, [ControlPlaneMoveStatus::Moving, ControlPlaneMoveStatus::ReadyToHandOver], true) && $move->source instanceof Server
+                ? ServicesOnServer::blocking($move->source)
+                : [],
+            // From the hand-over on: the records to point at the new server (live checks with ?check=1).
+            'dnsSwitch' => Inertia::defer(fn (): ?DnsSwitchData => $move instanceof ControlPlaneMove && $move->dns_switch !== null
+                ? $this->dnsSwitch->get($move->dns_switch, $move->new_url, $checkDns)
+                : null, 'dns-switch'),
+            // On the new server, in the install folder: continues the move from wherever it stopped.
+            'continueCommand' => self::CONTINUE_COMMAND,
             'checklist' => InstanceSettings::current()->move_checklist === null ? null : $this->checklist->get($checkDns),
         ];
     }

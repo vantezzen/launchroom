@@ -11,8 +11,12 @@
 # volume (through a custom domain on the edge), write rows and a file, start
 # Settings → Move launchroom (through the same actions as the UI), run
 # `install.sh --move <token>` on VPS B, confirm the code it prints, write more
-# right before the move, move every app, database and volume, write a
-# dashboard change right before the hand-over, hand over. Then: B's dashboard
+# right before the move, move every app, database and volume (a third app
+# fails to start on B and is left stopped from the move page, as the UI
+# does; a leftover row of a removed container stays on A), write a
+# dashboard change right before the hand-over, hand over; B's installer is
+# interrupted after the restore and `./launchroom move continue` finishes
+# the move (fetches the hand-over again, takes over). Then: B's dashboard
 # works (same domain), B's launchroomd is the control plane over loopback,
 # the app serves through B's edge with every row and the newest file, and A
 # is frozen ("moved"), its server revoked and decommissioned (no edge, no
@@ -179,6 +183,8 @@ in_lr "$A" docker compose exec -T -e E2E_SETUP_TOKEN="$setup_token" dashboard ph
 	$create = app(App\Actions\Services\CreateService::class);
 	$pg = $create->handle($project, App\Data\Services\CreateServiceData::from(["name" => "postgres", "kind" => App\Enums\ServiceKind::Database, "source" => ["type" => "database", "engine" => "postgres", "version" => "18"]]), $owner, $actor);
 	$web = $create->handle($project, App\Data\Services\CreateServiceData::from(["name" => "web", "kind" => App\Enums\ServiceKind::Image, "source" => ["type" => "image", "reference" => "nginxinc/nginx-unprivileged:1.27-alpine"], "port" => 8080]), $owner, $actor);
+	// Fails to start on B during the move and is left stopped there.
+	$create->handle($project, App\Data\Services\CreateServiceData::from(["name" => "extra", "kind" => App\Enums\ServiceKind::Image, "source" => ["type" => "image", "reference" => "nginxinc/nginx-unprivileged:1.27-alpine"], "port" => 8080]), $owner, $actor);
 	$environment = $project->production()->sole();
 	$instance = App\Models\ServiceInstance::query()->where("service_id", $web->id)->where("environment_id", $environment->id)->sole();
 	app(App\Actions\Services\AddServiceVolume::class)->handle($instance, new App\Data\Services\AddVolumeData("/usr/share/nginx/html/data"), $actor);
@@ -186,9 +192,9 @@ in_lr "$A" docker compose exec -T -e E2E_SETUP_TOKEN="$setup_token" dashboard ph
 	app(App\Actions\Deployments\DeployEnvironment::class)->handle($environment, $owner, $actor);
 	echo "e2e-project-created\n";' >"$TMP/tinker.log" 2>&1 || { cat "$TMP/tinker.log"; fail "could not create the project"; }
 grep -q e2e-project-created "$TMP/tinker.log" || { cat "$TMP/tinker.log"; fail "the project script did not finish"; }
-retry 600 sh -c "test \"\$(docker exec -w $LR $A docker compose exec -T postgres psql -U launchroom -d launchroom -tAc \"SELECT count(*) FROM service_instances WHERE active_deployment_id IS NOT NULL\")\" = 2" ||
+retry 600 sh -c "test \"\$(docker exec -w $LR $A docker compose exec -T postgres psql -U launchroom -d launchroom -tAc \"SELECT count(*) FROM service_instances WHERE active_deployment_id IS NOT NULL\")\" = 3" ||
 	fail "the project did not deploy: $(psql_on "$A" "SELECT status, failure_message FROM deployments")"
-ok "postgres and web are active on A"
+ok "postgres, web and extra are active on A"
 # app_host VPS PROJECT: the web service's generated domain.
 app_host() { psql_on "$1" "SELECT d.hostname FROM domains d JOIN service_instances i ON i.id = d.service_instance_id JOIN services s ON s.id = i.service_id JOIN projects p ON p.id = s.project_id WHERE s.name = 'web' AND p.name = '$2' ORDER BY d.id LIMIT 1"; }
 APP_HOST="$(app_host "$A" move-e2e)"
@@ -261,11 +267,33 @@ sql "$A" "INSERT INTO notes (body) VALUES ('right before the move');" >/dev/null
 web_file "$A" "written on A v2"
 ok "4 rows, file v2"
 
-step "move every app, database and volume from A to B"
+step "move every app, database and volume from A to B; extra fails there and is left stopped"
 start=$(date +%s)
+# The queue pauses for a moment, so extra's deployment on B is still
+# queued when it is cancelled (its "failed start" on the new server).
+in_lr "$A" docker compose exec -T horizon php artisan horizon:pause >/dev/null
+sleep 5
 # shellcheck disable=SC2016 # PHP code: its $variables are PHP's
-tinker "$A" 'app(App\Actions\Moves\MoveControlPlaneWorkloads::class)->handle(App\Models\Moves\ControlPlaneMove::open(), false, $owner, $actor); echo "moving\n";' | grep -q moving ||
-	fail "could not start moving the workloads"
+tinker "$A" '
+	app(App\Actions\Moves\MoveControlPlaneWorkloads::class)->handle(App\Models\Moves\ControlPlaneMove::open(), false, $owner, $actor);
+	$extra = App\Models\ServiceInstance::query()->whereHas("service", fn ($q) => $q->where("name", "extra"))->sole();
+	$item = App\Models\Moves\ServerMoveItem::query()->where("service_instance_id", $extra->id)->sole();
+	app(App\Actions\Deployments\CancelDeployment::class)->handle(App\Models\Deployment::query()->findOrFail($item->deployment_id), $actor);
+	echo "moving\n";' | grep -q moving || { in_lr "$A" docker compose exec -T horizon php artisan horizon:continue >/dev/null; fail "could not start moving the workloads"; }
+in_lr "$A" docker compose exec -T horizon php artisan horizon:continue >/dev/null
+extra_item() { psql_on "$A" "SELECT i.status FROM server_move_items i JOIN service_instances si ON si.id = i.service_instance_id JOIN services s ON s.id = si.service_id WHERE s.name = 'extra'"; }
+retry 120 sh -c "test \"\$(docker exec -w $LR $A docker compose exec -T postgres psql -U launchroom -d launchroom -tAc \"SELECT i.status FROM server_move_items i JOIN service_instances si ON si.id = i.service_instance_id JOIN services s ON s.id = si.service_id WHERE s.name = 'extra'\")\" = failed" ||
+	fail "extra did not fail on B: $(extra_item)"
+# What Settings → Move launchroom → Stop does.
+# shellcheck disable=SC2016 # PHP code: its $variables are PHP's
+tinker "$A" '
+	$extra = App\Models\ServiceInstance::query()->whereHas("service", fn ($q) => $q->where("name", "extra"))->sole();
+	$item = App\Models\Moves\ServerMoveItem::query()->where("service_instance_id", $extra->id)->sole();
+	app(App\Actions\Moves\StopMoveItem::class)->handle(App\Models\Moves\ControlPlaneMove::open()->serverMove, $item, $owner, $actor);
+	echo "stopped\n";' | grep -q stopped || fail "could not stop extra from the move"
+[ "$(extra_item)" = stopped ] || fail "extra's item is $(extra_item)"
+[ "$(psql_on "$A" "SELECT si.stopped_at IS NOT NULL FROM service_instances si JOIN services s ON s.id = si.service_id WHERE s.name = 'extra'")" = t ] || fail "extra is not stopped"
+ok "extra failed on B, was left stopped, and the move goes on"
 retry 1200 sh -c "test \"\$(docker exec -w $LR $A docker compose exec -T postgres psql -U launchroom -d launchroom -tAc \"SELECT status FROM control_plane_moves ORDER BY id DESC LIMIT 1\")\" = ready_to_hand_over" ||
 	fail "the workloads did not move: $(psql_on "$A" "SELECT kind, status, failed_step, message FROM server_move_items ORDER BY position")"
 ok "everything runs on B after $(($(date +%s) - start)) s: $(psql_on "$A" "SELECT string_agg(kind || '=' || status, ' ') FROM server_move_items")"
@@ -277,6 +305,17 @@ retry 120 sh -c "docker exec $B docker run --rm --network host --entrypoint curl
 [ "$(sql "$B" "SELECT count(*) FROM notes")" = 4 ] || fail "the database on B lacks rows: $(sql "$B" "SELECT body FROM notes" || true)"
 ok "B's edge serves 'written on A v2'; B's Postgres has all 4 rows"
 
+step "a leftover row on A: a container launchroomd already removed (it blocked the takeover before)"
+# shellcheck disable=SC2016 # PHP code: its $variables are PHP's
+tinker "$A" '
+	$extra = App\Models\ServiceInstance::query()->whereHas("service", fn ($q) => $q->where("name", "extra"))->sole();
+	$a = App\Models\Server::query()->where("is_control_plane", true)->sole();
+	$row = new App\Models\Placement(["team_id" => $extra->team_id, "service_instance_id" => $extra->id, "deployment_id" => $extra->active_deployment_id, "server_id" => $a->id, "slot" => 9, "workload_id" => "wl_e2eleftover", "memory_mb" => 64, "cpus" => 0.1, "role" => "serving"]);
+	$row->save();
+	$row->forceFill(["phase" => "removed"])->save();
+	echo "leftover\n";' | grep -q leftover || fail "could not add the leftover row"
+ok "a leftover row of extra stays on A"
+
 step "a dashboard change right before the hand-over, then hand over"
 # shellcheck disable=SC2016 # PHP code: its $variables are PHP's
 tinker "$A" 'app(App\Actions\Projects\CreateProject::class)->handle($owner->currentTeam, new App\Data\Projects\CreateProjectData("written-before-handover"), $actor); echo "project\n";' | grep -q project || fail "could not create the project"
@@ -287,9 +326,36 @@ retry 60 sh -c "test \"\$(docker exec -w $LR $A docker compose exec -T postgres 
 # shellcheck disable=SC2016 # PHP code: its $variables are PHP's
 tinker "$A" 'app(App\Actions\Moves\StartHandover::class)->handle(App\Models\Moves\ControlPlaneMove::open(), "hand over", $actor); echo "handing-over\n";' | grep -q handing-over ||
 	fail "the hand-over was refused"
-retry 900 docker exec "$B" test -s /root/move.exit || { on "$B" tail -n 60 /root/move.log; fail "B's installer did not finish"; }
-[ "$(on "$B" cat /root/move.exit)" = 0 ] || { on "$B" cat /root/move.log; fail "B's installer failed"; }
-ok "hand-over and takeover took $(($(date +%s) - start)) s"
+[ -n "$(psql_on "$A" "SELECT dns_switch FROM control_plane_moves ORDER BY id DESC LIMIT 1")" ] || fail "A did not keep the DNS switch"
+[ "$(psql_on "$A" "SELECT count(*) FROM placements WHERE workload_id = 'wl_e2eleftover'")" = 0 ] || fail "the leftover row is still on A"
+
+# Interrupted after the restore, before the takeover (a closed terminal, a reboot).
+retry 900 docker exec "$B" grep -q "the old dashboard's data and keys are here" /root/move.log ||
+	{ on "$B" tail -n 60 /root/move.log; fail "B did not restore the hand-over"; }
+# (Only the installer itself, not the shell that records its exit status.)
+on "$B" pkill -TERM -f '^sh /opt/bundle/install/install.sh' || true
+retry 120 docker exec "$B" test -s /root/move.exit || fail "B's installer did not stop"
+# A `docker compose up` it had started finishes on its own; let it.
+retry 600 sh -c "! docker exec $B pgrep -f 'docker compose up' >/dev/null" || fail "a compose command of the stopped installer still runs"
+if grep -q 'taking over as the control plane' "$(on "$B" cat /root/move.log >"$TMP/move-first.log"; echo "$TMP/move-first.log")"; then
+	echo "note: the installer reached the takeover before it was stopped; continuing from there"
+fi
+case "$(psql_on "$A" "SELECT status FROM control_plane_moves ORDER BY id DESC LIMIT 1")" in
+handover_ready | handed_over) ;;
+*) fail "A is not waiting for the new dashboard: $(psql_on "$A" "SELECT status, error FROM control_plane_moves")" ;;
+esac
+ok "B's installer stopped after the restore"
+
+step "./launchroom move continue on B finishes the move"
+# shellcheck disable=SC2046 # the -e flags split on purpose
+docker exec -w "$LR" $(install_env) "$B" ./launchroom move continue >"$TMP/continue.log" 2>&1 ||
+	{ cat "$TMP/continue.log"; fail "./launchroom move continue failed"; }
+grep -q 'the control plane is running' "$TMP/continue.log" || { cat "$TMP/continue.log"; fail "the continued move did not finish"; }
+on "$B" test ! -e "$LR/.move" || fail "B kept the move's state (.move)"
+# The secret check below reads both runs' output.
+cat "$TMP/continue.log" >>"$TMP/move-first.log"
+docker cp "$TMP/move-first.log" "$B:/root/move.log"
+ok "hand-over, interruption and takeover took $(($(date +%s) - start)) s"
 if grep -Eq 'lrmv1\.|lr_jt_[A-Za-z0-9_-]{20,}|base64:[A-Za-z0-9+/=]{20,}' "$(on "$B" cat /root/move.log >"$TMP/move.log"; echo "$TMP/move.log")"; then
 	fail "the installer's output contains a secret"
 fi
@@ -311,7 +377,8 @@ retry 180 sh -c "docker exec $B docker run --rm --network host --entrypoint curl
 in_lr "$B" grep -q '^LR_CONTROL_PLANE_URL=$' .env || fail "B's launchroomd still points at the old dashboard"
 retry 120 sh -c "test \"\$(docker exec -w $LR $B docker compose exec -T postgres psql -U launchroom -d launchroom -tAc \"SELECT count(*) FROM servers WHERE public_id = '$b_server' AND status = 'online' AND last_seen_at > now() - interval '40 seconds'\")\" = 1" ||
 	fail "B's launchroomd does not reach its own dashboard"
-ok "B's dashboard has everything; B's server is the control plane and online over loopback"
+[ "$(psql_on "$B" "SELECT si.stopped_at IS NOT NULL FROM service_instances si JOIN services s ON s.id = si.service_id WHERE s.name = 'extra'")" = t ] || fail "extra is not stopped on B"
+ok "B's dashboard has everything (extra stays stopped); B's server is the control plane and online over loopback"
 
 step "B: the app with all its data, through B's edge"
 PSQL_VPS="$B"

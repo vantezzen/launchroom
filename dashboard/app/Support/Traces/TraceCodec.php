@@ -11,12 +11,14 @@ use SensitiveParameter;
 use Symfony\Component\Uid\Ulid;
 
 /**
- * The `Launchroom-Trace` header, format v1 (docs/23 §2): base64url without
- * padding of `version (1) | key id (uint32 BE) | nonce (12) | AES-256-GCM
- * ciphertext and tag`, the first five bytes as additional data; the payload
- * is `tag | length | value` fields. Pure: the key comes from the caller
+ * The `X-Launchroom-Ray` header, format v1 (docs/23 §2): `lr1.` and base64url
+ * without padding of `version (1) | key id (uint32 BE) | nonce (12) |
+ * AES-256-GCM ciphertext and tag`, the first five bytes as additional data;
+ * the payload is `tag | length | value` fields. A value without the prefix
+ * is read too (edges before it sent `Launchroom-Trace` with the envelope
+ * alone); another `lr<n>.` prefix is a newer format (newer()). Pure: the key comes from the caller
  * (App\Actions\Traces\DecodeTrace). Every refusal is null, without saying
- * why (one "not a trace we can read" answer). The Go encoder of the Caddy
+ * why (one "not a ray we can read" answer). The Go encoder of the Caddy
  * module runs the same vectors (protocol/fixtures/v1/trace).
  */
 final class TraceCodec
@@ -26,7 +28,13 @@ final class TraceCodec
     /** Longest input accepted (a typical trace is about 300 characters). */
     public const int MAX_INPUT = 2048;
 
-    public const string HEADER = 'Launchroom-Trace';
+    public const string HEADER = 'X-Launchroom-Ray';
+
+    /** The header name of edges before the ray (v0.1.6-rc.3 and older). */
+    public const string LEGACY_HEADER = 'Launchroom-Trace';
+
+    /** Starts every v1 value the edge writes. */
+    public const string PREFIX = 'lr1.';
 
     private const int NONCE = 12;
 
@@ -47,30 +55,46 @@ final class TraceCodec
 
     /**
      * The header value from what a member pasted: the bare value or a whole
-     * header line (`Launchroom-Trace: …`, any case), surrounding whitespace
-     * dropped. Null when it can't be a trace value.
+     * header line (`X-Launchroom-Ray: …` or `Launchroom-Trace: …`, any case),
+     * surrounding whitespace and quotes dropped. Null when it can't be a ray
+     * (a `lr<n>.` prefix stays on the value).
      */
     public static function value(string $input): ?string
     {
-        $value = trim($input);
+        $value = trim($input, " \t\n\r\0\x0B\"'");
 
         if (strlen($value) > self::MAX_INPUT) {
             return null;
         }
+        $names = preg_quote(self::HEADER, '/').'|'.preg_quote(self::LEGACY_HEADER, '/');
 
-        if (preg_match('/^'.self::HEADER.'\s*:\s*(\S+)$/Di', $value, $match) === 1) {
-            $value = $match[1];
+        if (preg_match('/^(?:'.$names.')\s*:\s*(.*)$/Dis', $value, $match) === 1) {
+            $value = trim($match[1], " \t\n\r\0\x0B\"'");
         }
 
-        return preg_match('/^[A-Za-z0-9_-]+$/D', $value) === 1 ? $value : null;
+        return preg_match('/^(?:lr[0-9]+\.)?[A-Za-z0-9_-]+$/D', $value) === 1 ? $value : null;
     }
 
     /**
-     * Splits a header value into its key id and sealed parts; null for
-     * anything that isn't a v1 trace by its shape.
+     * Whether a value carries a format prefix other than `lr1.`: a ray from a
+     * newer launchroom, which this dashboard can't read.
+     */
+    public static function newer(string $value): bool
+    {
+        return preg_match('/^lr[0-9]+\./', $value) === 1 && ! str_starts_with($value, self::PREFIX);
+    }
+
+    /**
+     * Splits a header value (`lr1.` and the envelope, or the envelope alone)
+     * into its key id and sealed parts; null for anything that isn't a v1
+     * ray by its shape.
      */
     public static function envelope(string $value): ?TraceEnvelope
     {
+        if (str_starts_with($value, self::PREFIX)) {
+            $value = substr($value, strlen(self::PREFIX));
+        }
+
         if (preg_match('/^[A-Za-z0-9_-]+$/D', $value) !== 1 || strlen($value) % 4 === 1) {
             return null;
         }

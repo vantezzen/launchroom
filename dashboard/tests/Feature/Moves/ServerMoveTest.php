@@ -7,6 +7,9 @@ use App\Actions\Connections\CreateConnection;
 use App\Actions\Deployments\DeployEnvironment;
 use App\Actions\Moves\AdvanceServerMoves;
 use App\Actions\Moves\PrebuildForPlatform;
+use App\Actions\Moves\StopMoveItem;
+use App\Actions\Servers\RetireServer;
+use App\Actions\Services\StopService;
 use App\Actions\Transfers\AdvanceImports;
 use App\Data\Audit\AuditActor;
 use App\Data\Servers\HostFactsData;
@@ -16,6 +19,7 @@ use App\Enums\ConnectionMode;
 use App\Enums\ConnectionStyle;
 use App\Enums\DaemonFeature;
 use App\Enums\DaemonTaskType;
+use App\Enums\DeploymentStatus;
 use App\Enums\Moves\MoveItemKind;
 use App\Enums\Moves\MoveItemStatus;
 use App\Enums\Moves\ServerMoveStatus;
@@ -24,6 +28,7 @@ use App\Enums\ServerStatus;
 use App\Enums\ServiceKind;
 use App\Enums\TeamRole;
 use App\Enums\Transfers\ImportRunStatus;
+use App\Exceptions\DomainRuleViolation;
 use App\Models\AuditEvent;
 use App\Models\Backups\BackupRun;
 use App\Models\Deployment;
@@ -37,6 +42,7 @@ use App\Models\Team;
 use App\Models\Transfers\DataExportRun;
 use App\Models\Transfers\DataImportRun;
 use App\Models\Volume;
+use App\Queries\ServicesOnServer;
 use App\Services\Moves\MovePlanner;
 use App\Support\Refusal;
 use Tests\Support\Backups;
@@ -439,4 +445,94 @@ test('apps built from source are deployed again on the target, so the move needs
     // The target can build for itself once it has the role.
     $this->target->forceFill(['roles' => [ServerRole::Runtime->value, ServerRole::Build->value]])->save();
     expect($planner->plan($this->source->refresh(), $this->target->refresh())->blockers)->toBe([]);
+});
+
+/**
+ * Starts the move and fails the web service's deployment on the target
+ * (its build broke there); returns the web item.
+ */
+function failWebOnTarget(TestCase $test): ServerMoveItem
+{
+    $test->actingAs($test->owner)
+        ->post(route('servers.move.store', $test->source), ['target' => $test->target->public_id, 'backupFirst' => false, 'confirmation' => 'droplet'])
+        ->assertRedirect();
+    $item = ServerMoveItem::query()->where('service_instance_id', $test->web->id)->sole();
+    Deployment::query()->whereKey($item->deployment_id)->update(['status' => DeploymentStatus::Failed->value, 'failure_message' => 'The build failed.']);
+    resolve(AdvanceServerMoves::class)->handle();
+
+    return $item->refresh();
+}
+
+test('a failed service can be left stopped from the move page: it stops with its processes and the move goes on without it', function (): void {
+    $item = failWebOnTarget($this);
+    expect($item->status)->toBe(MoveItemStatus::Failed);
+    $move = ServerMove::query()->sole();
+    $dbItem = ServerMoveItem::query()->where('kind', MoveItemKind::Dump->value)->sole();
+
+    $this->actingAs($this->owner)->get(route('servers.move', $this->source))
+        ->assertInertia(fn ($page) => $page->where('move.items.0.canStop', true)
+            ->where('move.items.0.canRetry', true)
+            ->where('move.items.0.processes', [])
+            ->where('move.items.0.href', fn (string $href): bool => str_contains($href, $this->web->service->public_id))
+            ->where('move.items.1.canStop', false));
+
+    // Only a failed service, and only one without data on the old server.
+    $this->actingAs($this->owner)->post(route('servers.move.stop', [$this->source, $move->public_id, $dbItem->public_id]))->assertSessionHasErrors();
+    $dbItem->forceFill(['status' => MoveItemStatus::Failed->value])->save();
+    $this->actingAs($this->owner)->post(route('servers.move.stop', [$this->source, $move->public_id, $dbItem->public_id]))
+        ->assertSessionHasErrors(['general' => 'postgres keeps its data on droplet, so it can’t be left behind. Retry it instead.']);
+    $this->actingAs(memberOf($this->team, TeamRole::Developer))->post(route('servers.move.stop', [$this->source, $move->public_id, $item->public_id]))->assertForbidden();
+
+    $this->actingAs($this->owner)->post(route('servers.move.stop', [$this->source, $move->public_id, $item->public_id]))->assertRedirect(route('servers.move', $this->source));
+
+    expect($item->refresh()->status)->toBe(MoveItemStatus::Stopped)
+        ->and($item->status->isSettled())->toBeTrue()
+        ->and($item->message)->toBe('Stopped. It stays stopped until you start it from its page; it then starts on netcup.')
+        ->and($this->web->refresh()->stopped_at)->not->toBeNull()
+        ->and(Placement::query()->where('service_instance_id', $this->web->id)->exists())->toBeFalse()
+        ->and(AuditEvent::query()->where('action', AuditAction::ServerMoveItemStopped->value)->exists())->toBeTrue()
+        // A stopped service can't be stopped again from here.
+        ->and(fn () => resolve(StopMoveItem::class)->handle($move, $item, $this->owner, AuditActor::system()))->toThrow(DomainRuleViolation::class);
+});
+
+test('retrying a service that was stopped elsewhere settles it as stopped', function (): void {
+    $item = failWebOnTarget($this);
+    resolve(StopService::class)->handle($this->web, true, $this->owner, AuditActor::system());
+
+    $this->actingAs($this->owner)->post(route('servers.move.retry', [$this->source, ServerMove::query()->sole()->public_id, $item->public_id]))->assertRedirect();
+
+    expect($item->refresh()->status)->toBe(MoveItemStatus::Stopped)
+        ->and($item->message)->toBe('Stopped. It stays stopped until you start it from its page; it then starts on netcup.');
+});
+
+test('retrying a service that runs on no server says so instead of "already runs on another server"', function (): void {
+    $item = failWebOnTarget($this);
+    Placement::query()->where('service_instance_id', $this->web->id)->delete();
+
+    $this->actingAs($this->owner)->post(route('servers.move.retry', [$this->source, ServerMove::query()->sole()->public_id, $item->public_id]))->assertRedirect();
+
+    expect($item->refresh()->status)->toBe(MoveItemStatus::Skipped)
+        ->and($item->message)->toBe('It doesn’t run on any server, so there is nothing to move.');
+});
+
+test('a leftover row of a container launchroomd already removed doesn’t block retiring; a running service is named with its project', function (): void {
+    $retire = resolve(RetireServer::class);
+    $refusal = $retire->handle($this->source, $this->target, AuditActor::system());
+
+    expect($refusal?->message)->toContain('keeps its data on droplet')
+        ->toContain('(shop / production)')
+        ->toContain('1 more service is still on droplet. Move, stop or remove it first.');
+
+    // The database moved; the web service's row on the source is a leftover (its container is gone).
+    Volume::query()->where('service_instance_id', $this->postgres->id)->update(['server_id' => $this->target->id]);
+    Placement::query()->where('service_instance_id', $this->postgres->id)->update(['server_id' => $this->target->id]);
+    $leftover = workloadOn($this->web, $this->source);
+    expect(collect(ServicesOnServer::blocking($this->source))->pluck('reason')->all())->toBe(['runs']);
+    $leftover?->forceFill(['phase' => 'removed'])->save();
+    expect(ServicesOnServer::blocking($this->source))->toBe([])
+        ->and(collect(resolve(MovePlanner::class)->services($this->source))->map(fn (array $entry): int => $entry['instance']->id)->all())->not->toContain($this->web->id);
+
+    expect($retire->handle($this->source, $this->target, AuditActor::system()))->toBeNull()
+        ->and(Placement::query()->whereKey($leftover?->id)->exists())->toBeFalse()
+        ->and($this->source->refresh()->status)->toBe(ServerStatus::Revoked);
 });

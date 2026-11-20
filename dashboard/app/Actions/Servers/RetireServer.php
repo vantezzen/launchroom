@@ -6,13 +6,11 @@ namespace App\Actions\Servers;
 
 use App\Data\Audit\AuditActor;
 use App\Enums\ServerRole;
-use App\Enums\WorkloadRole;
 use App\Events\NodeStateInvalidated;
 use App\Models\Placement;
 use App\Models\Server;
-use App\Models\Volume;
+use App\Queries\ServicesOnServer;
 use App\Support\Refusal;
-use Illuminate\Contracts\Database\Eloquent\Builder;
 use Illuminate\Support\Facades\DB;
 use Throwable;
 
@@ -30,7 +28,8 @@ use Throwable;
  * still fetches is that state (AuthenticateDaemon).
  *
  * Refused (nothing changed) while a current service still runs or keeps a
- * volume on it, or when the empty state can't be rendered: a refused render
+ * volume on it (named, with its project and environment; leftover rows of
+ * containers already removed don't count and go with the rest), or when the empty state can't be rendered: a refused render
  * would leave the old, full state as the latest one.
  */
 final readonly class RetireServer
@@ -68,14 +67,11 @@ final readonly class RetireServer
         $old = Server::query()->whereKey($old->id)->lockForUpdate()->firstOrFail();
         $new = Server::query()->whereKey($new->id)->lockForUpdate()->firstOrFail();
 
-        $current = static fn (Builder $query): Builder => $query->whereNull('removed_at');
-        $serving = Placement::query()->where('server_id', $old->id)->where('role', WorkloadRole::Serving->value)->whereHas('serviceInstance', $current)->with('serviceInstance.service')->first();
-        $volume = Volume::query()->where('server_id', $old->id)->whereHas('serviceInstance', $current)->with('serviceInstance.service')->first();
+        // Rows of workloads launchroomd already removed don't count (ServicesOnServer).
+        $blockers = ServicesOnServer::blocking($old);
 
-        if ($serving instanceof Placement || $volume instanceof Volume) {
-            $name = $serving?->serviceInstance->service->name ?? $volume?->serviceInstance->service->name ?? 'A service';
-
-            return Refusal::conflict("{$name} still runs on {$old->name}. Move it first.");
+        if ($blockers !== []) {
+            return Refusal::conflict(ServicesOnServer::refusal($blockers, 'Move, stop or remove it first.'));
         }
 
         $new->forceFill([

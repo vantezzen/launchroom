@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Models\Moves;
 
+use App\Data\Moves\DnsSwitchSnapshotData;
 use App\Data\Moves\HandoverManifestData;
 use App\Data\Moves\MoveReceiverData;
 use App\Enums\Contracts\HasTransitionTable;
@@ -44,6 +45,7 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
  * @property int|null $enrollment_id
  * @property string|null $sealed_join_token
  * @property HandoverManifestData|null $handover the hand-over manifest
+ * @property DnsSwitchSnapshotData|null $dns_switch the DNS records to change, taken when the hand-over starts
  * @property CarbonImmutable|null $frozen_at
  * @property CarbonImmutable|null $handed_over_at
  * @property string|null $new_url
@@ -145,6 +147,7 @@ final class ControlPlaneMove extends Model
             'claimed_at' => 'datetime',
             'receiver_seen_at' => 'datetime',
             'handover' => HandoverManifestData::class,
+            'dns_switch' => DnsSwitchSnapshotData::class,
             'frozen_at' => 'datetime',
             'handed_over_at' => 'datetime',
             'finished_at' => 'datetime',

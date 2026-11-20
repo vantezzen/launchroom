@@ -248,6 +248,8 @@ Run these from inside the install folder.
 | `./launchroom reset-password EMAIL` | Print a one-time link to set a new password, for when the dashboard can't send email. |
 | `./launchroom reset-owner-2fa EMAIL` | Remove an instance owner's two-factor authentication after a typed confirmation. They set it up again at the next sign-in. |
 | `./launchroom dashboard-domain-reset` | Go back to the install address when the dashboard's own domain locks you out. |
+| `./launchroom move continue` | On the new server of a [move](/docs/migrate/move-to-a-new-server): continue the move from wherever it stopped. Safe to run again. |
+| `./launchroom tinker` | The dashboard's PHP console, for repairs by hand. Changes made there skip launchroom's checks and the audit log. |
 | `./launchroom uninstall` | Remove launchroom from this server. |
 
 ## Installer options

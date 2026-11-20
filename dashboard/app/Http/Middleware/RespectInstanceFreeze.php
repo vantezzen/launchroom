@@ -19,14 +19,26 @@ use Symfony\Component\HttpFoundation\Response;
  * - while frozen, changes are refused (web forms get the message, the API
  *   and webhooks answer 503) and pages stay readable;
  * - once the new dashboard took over (`moved_to`), every page says where
- *   launchroom went;
+ *   launchroom went, except Settings → Move launchroom (instance owners
+ *   only, after signing in), which shows the DNS records to change;
  * - what servers and the new machine call always passes
  *   (RouteFamily::passesFreeze()).
  */
 final class RespectInstanceFreeze
 {
     /** Writes that still work while frozen: signing in and out, aborting the hand-over. */
-    private const array WRITES = ['login', 'logout', 'two-factor-challenge', 'settings/move/*', 'user/confirm-password', 'user/confirmed-password-status'];
+    private const array WRITES = ['login', 'logout', 'two-factor-challenge', 'passkeys/login', 'passkeys/login/*', 'settings/move/*', 'user/confirm-password', 'user/confirmed-password-status'];
+
+    /**
+     * Once moved, the pages still answered (in the web group, so for a
+     * signed-in instance owner only): Settings → Move launchroom with the
+     * DNS switch, and signing in to reach it. Every other page says where
+     * launchroom went.
+     */
+    private const array MOVED_PAGES = ['settings/move', 'login', 'logout', 'two-factor-challenge', 'passkeys/login', 'passkeys/login/*'];
+
+    /** Once moved, the only writes: signing in and out. */
+    private const array MOVED_WRITES = ['login', 'logout', 'two-factor-challenge', 'passkeys/login', 'passkeys/login/*'];
 
     /**
      * Globally: the API, webhooks and every page once moved. In the web
@@ -49,10 +61,14 @@ final class RespectInstanceFreeze
             : "launchroom moved to {$moved}.";
 
         if ($layer === 'web') {
-            if (! $request->isMethodSafe() && ! $request->is(...self::WRITES)) {
+            if (! $request->isMethodSafe() && ! $request->is(...($moved === null ? self::WRITES : self::MOVED_WRITES))) {
                 throw DomainRuleViolation::conflict($message);
             }
 
+            return $next($request);
+        }
+
+        if ($moved !== null && $family === RouteFamily::Browser && $request->is(...self::MOVED_PAGES)) {
             return $next($request);
         }
 
@@ -62,7 +78,7 @@ final class RespectInstanceFreeze
         }
 
         if ($moved !== null) {
-            return Inertia::render('moved', ['movedTo' => $moved])->toResponse($request);
+            return Inertia::render('moved', ['movedTo' => $moved, 'summaryHref' => '/settings/move'])->toResponse($request);
         }
 
         return $next($request);

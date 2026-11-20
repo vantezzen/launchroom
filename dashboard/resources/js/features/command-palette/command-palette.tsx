@@ -263,12 +263,14 @@ export function CommandPalette() {
     };
 
     const searching = search.trim() !== '';
-    // A pasted Launchroom-Trace header (about 300 characters) opens its trace.
+    // A pasted ray (about 300 characters, or a header line) opens its trace.
     const pastedTrace = useMemo(() => {
         const trace = normaliseTrace(search);
 
         return trace !== null &&
-            (trace.length >= 100 || /^\s*launchroom-trace/i.test(search))
+            (trace.length >= 100 ||
+                /^lr\d+\./.test(trace) ||
+                /x-launchroom-ray|launchroom-trace/i.test(search))
             ? trace
             : null;
     }, [search]);
@@ -765,18 +767,18 @@ export function CommandPalette() {
                             {pastedTrace ? (
                                 <CommandItem
                                     forceMount
-                                    value="trace this pasted request"
+                                    value="open this pasted ray"
                                     onSelect={() => go(traceHref(pastedTrace))}
                                 >
                                     <Waypoints aria-hidden="true" />
-                                    Trace this request
+                                    Open this ray
                                     <CommandShortcut>↵</CommandShortcut>
                                 </CommandItem>
                             ) : (
                                 navigateRow(
-                                    'trace a request launchroom-trace header',
+                                    'paste a ray trace a request x-launchroom-ray header',
                                     <Waypoints aria-hidden="true" />,
-                                    'Trace a request',
+                                    'Paste a ray',
                                     traceHref(),
                                 )
                             )}
@@ -1028,9 +1030,9 @@ export function CommandPalette() {
                                 )}
                                 {!searching &&
                                     navigateRow(
-                                        'go trace a request',
+                                        'go paste a ray trace a request',
                                         <Waypoints aria-hidden="true" />,
-                                        'Trace a request',
+                                        'Paste a ray',
                                         traceHref(),
                                     )}
                                 <CommandItem

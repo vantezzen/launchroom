@@ -16,7 +16,9 @@
 #   ./launchroom reset-owner-2fa EMAIL   remove an instance owner's 2FA (audited)
 #   ./launchroom reset-password EMAIL    print a one-time sign-in link to set a new password
 #   ./launchroom dashboard-domain-reset  go back to APP_URL when the dashboard's domain locks you out
-#   ./launchroom move-takeover           finish a move here if the installer stopped after the restore
+#   ./launchroom move continue           continue moving launchroom to this server from wherever it
+#                                        stopped (join, hand-over, takeover, cleanup); safe to repeat
+#   ./launchroom tinker                  the dashboard's PHP console (changes skip checks and the audit log)
 #   ./launchroom uninstall               remove launchroom from this server
 #
 # Upgrading to a new release (new compose.yml and image pins) means running
@@ -139,16 +141,35 @@ cmd_backup() {
 	artisan launchroom:backups:control-plane "$@"
 }
 
-# After `install.sh --move` restored the old dashboard here but stopped
-# before taking over (docs/14 §13.4): make this server the control plane
-# and point launchroomd at the local dashboard.
-cmd_move_takeover() {
-	has_command launchroom:move:takeover || die "this release can't take over a move (launchroom:move:takeover)."
-	artisan launchroom:move:takeover
-	rm -f "$DIR/data/daemon/control-plane.json"
-	{ grep -v '^LR_CONTROL_PLANE_URL=' "$DIR/.env" || true; printf 'LR_CONTROL_PLANE_URL=\n'; } >"$DIR/.env.tmp" && mv "$DIR/.env.tmp" "$DIR/.env"
-	dc up -d launchroomd
-	say "this server is the control plane now. Open Settings → Move launchroom for the checklist."
+# `install.sh --move` stopped somewhere (docs/14 §13.4): continue from there
+# with the installer of the bundle the move started with (recorded in .move;
+# a downloaded bundle stays in .tmp until the move finished). Every step
+# checks where things stand first: joining the old dashboard, waiting for
+# and restoring the hand-over, the takeover, connecting this server's
+# launchroomd, telling the old dashboard, removing the move's state.
+cmd_move_continue() {
+	[ -f "$DIR/.move" ] || die "no move is in progress on this server. A move starts with the command from Settings → Move launchroom in the old dashboard."
+	bundle="$(sed -n 's/^bundle=//p' "$DIR/.move" | tail -n 1)"
+	[ -n "$bundle" ] || bundle="$DIR/.tmp/bundle"
+	[ -f "$bundle/install/install.sh" ] ||
+		die "the installer this move started with is gone ($bundle). Run the install command from the old dashboard again; it continues the move."
+	grep -q -- '--move-continue' "$bundle/install/install.sh" ||
+		die "the installer this move started with can't continue a move. Run the install command from the old dashboard again; it continues where it stopped."
+	exec sh "$bundle/install/install.sh" --dir "$DIR" --bundle "$bundle" --move-continue "$@"
+}
+
+cmd_move() {
+	case "${1:-}" in
+	continue) shift; cmd_move_continue "$@" ;;
+	*) die "usage: ./launchroom move continue" ;;
+	esac
+}
+
+# The dashboard's PHP console (Laravel tinker) for repairs by hand. What it
+# changes skips launchroom's checks and the audit log.
+cmd_tinker() {
+	say "the dashboard's console: changes made here skip launchroom's checks and the audit log."
+	dc exec dashboard php artisan tinker "$@"
 }
 
 cmd_restore() {
@@ -277,7 +298,7 @@ swap_note() {
 }
 
 main() {
-	[ $# -gt 0 ] || { sed -n '3,22p' "$0" | sed 's/^# \{0,1\}//'; exit 0; }
+	[ $# -gt 0 ] || { sed -n '3,24p' "$0" | sed 's/^# \{0,1\}//'; exit 0; }
 	command="$1"
 	shift
 	case "$command" in
@@ -292,9 +313,12 @@ main() {
 	reset-password) cmd_reset_password "$@" ;;
 	doctor) cmd_doctor "$@" ;;
 	dashboard-domain-reset) cmd_dashboard_domain_reset "$@" ;;
-	move-takeover) cmd_move_takeover ;;
+	move) cmd_move "$@" ;;
+	# Earlier name: it now continues the whole move, not only the takeover.
+	move-takeover) cmd_move_continue "$@" ;;
+	tinker) cmd_tinker "$@" ;;
 	uninstall) cmd_uninstall ;;
-	-h | --help | help) sed -n '3,22p' "$0" | sed 's/^# \{0,1\}//' ;;
+	-h | --help | help) sed -n '3,24p' "$0" | sed 's/^# \{0,1\}//' ;;
 	*) die "unknown command $command (see ./launchroom help)" ;;
 	esac
 }

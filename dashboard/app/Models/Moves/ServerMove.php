@@ -141,6 +141,15 @@ final class ServerMove extends Model
     }
 
     /**
+     * Message of an item whose service is stopped (by the move or the Stop
+     * action); `$with` names the processes stopped with it.
+     */
+    public function stoppedItemMessage(string $with = ''): string
+    {
+        return ($with === '' ? 'Stopped.' : "Stopped with {$with}.")." It stays stopped until you start it from its page; it then starts on {$this->target->name}.";
+    }
+
+    /**
      * @return array<string, string>
      */
     protected function casts(): array

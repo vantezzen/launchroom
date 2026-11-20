@@ -46,8 +46,8 @@ export function TraceEmpty({
     return (
         <Page size="narrow">
             <PageHeader
-                title="Trace a request"
-                description="Paste a response’s Launchroom-Trace header to see where the request went."
+                title="Paste a ray"
+                description="Every response through your edge servers carries a ray. Paste it to see where the request went."
             />
             <div className="flex flex-col gap-3">
                 <div className="flex flex-col overflow-hidden rounded-xl border bg-card shadow-card">
@@ -64,8 +64,8 @@ export function TraceEmpty({
                     </div>
                 </div>
                 <p className="type-small text-muted-foreground">
-                    A response without this header didn’t pass through a
-                    launchroom edge server.
+                    A response without an X-Launchroom-Ray header didn’t pass
+                    through a launchroom edge server.
                 </p>
             </div>
         </Page>

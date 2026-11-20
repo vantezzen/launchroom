@@ -1,20 +1,33 @@
 import { Link } from '@inertiajs/react';
 import {
+    Ban,
     Check,
+    CodeXml,
+    Coffee,
+    Cookie,
+    Database,
+    FileCode,
+    FileWarning,
     Link2,
+    Network,
+    ScanSearch,
     ScrollText,
+    Shield,
     ShieldCheck,
+    Syringe,
+    Terminal,
     TriangleAlert,
     Waypoints,
 } from 'lucide-react';
+import type { LucideIcon } from 'lucide-react';
 import { useState } from 'react';
-import type { CSSProperties, ReactNode } from 'react';
 import { toast } from 'sonner';
 import { CopyButton } from '@/components/copy-button';
+import { MetaLine } from '@/components/patterns/meta-line';
 import { Page, PageHeader } from '@/components/patterns/page';
 import { Section } from '@/components/patterns/section';
 import { TopBarActions } from '@/components/patterns/top-bar';
-import { TimeAgo } from '@/components/time-ago';
+import { StatusPill } from '@/components/status';
 import { Button } from '@/components/ui/button';
 import {
     Popover,
@@ -22,24 +35,26 @@ import {
     PopoverTrigger,
 } from '@/components/ui/popover';
 import {
+    Tooltip,
+    TooltipContent,
+    TooltipTrigger,
+} from '@/components/ui/tooltip';
+import {
     allowBody,
     allowedToast,
     allowLabel,
     uncoveredNote,
 } from '@/features/security/exclusion-draft';
 import { useClipboard } from '@/hooks/use-clipboard';
+import { useNow } from '@/hooks/use-now';
+import { relativeTime } from '@/lib/format';
 import { requestJson } from '@/lib/http';
 import { labelOf, vocabulary } from '@/lib/vocabulary';
-import {
-    failureWords,
-    formatMicros,
-    statusWords,
-    targetName,
-    timing,
-} from './trace-model';
+import { statusState, statusWords } from './trace-model';
 import type { RequestTrace } from './trace-model';
-import { TracePathDiagram } from './trace-path';
+import { DecisionIcon, TraceCanvas } from './trace-path';
 import { TracePastePopover } from './trace-paste';
+import { TtfbBar } from './trace-ttfb';
 
 const exactTime = new Intl.DateTimeFormat('en-GB', {
     day: 'numeric',
@@ -51,15 +66,26 @@ const exactTime = new Intl.DateTimeFormat('en-GB', {
     fractionalSecondDigits: 3,
 });
 
-function delay(ms: number): CSSProperties {
-    return { '--trace-delay': `${ms}ms` } as CSSProperties;
-}
+const CATEGORY_ICON: Record<App.Enums.Security.WafCategory, LucideIcon> = {
+    method: Ban,
+    scanner: ScanSearch,
+    protocol: Network,
+    lfi: FileWarning,
+    rfi: Link2,
+    rce: Terminal,
+    php: FileCode,
+    generic: Syringe,
+    xss: CodeXml,
+    sqli: Database,
+    session_fixation: Cookie,
+    java: Coffee,
+    other: Shield,
+};
 
 /**
- * A decoded request trace (docs/23 §7): what happened in one sentence
- * with the next actions, the request's path drawn through the edge and
- * app servers to the service, the time it took, then the facts and the
- * firewall rules that matched.
+ * A decoded ray (docs/23 §7): which request it was and what happened to
+ * it, its path as cards on a canvas with the time to first byte under
+ * it, then the firewall rules that matched.
  */
 export function TraceView({ trace }: { trace: RequestTrace }) {
     const firewall = trace.firewall;
@@ -73,19 +99,19 @@ export function TraceView({ trace }: { trace: RequestTrace }) {
                 <TracePastePopover>
                     <Button variant="ghost" size="sm">
                         <Waypoints aria-hidden="true" />
-                        Trace another
+                        Paste another ray
                     </Button>
                 </TracePastePopover>
             </TopBarActions>
 
             <PageHeader
-                title={trace.summary}
+                title="Ray"
+                className="sm:items-start"
                 actions={
                     <>
-                        {allow && <AllowRequests trace={trace} draft={allow} />}
                         {trace.logsHref && (
                             <Button
-                                variant={allow ? 'outline' : 'default'}
+                                variant={flagged ? 'outline' : 'default'}
                                 asChild
                             >
                                 <Link href={trace.logsHref}>
@@ -104,54 +130,67 @@ export function TraceView({ trace }: { trace: RequestTrace }) {
                         )}
                     </>
                 }
-            />
-
-            <section
-                aria-label="Request path"
-                className="flex min-w-0 flex-col overflow-hidden rounded-xl border bg-card shadow-card"
             >
-                <RequestLine trace={trace} />
-                <div className="border-t bg-recessed">
-                    <TracePathDiagram trace={trace} />
+                <div className="mt-2 flex min-w-0 flex-col gap-2">
+                    <Identity trace={trace} />
+                    <p className="type-body text-muted-foreground">
+                        {trace.summary}
+                    </p>
                 </div>
-                <TimingBar trace={trace} />
-            </section>
+            </PageHeader>
 
-            <Facts trace={trace} />
+            <TracePathCard trace={trace} />
 
             {firewall && firewall.rules.length > 0 && (
                 <Section
                     id="trace-rules"
                     title={
-                        firewall.rules.length === 1
-                            ? 'Rule that matched'
-                            : 'Rules that matched'
+                        <span className="inline-flex items-center gap-2">
+                            <DecisionIcon
+                                outcome={firewall.outcome}
+                                className="size-4"
+                            />
+                            {firewall.rules.length === 1
+                                ? 'Rule that matched'
+                                : 'Rules that matched'}
+                        </span>
                     }
-                    description={`Score ${firewall.score} in ${labelOf(vocabulary.Security.WafMode, firewall.mode) ?? firewall.mode} mode.`}
+                    description={`Score ${firewall.score} in ${firewall.mode === 'log' ? 'Log' : 'Block'} mode.`}
+                    actions={
+                        allow && <AllowRequests trace={trace} draft={allow} />
+                    }
                     className="scroll-mt-20"
                 >
                     <ul className="flex flex-col divide-y overflow-hidden rounded-xl border bg-card shadow-card">
-                        {firewall.rules.map((rule) => (
-                            <li
-                                key={rule.id}
-                                className="flex items-baseline gap-4 px-5 py-3"
-                            >
-                                <code className="w-16 shrink-0 type-mono text-muted-foreground tabular-nums">
-                                    {rule.id}
-                                </code>
-                                <span className="flex min-w-0 flex-1 flex-col gap-0.5 sm:flex-row sm:items-baseline sm:justify-between sm:gap-4">
-                                    <span className="type-body">
+                        {firewall.rules.map((rule) => {
+                            const category =
+                                rule.category as App.Enums.Security.WafCategory;
+                            const Icon = CATEGORY_ICON[category] ?? Shield;
+
+                            return (
+                                <li
+                                    key={rule.id}
+                                    className="flex flex-col gap-1.5 px-5 py-3.5 sm:flex-row sm:items-center sm:gap-4"
+                                >
+                                    <code className="w-14 shrink-0 type-mono-small text-muted-foreground tabular-nums">
+                                        {rule.id}
+                                    </code>
+                                    <span className="min-w-0 flex-1 type-body">
                                         {rule.message}
                                     </span>
-                                    <span className="shrink-0 type-small text-muted-foreground">
+                                    <span className="inline-flex h-6 shrink-0 items-center gap-1.5 self-start rounded-full border px-2 type-small text-muted-foreground sm:self-auto">
+                                        <Icon
+                                            aria-hidden="true"
+                                            className="size-3.5"
+                                        />
                                         {labelOf(
                                             vocabulary.Security.WafCategory,
                                             rule.category,
                                         ) ?? rule.category}
                                     </span>
-                                </span>
-                            </li>
-                        ))}
+                                </li>
+                            );
+                        })}
                     </ul>
                 </Section>
             )}
@@ -159,12 +198,38 @@ export function TraceView({ trace }: { trace: RequestTrace }) {
     );
 }
 
-/** `GET shop.example.com/products/:id` with when it arrived. */
-function RequestLine({ trace }: { trace: RequestTrace }) {
+/** The path on its dotted canvas with the time to first byte under it. */
+export function TracePathCard({ trace }: { trace: RequestTrace }) {
+    return (
+        <section
+            aria-label="Request path"
+            className="flex min-w-0 flex-col overflow-hidden rounded-xl border bg-card shadow-card"
+        >
+            <div className="trace-dots bg-recessed">
+                <TraceCanvas trace={trace} />
+            </div>
+            <div className="border-t">
+                <TtfbBar trace={trace} />
+            </div>
+        </section>
+    );
+}
+
+/**
+ * Which request this was: the status the visitor got, the method and
+ * address, when it arrived and its request id (to the logs).
+ */
+function Identity({ trace }: { trace: RequestTrace }) {
     const target = `${trace.host ?? ''}${trace.path ?? ''}`;
+    const words = statusWords(trace.status) ?? String(trace.status);
 
     return (
-        <div className="flex flex-wrap items-center justify-between gap-x-6 gap-y-1 px-5 py-3.5">
+        <div className="flex min-w-0 flex-wrap items-center gap-x-3 gap-y-2">
+            <StatusPill
+                state={statusState(trace.requestClass)}
+                label={words}
+                className="tabular-nums"
+            />
             <code
                 className="min-w-0 truncate type-mono"
                 title={`${trace.method ?? ''} ${target}`.trim()}
@@ -174,187 +239,64 @@ function RequestLine({ trace }: { trace: RequestTrace }) {
                 )}
                 <span className="text-muted-foreground">{target || '/'}</span>
             </code>
-            <span className="type-small text-muted-foreground tabular-nums">
-                <TimeAgo value={trace.receivedAt} />
-            </span>
+            <MetaLine className="type-small text-muted-foreground">
+                <Received value={trace.receivedAt} />
+                <RequestId trace={trace} />
+            </MetaLine>
         </div>
     );
 }
 
-/**
- * Time to the response headers split into the edge server's share and the
- * app's, as one segmented bar with the numbers beside it.
- */
-function TimingBar({ trace }: { trace: RequestTrace }) {
-    const time = timing(trace);
-
-    if (time === null) {
-        return null;
-    }
-
-    const name = targetName(trace);
-    const parts: {
-        key: string;
-        label: string;
-        us: number;
-        color: string;
-    }[] = [
-        {
-            key: 'edge',
-            label: trace.edge.name,
-            us: time.edgeUs,
-            color: 'var(--chart-other)',
-        },
-        ...(time.appUs !== null
-            ? [
-                  {
-                      key: 'app',
-                      label: name,
-                      us: time.appUs,
-                      color: 'var(--signal)',
-                  },
-              ]
-            : []),
-    ];
+/** "39 seconds ago", the exact time to the millisecond in a tooltip. */
+function Received({ value }: { value: string }) {
+    const recent = Math.abs(Date.now() - new Date(value).getTime()) < 60_000;
+    useNow(true, recent ? 1000 : 60_000);
 
     return (
-        <div className="flex flex-col gap-2.5 border-t px-5 py-4">
-            <div className="flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1">
-                <span className="type-label">Time to response headers</span>
-                <span className="type-mono tabular-nums">
-                    {formatMicros(time.totalUs)}
-                </span>
-            </div>
-            {parts.length > 1 && (
-                <div
-                    role="img"
-                    aria-label={parts
-                        .map((part) => `${part.label} ${formatMicros(part.us)}`)
-                        .join(', ')}
-                    className="flex h-2 w-full gap-0.5"
+        <Tooltip>
+            <TooltipTrigger asChild>
+                <time
+                    dateTime={value}
+                    tabIndex={0}
+                    className="rounded-sm tabular-nums outline-none focus-visible:ring-2 focus-visible:ring-signal"
                 >
-                    {parts.map((part, i) => (
-                        <span
-                            key={part.key}
-                            className="trace-grow h-full rounded-full"
-                            style={{
-                                flexGrow: Math.max(part.us, 1),
-                                flexBasis: 0,
-                                minWidth: 3,
-                                backgroundColor: part.color,
-                                ...delay(200 + i * 160),
-                            }}
-                        />
-                    ))}
-                </div>
+                    {relativeTime(value)}
+                </time>
+            </TooltipTrigger>
+            <TooltipContent>
+                Received {exactTime.format(new Date(value))}
+            </TooltipContent>
+        </Tooltip>
+    );
+}
+
+/** The request id, short, to the logs filtered by it, with copy. */
+function RequestId({ trace }: { trace: RequestTrace }) {
+    const short = trace.requestId.slice(0, 8);
+    const label = (
+        <>
+            <span className="sr-only">Request id </span>
+            <span className="type-mono-small">{short}</span>
+        </>
+    );
+
+    return (
+        <span className="inline-flex items-center gap-0.5">
+            {trace.logsHref ? (
+                <Link
+                    href={trace.logsHref}
+                    title={`Request ${trace.requestId}: open its logs`}
+                    className="rounded-sm text-foreground underline decoration-border-strong underline-offset-2 outline-none hover:decoration-foreground focus-visible:ring-2 focus-visible:ring-signal"
+                >
+                    {label}
+                </Link>
+            ) : (
+                <span title={trace.requestId} className="text-foreground">
+                    {label}
+                </span>
             )}
-            <ul className="flex flex-wrap gap-x-5 gap-y-1 type-small text-muted-foreground">
-                {parts.map((part) => (
-                    <li
-                        key={part.key}
-                        className="inline-flex items-center gap-2"
-                    >
-                        <span
-                            aria-hidden="true"
-                            className="size-2 rounded-full"
-                            style={{ backgroundColor: part.color }}
-                        />
-                        <span>
-                            {part.key === 'edge'
-                                ? `On ${part.label}`
-                                : trace.origin === 'upstream_failure'
-                                  ? `Waiting for ${part.label}`
-                                  : `Until ${part.label} answered`}
-                        </span>
-                        <span className="type-mono-small text-foreground tabular-nums">
-                            {formatMicros(part.us)}
-                        </span>
-                    </li>
-                ))}
-            </ul>
-        </div>
-    );
-}
-
-function Fact({ label, children }: { label: string; children: ReactNode }) {
-    return (
-        <div className="flex min-w-0 flex-col gap-1">
-            <dt className="type-small text-muted-foreground">{label}</dt>
-            <dd className="min-w-0 type-body">{children}</dd>
-        </div>
-    );
-}
-
-/** The facts in a short grid (docs/23 §7). */
-function Facts({ trace }: { trace: RequestTrace }) {
-    const firewall = trace.firewall;
-    const name = trace.service?.name ?? 'The app';
-    const otherStatus =
-        trace.upstreamStatus !== null && trace.upstreamStatus !== trace.status
-            ? trace.upstreamStatus
-            : null;
-
-    return (
-        <Section title="Details">
-            <dl className="grid gap-x-8 gap-y-5 rounded-xl border bg-card px-5 py-4 shadow-card sm:grid-cols-2 lg:grid-cols-3">
-                <Fact label="Received">
-                    <span className="tabular-nums">
-                        {exactTime.format(new Date(trace.receivedAt))}
-                    </span>
-                </Fact>
-                <Fact label="Request id">
-                    <span className="flex min-w-0 items-center gap-1">
-                        <code className="min-w-0 truncate type-mono">
-                            {trace.requestId}
-                        </code>
-                        <CopyButton
-                            value={trace.requestId}
-                            label="request id"
-                            size="xs"
-                        />
-                    </span>
-                </Fact>
-                {trace.host && (
-                    <Fact label="Domain">
-                        <code className="block truncate type-mono">
-                            {trace.host}
-                        </code>
-                    </Fact>
-                )}
-                {trace.protocol && (
-                    <Fact label="Protocol">{trace.protocol}</Fact>
-                )}
-                <Fact label="Status">
-                    <span className="tabular-nums">
-                        {statusWords(trace.status)}
-                    </span>
-                    {otherStatus !== null && (
-                        <span className="block type-small text-muted-foreground tabular-nums">
-                            {name} answered {statusWords(otherStatus)}
-                        </span>
-                    )}
-                </Fact>
-                {trace.failure && (
-                    <Fact label="Upstream">{failureWords(trace)}</Fact>
-                )}
-                {trace.attempts !== null &&
-                    (trace.attempts > 1 || trace.failure !== null) && (
-                        <Fact label="Attempts">
-                            <span className="tabular-nums">
-                                {trace.attempts}
-                            </span>
-                        </Fact>
-                    )}
-                {firewall && (
-                    <Fact label="Firewall">
-                        {firewall.mode === 'block' ? 'Block mode' : 'Log only'}
-                        <span className="text-muted-foreground tabular-nums">
-                            , score {firewall.score}
-                        </span>
-                    </Fact>
-                )}
-            </dl>
-        </Section>
+            <CopyButton value={trace.requestId} label="request id" size="xs" />
+        </span>
     );
 }
 

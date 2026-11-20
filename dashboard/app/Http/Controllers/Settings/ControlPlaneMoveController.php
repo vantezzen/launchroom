@@ -14,6 +14,7 @@ use App\Actions\Moves\MoveControlPlaneWorkloads;
 use App\Actions\Moves\RetryMoveItem;
 use App\Actions\Moves\StartControlPlaneMove;
 use App\Actions\Moves\StartHandover;
+use App\Actions\Moves\StopMoveItem;
 use App\Data\Moves\ApproveMoveData;
 use App\Data\Moves\MoveWorkloadsData;
 use App\Data\Moves\StartHandoverData;
@@ -83,6 +84,17 @@ final class ControlPlaneMoveController extends Controller
         $serverMove = $this->open()->serverMove;
         abort_unless($serverMove instanceof ServerMove, 404);
         $retry->handle($serverMove, RouteScope::moveItem($serverMove, $item), $this->auditActor($request, $user));
+
+        return to_route('move.edit');
+    }
+
+    public function stop(Request $request, ServerMoveItem $item, #[CurrentUser] User $user, StopMoveItem $stop): RedirectResponse
+    {
+        Gate::authorize('manageInstance');
+        $serverMove = $this->open()->serverMove;
+        abort_unless($serverMove instanceof ServerMove, 404);
+        $stopped = $stop->handle($serverMove, RouteScope::moveItem($serverMove, $item), $user, $this->auditActor($request, $user));
+        Toast::success("{$stopped->serviceInstance->service->name} was stopped and stays stopped.");
 
         return to_route('move.edit');
     }

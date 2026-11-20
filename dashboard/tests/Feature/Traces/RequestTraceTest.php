@@ -28,6 +28,7 @@ use App\Services\NodeStates\DashboardRoute;
 use App\Services\NodeStates\FeatureGate;
 use App\Services\Traces\TraceKeys;
 use App\Support\Ingress\RouteId;
+use App\Support\Traces\TraceCodec;
 use Carbon\CarbonImmutable;
 use Illuminate\Support\Facades\Event;
 use Inertia\Testing\AssertableInertia as Assert;
@@ -205,7 +206,7 @@ test('without t the page shows the paste field', function (): void {
 });
 
 test('an answer from the app shows the path, the service and its logs around the request', function (): void {
-    $props = tracePage($this->owner, 'Launchroom-Trace: '.traceHeader());
+    $props = tracePage($this->owner, 'X-Launchroom-Ray: '.traceHeader());
     $trace = $props['trace'];
 
     expect($trace['summary'])->toBe($this->service->name.' answered with 200.')
@@ -280,6 +281,21 @@ test('anything that cannot be shown gets one answer', function (callable $input,
     'service of another team' => [fn (): string => traceHeader(['service' => ServiceInstance::query()->where('team_id', '!=', test()->team->id)->value('public_id') ?? 'sin_0000000000000000000000SVC1'])],
     'dashboard route without servers.manage' => [fn (): string => traceHeader(['route' => DashboardRoute::ID, 'service' => null]), TeamRole::Developer],
 ]);
+
+test('rays from edges before the prefix still open, a newer format says so', function (): void {
+    $ray = traceHeader();
+    $legacy = substr($ray, strlen(TraceCodec::PREFIX));
+
+    expect($ray)->toStartWith('lr1.')
+        ->and(tracePage($this->owner, 'Launchroom-Trace: '.$legacy))->toHaveKey('trace')
+        ->and(tracePage($this->owner, $legacy))->toHaveKey('trace')
+        ->and(tracePage($this->owner, " \"{$ray}\"\n"))->toHaveKey('trace');
+
+    $props = tracePage($this->owner, 'X-Launchroom-Ray: lr2.'.$legacy);
+
+    expect($props['error'])->toBe(DecodeTrace::NEWER)
+        ->and($props)->not->toHaveKey('trace');
+});
 
 test('traces of another team\'s edge are refused, even for a member of both', function (): void {
     $header = traceHeader();

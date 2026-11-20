@@ -59,10 +59,14 @@ const (
 	originNoRoute  = 6
 )
 
-// decodeTrace opens a Launchroom-Trace header (docs/23 §2) into its fields.
+// decodeTrace opens an X-Launchroom-Ray header (docs/23 §2) into its fields.
 func decodeTrace(t *testing.T, header string, key []byte, keyID uint32) map[byte][]byte {
 	t.Helper()
-	raw, err := base64.RawURLEncoding.DecodeString(header)
+	envelope, ok := strings.CutPrefix(header, "lr1.")
+	if !ok {
+		t.Fatalf("ray %q without the lr1. prefix", header)
+	}
+	raw, err := base64.RawURLEncoding.DecodeString(envelope)
 	if err != nil || len(raw) < 1+4+12+16 {
 		t.Fatalf("trace header %q: %v", header, err)
 	}
@@ -116,7 +120,7 @@ func uuidOf(b []byte) string {
 }
 
 // TestRequestTrace (docs/23): with launchroom's Caddy carrying the trace
-// module, every response carries a Launchroom-Trace header encrypted with
+// module, every response carries an X-Launchroom-Ray header encrypted with
 // the edge's key: app answers, firewall blocks, redirects and unknown hosts,
 // and the app gets the trace's request id as X-Request-Id.
 func TestRequestTrace(t *testing.T) {
@@ -193,7 +197,10 @@ func TestRequestTrace(t *testing.T) {
 	}
 	fieldsOf := func(resp res) map[byte][]byte {
 		t.Helper()
-		h := resp.header.Get("Launchroom-Trace")
+		if resp.header.Get("Launchroom-Trace") != "" {
+			t.Error("the old Launchroom-Trace header is still sent")
+		}
+		h := resp.header.Get("X-Launchroom-Ray")
 		if h == "" {
 			t.Fatalf("%d response without a trace header:\n%s", resp.code, resp.body)
 		}

@@ -143,7 +143,7 @@ Route::middleware(['auth', 'verified'])->group(function (): void {
         ->middleware('throttle:10,1')
         ->name('logs.download');
 
-    // Request trace: paste a Launchroom-Trace header, see the request's path (docs/23 §6).
+    // Request trace: paste a ray (X-Launchroom-Ray), see the request's path (docs/23 §6).
     Route::get('trace', [RequestTraceController::class, 'show'])
         ->middleware('throttle:30,1')
         ->name('trace');
@@ -230,6 +230,9 @@ Route::middleware(['auth', 'verified'])->group(function (): void {
     Route::post('servers/{server}/move/{move}/items/{item}/retry', [ServerMoveController::class, 'retry'])
         ->middleware('throttle:20,1')
         ->name('servers.move.retry');
+    Route::post('servers/{server}/move/{move}/items/{item}/stop', [ServerMoveController::class, 'stop'])
+        ->middleware('throttle:20,1')
+        ->name('servers.move.stop');
     Route::post('servers/{server}/move/{move}/retire', [ServerMoveController::class, 'retire'])
         ->middleware('throttle:6,1')
         ->name('servers.move.retire');

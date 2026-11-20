@@ -8,6 +8,7 @@ use App\Actions\Moves\CancelServerMove;
 use App\Actions\Moves\RetireMovedServer;
 use App\Actions\Moves\RetryMoveItem;
 use App\Actions\Moves\StartServerMove;
+use App\Actions\Moves\StopMoveItem;
 use App\Data\Moves\RetireMovedServerData;
 use App\Data\Moves\ServerMoveTargetData;
 use App\Data\Moves\StartServerMoveData;
@@ -29,7 +30,7 @@ use Inertia\Response;
 /**
  * Servers → (server) → Move to another server (docs/14 §13.2): pick the
  * target, review the plan, start; then follow each service, retry a failed
- * one, cancel, and retire the source once DNS points at the target.
+ * one or leave it stopped, cancel, and retire the source once DNS points at the target.
  */
 final class ServerMoveController extends Controller
 {
@@ -56,6 +57,16 @@ final class ServerMoveController extends Controller
         Gate::authorize('move', $server);
         $move = RouteScope::move($server, $move);
         $retry->handle($move, RouteScope::moveItem($move, $item), $this->auditActor($request, $user));
+
+        return to_route('servers.move', $server);
+    }
+
+    public function stop(Request $request, Server $server, ServerMove $move, ServerMoveItem $item, #[CurrentUser] User $user, StopMoveItem $stop): RedirectResponse
+    {
+        Gate::authorize('move', $server);
+        $move = RouteScope::move($server, $move);
+        $stopped = $stop->handle($move, RouteScope::moveItem($move, $item), $user, $this->auditActor($request, $user));
+        Toast::success("{$stopped->serviceInstance->service->name} was stopped and stays stopped.");
 
         return to_route('servers.move', $server);
     }

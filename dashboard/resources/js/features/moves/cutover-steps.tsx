@@ -1,10 +1,13 @@
 import { Form } from '@inertiajs/react';
 import type { ReactNode } from 'react';
-import { Status, dnsCheckStatus } from '@/components/status';
+import { Status } from '@/components/status';
 import { StepCard } from '@/components/steps/step-card';
 import { TimeAgo } from '@/components/time-ago';
 import { Button } from '@/components/ui/button';
 import { Spinner } from '@/components/ui/spinner';
+import { DnsSwitchList } from '@/features/moves/dns-records';
+import { fromCutover } from '@/features/moves/shape';
+import type { DnsSwitchRecord } from '@/features/moves/shape';
 import type { RouteFormDefinition } from '@/wayfinder';
 
 type Checks = App.Data.Moves.CutoverChecksData;
@@ -23,9 +26,21 @@ export function CutoverDnsStep({
     open,
     onOpen,
     onCheck,
+    records,
     children,
-}: StepProps & { onCheck: () => void; children?: ReactNode }) {
+}: StepProps & {
+    onCheck: () => void;
+    /** The records with their values, when the page has them (after a move). */
+    records?: DnsSwitchRecord[];
+    children?: ReactNode;
+}) {
     const checked = checks.dns.some((record) => record.check !== null);
+    const checkedAt =
+        checks.dns
+            .map((record) => record.check?.checkedAt ?? null)
+            .filter((value): value is string => value !== null)
+            .sort()
+            .at(-1) ?? null;
 
     return (
         <StepCard
@@ -36,7 +51,9 @@ export function CutoverDnsStep({
             line={
                 checks.dnsOk
                     ? 'Every hostname points here'
-                    : checks.expectedAddresses.join(', ') || undefined
+                    : checks.expectedAddresses.length > 0
+                      ? `Set each record to ${checks.expectedAddresses.join(', ')}`
+                      : undefined
             }
             open={open}
             onOpen={onOpen}
@@ -47,36 +64,17 @@ export function CutoverDnsStep({
                     No public hostname to check.
                 </p>
             ) : (
-                <ul className="flex flex-col gap-3">
-                    {checks.dns.map((record) => (
-                        <li key={record.host} className="flex flex-col gap-0.5">
-                            <div className="flex flex-wrap items-center gap-3">
-                                <Status
-                                    state={
-                                        record.check === null
-                                            ? 'idle'
-                                            : dnsCheckStatus[
-                                                  record.check.status
-                                              ].state
-                                    }
-                                    label={record.label}
-                                />
-                                <span className="type-mono-small break-all text-muted-foreground">
-                                    {record.host}
-                                </span>
-                            </div>
-                            <span className="type-small text-muted-foreground">
-                                {record.check?.message ??
-                                    `Point it at ${checks.expectedAddresses.join(', ')}.`}
-                            </span>
-                        </li>
-                    ))}
-                </ul>
+                <DnsSwitchList records={records ?? fromCutover(checks)} />
             )}
-            <div>
+            <div className="flex flex-wrap items-center gap-3">
                 <Button variant="outline" size="sm" onClick={onCheck}>
                     {checked ? 'Check again' : 'Check DNS'}
                 </Button>
+                {checkedAt !== null && (
+                    <span className="type-small text-muted-foreground">
+                        Checked <TimeAgo value={checkedAt} />
+                    </span>
+                )}
             </div>
         </StepCard>
     );

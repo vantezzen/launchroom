@@ -1,6 +1,6 @@
 // Package lrtrace is launchroom's request trace for the edge Caddy
 // (docs/23 §3): the handler http.handlers.lr_trace, which gives every request
-// an X-Request-Id and every response a Launchroom-Trace header; the
+// an X-Request-Id and every response an X-Launchroom-Ray header; the
 // selection policy lr_round_robin, which counts upstream attempts; and the
 // Coraza action lrtrace, which copies the firewall's decision into the
 // request's trace. Nothing per request is kept after the response.

@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Tests\Support;
 
+use App\Support\Traces\TraceCodec;
 use JsonException;
 use RuntimeException;
 use Symfony\Component\Uid\Ulid;
@@ -97,7 +98,9 @@ final class Traces
             $bytes[$i] = chr(ord($bytes[$i]) ^ 0x01);
         }
 
-        return self::base64url($bytes).(isset($mutate['append']) ? (string) $mutate['append'] : '');
+        $prefix = array_key_exists('prefix', $fixture) ? (string) $fixture['prefix'] : TraceCodec::PREFIX;
+
+        return $prefix.self::base64url($bytes).(isset($mutate['append']) ? (string) $mutate['append'] : '');
     }
 
     /**
@@ -114,7 +117,7 @@ final class Traces
             $payload .= self::field(self::TAGS[$name], self::value($name, $value));
         }
 
-        return self::base64url(self::seal($payload, $keyId, $key, random_bytes(12)));
+        return TraceCodec::PREFIX.self::base64url(self::seal($payload, $keyId, $key, random_bytes(12)));
     }
 
     private static function seal(string $payload, int $keyId, string $key, string $nonce, int $version = 1, ?int $aadKeyId = null): string

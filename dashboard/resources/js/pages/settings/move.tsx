@@ -1,817 +1,92 @@
-import { Form, Head, Link, router } from '@inertiajs/react';
-import { Ban, CircleCheck, Info, TriangleAlert } from 'lucide-react';
-import type { ReactNode } from 'react';
-import { useState } from 'react';
-import { ConfirmAction } from '@/components/confirm-action';
-import { CopyValue } from '@/components/copy-value';
-import InputError from '@/components/input-error';
-import { MetaLine } from '@/components/patterns/meta-line';
-import { Status } from '@/components/status';
-import { vocabulary } from '@/lib/vocabulary';
-import { TimeAgo } from '@/components/time-ago';
-import { Button } from '@/components/ui/button';
-import { Checkbox } from '@/components/ui/checkbox';
-import { Input } from '@/components/ui/input';
-import { Label } from '@/components/ui/label';
-import { Spinner } from '@/components/ui/spinner';
-import {
-    CutoverDnsStep,
-    CutoverImagesStep,
-    CutoverServersStep,
-} from '@/features/moves/cutover-steps';
-import { DnsRecords } from '@/features/moves/dns-records';
-import { MovePlanView } from '@/features/moves/move-plan';
-import { MoveProgress } from '@/features/moves/move-progress';
-import { TypedConfirm } from '@/features/moves/typed-confirm';
-import { StepCard } from '@/components/steps/step-card';
-import type { GuidedStepStatus } from '@/components/steps/step-card';
-import { index as backupSettings } from '@/routes/backups';
-import {
-    abort,
-    cancel,
-    edit,
-    finish,
-    handover,
-    retry,
-    start,
-    workloads,
-    approve,
-    rebuild,
-} from '@/routes/move';
+import { Head, router } from '@inertiajs/react';
+import { useEffect, useState } from 'react';
+import { ControlPlaneMoveSteps } from '@/features/moves/control-plane-move';
+import type { ControlPlaneMoveProps } from '@/features/moves/control-plane-move';
+import { MoveChecklist } from '@/features/moves/move-checklist';
 import SettingsLayout from '@/features/settings/settings-layout';
-import { useLiveProps } from '@/hooks/use-live-props';
+import { schedulePoll, useLiveProps } from '@/hooks/use-live-props';
+import { edit, stop } from '@/routes/move';
 
-type Move = App.Data.Moves.ControlPlaneMoveData;
-type MoveStatus = App.Enums.Moves.ControlPlaneMoveStatus;
-
-type Checklist = App.Data.Moves.MoveChecklistData;
-
-type Props = {
-    move: Move | null;
-    server: App.Data.Moves.MoveServerData | null;
-    command: string | null;
-    preflight: App.Data.Moves.MovePreflightCheckData[];
-    plan: App.Data.Moves.MovePlanData | null;
-    /** Deferred: DNS records with live checks. */
-    dns?: App.Data.Moves.MoveDnsRecordData[];
-    serverMove: App.Data.Moves.ServerMoveData | null;
-    checklist: Checklist | null;
+type Props = Omit<
+    ControlPlaneMoveProps,
+    'stopForm' | 'onCheckDns' | 'checkingDns'
+> & {
+    checklist: App.Data.Moves.MoveChecklistData | null;
 };
 
-const moveStatuses = vocabulary.Moves.ControlPlaneMoveStatus;
-
-const ORDER = Object.keys(moveStatuses) as MoveStatus[];
-
-const checkIcons: Record<string, ReactNode> = {
-    ok: <CircleCheck aria-hidden="true" className="size-4 text-status-ok" />,
-    info: <Info aria-hidden="true" className="size-4 text-muted-foreground" />,
-    warning: (
-        <TriangleAlert
-            aria-hidden="true"
-            className="size-4 text-status-progress"
-        />
-    ),
-    blocker: <Ban aria-hidden="true" className="size-4 text-status-error" />,
-};
-
-const checkWords: Record<string, string> = {
-    ok: 'Ready',
-    info: 'Note',
-    warning: 'Check',
-    blocker: 'Blocks the move',
-};
-
-function reached(status: MoveStatus | null, step: MoveStatus): boolean {
-    return status !== null && ORDER.indexOf(status) >= ORDER.indexOf(step);
-}
+/** DNS checks repeat this often while records still point elsewhere. */
+const DNS_CHECK_MS = 15_000;
 
 /**
  * Settings → Move launchroom (docs/14 §13.4): prepare, connect the new
- * server, move the apps and data, hand over the dashboard. On the new
- * dashboard after a move, the checklist (DNS, images, servers, the old
- * machine).
+ * server, move the apps and data, hand over the dashboard; on the old
+ * dashboard afterwards, the DNS switch. On the new dashboard after a move,
+ * the checklist (DNS, images, servers, the old machine).
  */
-export default function MoveLaunchroom(props: Props) {
-    return props.checklist !== null ? (
-        <MoveChecklist checklist={props.checklist} />
-    ) : (
-        <MoveSteps {...props} />
+export default function MoveLaunchroom({ checklist, ...props }: Props) {
+    const status = props.move?.status ?? null;
+    const [checkingDns, setCheckingDns] = useState(false);
+    const dnsSwitch = props.dnsSwitch;
+    const dnsPending =
+        status === 'handed_over' &&
+        dnsSwitch !== null &&
+        dnsSwitch !== undefined &&
+        dnsSwitch.records.length > 0 &&
+        (!dnsSwitch.checked || dnsSwitch.pointed < dnsSwitch.total);
+
+    useLiveProps(
+        ['move', 'serverMove', 'plan', 'preflight', 'handoverBlockers'],
+        {
+            while:
+                checklist === null &&
+                status !== null &&
+                status !== 'cancelled' &&
+                status !== 'handed_over',
+            everyMs: 4000,
+        },
     );
-}
 
-function stepFor(status: MoveStatus | null): string {
-    if (status === null) {
-        return 'prepare';
-    }
-
-    if (['waiting_for_server', 'claimed', 'joining'].includes(status)) {
-        return 'connect';
-    }
-
-    if (['joined', 'moving'].includes(status)) {
-        return 'workloads';
-    }
-
-    return status === 'handed_over' ? 'done' : 'handover';
-}
-
-function MoveSteps({
-    move,
-    server,
-    command,
-    preflight,
-    plan,
-    dns,
-    serverMove,
-}: Props) {
-    const [shownCommand, setShownCommand] = useState(command);
-    const status: MoveStatus | null =
-        move === null || move.status === 'cancelled' ? null : move.status;
-    const open = status !== null && status !== 'handed_over';
-    const [openId, setOpenId] = useState<string>(stepFor(status));
-    const [followed, setFollowed] = useState(status);
-
-    // Follow the move to its next step.
-    if (followed !== status) {
-        setFollowed(status);
-        setOpenId(stepFor(status));
-    }
-
-    if (command !== null && command !== shownCommand) {
-        setShownCommand(command);
-    }
-
-    useLiveProps(['move', 'serverMove', 'plan', 'preflight'], {
-        while: open,
-        everyMs: 4000,
-    });
-
-    const stepStatus = (done: boolean): GuidedStepStatus =>
-        done ? 'done' : 'pending';
-    const blocked = preflight.some((check) => check.status === 'blocker');
-    const target =
-        move?.target?.name ?? move?.receiverHostname ?? 'the new server';
-
-    return (
-        <>
-            <Head title="Move launchroom" />
-
-            <p className="max-w-[65ch] type-body text-muted-foreground">
-                Move the dashboard and everything it runs to another machine,
-                without losing data. Apps keep serving while they move, and each
-                database and volume stops briefly while it is copied.
-            </p>
-
-            {move?.status === 'cancelled' && (
-                <p className="type-small text-muted-foreground">
-                    The last move was cancelled
-                    {move.error !== null ? `: ${move.error}` : '.'}
-                </p>
-            )}
-
-            <ol className="flex flex-col gap-3">
-                <StepCard
-                    id="prepare"
-                    number={1}
-                    status={stepStatus(status !== null)}
-                    title="Prepare"
-                    line={
-                        status !== null
-                            ? 'Move started'
-                            : blocked
-                              ? 'Something needs attention first'
-                              : `Move ${server?.name ?? 'this server'} to a new machine`
-                    }
-                    open={openId === 'prepare'}
-                    onOpen={() => setOpenId('prepare')}
-                >
-                    <ul className="flex flex-col gap-3">
-                        {preflight.map((check) => (
-                            <li key={check.key} className="flex gap-3">
-                                <span className="mt-0.5 shrink-0">
-                                    {checkIcons[check.status] ??
-                                        checkIcons.info}
-                                </span>
-                                <span className="flex min-w-0 flex-col gap-0.5">
-                                    <span className="type-body font-medium">
-                                        {check.label}
-                                        <span className="sr-only">
-                                            : {checkWords[check.status]}
-                                        </span>
-                                    </span>
-                                    <span className="type-small text-muted-foreground">
-                                        {check.message}
-                                    </span>
-                                    {check.href !== null && (
-                                        <Link
-                                            href={check.href}
-                                            className="type-small underline underline-offset-4"
-                                        >
-                                            {check.hrefLabel ?? 'Open'}
-                                        </Link>
-                                    )}
-                                </span>
-                            </li>
-                        ))}
-                    </ul>
-                    {status === null && (
-                        <Form {...start.form()}>
-                            {({ processing }) => (
-                                <Button
-                                    type="submit"
-                                    disabled={processing || blocked}
-                                >
-                                    {processing && <Spinner />}
-                                    Create move command
-                                </Button>
-                            )}
-                        </Form>
-                    )}
-                </StepCard>
-
-                <StepCard
-                    id="connect"
-                    number={2}
-                    status={stepStatus(reached(status, 'joined'))}
-                    title="Connect the new server"
-                    line={
-                        reached(status, 'joined')
-                            ? `${target} joined`
-                            : status === 'claimed'
-                              ? 'Confirm the new server’s code'
-                              : 'Run one command on the new machine'
-                    }
-                    open={openId === 'connect'}
-                    onOpen={() => setOpenId('connect')}
-                >
-                    {status === null && (
-                        <p className="type-body text-muted-foreground">
-                            Create the move command first.
-                        </p>
-                    )}
-                    {status === 'waiting_for_server' && (
-                        <>
-                            <p className="max-w-[65ch] type-body">
-                                Install Docker on the new machine, then run this
-                                there. It installs launchroom and connects the
-                                machine to this dashboard.
-                            </p>
-                            {shownCommand !== null ? (
-                                <CopyValue
-                                    value={shownCommand}
-                                    label="move command"
-                                />
-                            ) : (
-                                <p className="type-small text-muted-foreground">
-                                    The command is shown only once. If you lost
-                                    it, cancel this move and start a new one.
-                                </p>
-                            )}
-                            <p className="type-small text-muted-foreground">
-                                Works once
-                                {move?.tokenExpiresAt && (
-                                    <>
-                                        , until{' '}
-                                        {new Date(
-                                            move.tokenExpiresAt,
-                                        ).toLocaleString()}
-                                    </>
-                                )}
-                                . Waiting for the new machine…
-                            </p>
-                        </>
-                    )}
-                    {status === 'claimed' && move !== null && (
-                        <ClaimApproval
-                            move={move}
-                            blockers={preflight.filter(
-                                (check) => check.status === 'blocker',
-                            )}
-                        />
-                    )}
-                    {status === 'joining' &&
-                        (move?.error ? (
-                            <div
-                                role="status"
-                                className="flex gap-3 rounded-xl border px-4 py-3"
-                            >
-                                <TriangleAlert
-                                    aria-hidden="true"
-                                    className="mt-0.5 size-4 shrink-0 text-status-progress"
-                                />
-                                <span className="flex flex-col gap-1">
-                                    <span className="type-body font-medium">
-                                        {target} hasn’t connected yet
-                                    </span>
-                                    <span className="type-small text-muted-foreground">
-                                        {move.error}
-                                    </span>
-                                </span>
-                            </div>
-                        ) : (
-                            <p className="flex items-center gap-2 type-body">
-                                <Spinner />
-                                {target} is connecting.
-                            </p>
-                        ))}
-                    {reached(status, 'joined') && (
-                        <p className="type-body text-muted-foreground">
-                            {target} is connected as a server of this dashboard
-                            {move?.target?.platform
-                                ? ` (${move.target.platform})`
-                                : ''}
-                            .
-                        </p>
-                    )}
-                </StepCard>
-
-                <StepCard
-                    id="workloads"
-                    number={3}
-                    status={stepStatus(reached(status, 'ready_to_hand_over'))}
-                    title="Move apps and data"
-                    line={
-                        reached(status, 'ready_to_hand_over')
-                            ? `Everything runs on ${target}`
-                            : serverMove !== null
-                              ? `${serverMove.done} of ${serverMove.items.length} moved`
-                              : `To ${target}, one database at a time`
-                    }
-                    open={openId === 'workloads'}
-                    onOpen={() => setOpenId('workloads')}
-                >
-                    {!reached(status, 'joined') && (
-                        <p className="type-body text-muted-foreground">
-                            Connect the new server first.
-                        </p>
-                    )}
-                    {status === 'joined' && plan !== null && (
-                        <WorkloadPlan plan={plan} />
-                    )}
-                    {serverMove !== null && reached(status, 'moving') && (
-                        <MoveProgress
-                            move={serverMove}
-                            retryForm={(item) => retry.form(item)}
-                        />
-                    )}
-                </StepCard>
-
-                <StepCard
-                    id="handover"
-                    number={4}
-                    status={stepStatus(reached(status, 'handed_over'))}
-                    title="Hand over the dashboard"
-                    line={
-                        status === 'handing_over'
-                            ? 'Taking the final copy'
-                            : status === 'handover_ready'
-                              ? 'The new server is restoring it'
-                              : reached(status, 'handed_over')
-                                ? 'Done'
-                                : 'A short pause for changes'
-                    }
-                    open={openId === 'handover'}
-                    onOpen={() => setOpenId('handover')}
-                >
-                    {!reached(status, 'ready_to_hand_over') && (
-                        <p className="type-body text-muted-foreground">
-                            Once everything runs on the new server.
-                        </p>
-                    )}
-                    {status === 'ready_to_hand_over' && move !== null && (
-                        <HandOver move={move} dns={dns} />
-                    )}
-                    {(status === 'handing_over' ||
-                        status === 'handover_ready') &&
-                        move !== null && <HandingOver move={move} />}
-                </StepCard>
-
-                <StepCard
-                    id="done"
-                    number={5}
-                    status={stepStatus(status === 'handed_over')}
-                    title="Done"
-                    line={
-                        move?.newUrl ??
-                        'The new dashboard takes over at its address'
-                    }
-                    open={openId === 'done'}
-                    onOpen={() => setOpenId('done')}
-                >
-                    {move?.status === 'handed_over' && move.newUrl !== null ? (
-                        <p className="type-body">
-                            launchroom runs at{' '}
-                            <a
-                                href={move.newUrl}
-                                className="underline underline-offset-4"
-                            >
-                                {move.newUrl}
-                            </a>
-                            . Sign in there to finish the checklist.
-                        </p>
-                    ) : (
-                        <p className="type-body text-muted-foreground">
-                            The new dashboard opens with a checklist: DNS,
-                            images and the old machine.
-                        </p>
-                    )}
-                </StepCard>
-            </ol>
-
-            {status !== null && moveStatuses[status].isCancellable && (
-                <div className="flex flex-col gap-3 rounded-xl border bg-card p-5 shadow-card sm:flex-row sm:items-center">
-                    <p className="min-w-0 flex-1 type-small text-muted-foreground">
-                        If you cancel, launchroom stays on this server. Services
-                        that already moved stay on the new server, which then
-                        works as a regular server.
-                    </p>
-                    <ConfirmAction
-                        trigger="Cancel move"
-                        title="Cancel the move?"
-                        description="The move command stops working. A database or volume that is being copied goes back to this server. Services that already moved stay on the new server."
-                        confirmLabel="Cancel move"
-                        form={cancel.form()}
-                        destructive
-                    />
-                </div>
-            )}
-        </>
-    );
-}
-
-function ClaimApproval({
-    move,
-    blockers,
-}: {
-    move: Move;
-    blockers: App.Data.Moves.MovePreflightCheckData[];
-}) {
-    const [code, setCode] = useState('');
-    const connected = move.target;
-
-    return (
-        <div className="flex flex-col gap-4">
-            <div className="flex flex-col gap-1 rounded-xl border bg-muted px-4 py-3">
-                <span className="type-small text-muted-foreground">
-                    A new machine claimed this move
-                </span>
-                <MetaLine className="type-body break-words">
-                    {move.receiverHostname ?? 'Unknown host'}
-                    {move.receiverArch}
-                    {move.receiverAddress}
-                </MetaLine>
-                {connected !== null && (
-                    <span className="type-small">
-                        The new server is already connected as{' '}
-                        <span className="font-medium">{connected.name}</span>.
-                        The move continues with it, without joining again.
-                    </span>
-                )}
-            </div>
-            {blockers.map((check) => (
-                <div
-                    key={check.key}
-                    role="alert"
-                    className="flex gap-3 rounded-xl border px-4 py-3"
-                >
-                    {checkIcons.blocker}
-                    <span className="flex min-w-0 flex-col gap-1">
-                        <span className="type-body font-medium">
-                            {check.label}
-                            <span className="sr-only">
-                                : {checkWords.blocker}
-                            </span>
-                        </span>
-                        <span className="type-small text-muted-foreground">
-                            {check.message}
-                        </span>
-                        {check.href !== null && (
-                            <Link
-                                href={check.href}
-                                className="type-small underline underline-offset-4"
-                            >
-                                {check.hrefLabel ?? 'Open'}
-                            </Link>
-                        )}
-                    </span>
-                </div>
-            ))}
-            <p className="max-w-[65ch] type-body">
-                Type the code the new server’s terminal shows. It only matches
-                if the machine that claimed the move is yours. If the terminal
-                shows an error or no code, someone else claimed the move: cancel
-                it.
-            </p>
-            <Form
-                {...approve.form()}
-                transform={(data) => ({ ...data, code })}
-                className="flex flex-col gap-2"
-            >
-                {({ processing, errors }) => (
-                    <>
-                        <Label htmlFor="claim-code">Code</Label>
-                        <div className="flex flex-col gap-2 sm:flex-row">
-                            <Input
-                                id="claim-code"
-                                value={code}
-                                autoComplete="off"
-                                placeholder="XXXX-XXXX"
-                                className="type-mono sm:max-w-48"
-                                onChange={(event) =>
-                                    setCode(event.target.value.toUpperCase())
-                                }
-                            />
-                            <Button
-                                type="submit"
-                                disabled={
-                                    processing ||
-                                    code.trim() === '' ||
-                                    blockers.length > 0
-                                }
-                            >
-                                {processing && <Spinner />}
-                                {connected !== null
-                                    ? `Continue with ${connected.name}`
-                                    : 'Connect the server'}
-                            </Button>
-                        </div>
-                        <InputError message={errors.code} />
-                    </>
-                )}
-            </Form>
-        </div>
-    );
-}
-
-function WorkloadPlan({ plan }: { plan: App.Data.Moves.MovePlanData }) {
-    const [backupFirst, setBackupFirst] = useState(false);
-
-    return (
-        <div className="flex flex-col gap-6">
-            <MovePlanView plan={plan} />
-            <Form
-                {...workloads.form()}
-                transform={(data) => ({ ...data, backupFirst })}
-                className="flex flex-col gap-4"
-            >
-                {({ processing }) => (
-                    <>
-                        {plan.canBackUpFirst && (
-                            <div className="flex items-start gap-3">
-                                <Checkbox
-                                    id="cp-backup-first"
-                                    className="mt-0.5"
-                                    checked={backupFirst}
-                                    onCheckedChange={(checked) =>
-                                        setBackupFirst(checked === true)
-                                    }
-                                />
-                                <Label
-                                    htmlFor="cp-backup-first"
-                                    className="flex flex-col gap-0.5 font-normal"
-                                >
-                                    <span className="type-body font-medium">
-                                        Back up each database and volume first
-                                    </span>
-                                    <span className="type-small text-muted-foreground">
-                                        Optional. The move copies data directly.
-                                    </span>
-                                </Label>
-                            </div>
-                        )}
-                        <div>
-                            <Button
-                                type="submit"
-                                disabled={
-                                    processing || plan.blockers.length > 0
-                                }
-                            >
-                                {processing && <Spinner />}
-                                Move apps and data
-                            </Button>
-                        </div>
-                    </>
-                )}
-            </Form>
-        </div>
-    );
-}
-
-function HandOver({
-    move,
-    dns,
-}: {
-    move: Move;
-    dns?: App.Data.Moves.MoveDnsRecordData[];
-}) {
-    return (
-        <div className="flex flex-col gap-5">
-            <ul className="flex flex-col gap-1.5 type-body">
-                <li>
-                    Changes pause on this dashboard while it takes a final copy
-                    of itself (usually under a minute).
-                </li>
-                <li>
-                    Apps keep serving, since they already run on the new server.
-                </li>
-                <li>
-                    The new server restores the copy and starts the dashboard.
-                    Then switch DNS for the dashboard’s address.
-                </li>
-            </ul>
-            {dns !== undefined && dns.length > 0 && (
-                <DnsRecords records={dns} live={dns} />
-            )}
-            <Status
-                state={move.receiverWaiting ? 'active' : 'warning'}
-                label={
-                    move.receiverWaiting
-                        ? 'The new server is waiting'
-                        : 'The new server isn’t waiting'
-                }
-                detail={
-                    move.receiverWaiting
-                        ? undefined
-                        : 'Run the install command on it again'
-                }
-            />
-            {move.error !== null && (
-                <p className="type-small text-muted-foreground">{move.error}</p>
-            )}
-            <div>
-                <TypedConfirm
-                    trigger="Hand over"
-                    title="Hand over the dashboard?"
-                    description={
-                        <>
-                            <span>
-                                This dashboard stops taking changes and sends a
-                                final copy to the new server. After that, the
-                                new dashboard is the one to use.
-                            </span>
-                            <span>
-                                Keep this machine until the new dashboard runs,
-                                so you can go back if needed.
-                            </span>
-                        </>
-                    }
-                    expected="hand over"
-                    confirmLabel="Hand over"
-                    form={handover.form()}
-                    disabled={!move.receiverWaiting}
-                    loose
-                />
-            </div>
-        </div>
-    );
-}
-
-function HandingOver({ move }: { move: Move }) {
-    return (
-        <div className="flex flex-col gap-4">
-            <p className="flex items-center gap-2 type-body">
-                <Spinner />
-                {move.status === 'handing_over'
-                    ? 'Taking the final copy. Changes are paused.'
-                    : `The new server is fetching the copy${move.dumpSize !== null ? ` (${move.dumpSize})` : ''} and starting the dashboard.`}
-            </p>
-            <p className="max-w-[65ch] type-small text-muted-foreground">
-                Abort only if the new server’s install stopped with an error.
-                This dashboard then takes changes again.
-            </p>
-            <div>
-                <ConfirmAction
-                    trigger="Abort hand-over"
-                    title="Abort the hand-over?"
-                    description="Do this only if the new server failed. If its dashboard already runs, aborting leaves two dashboards that both think they are in charge."
-                    confirmLabel="Abort hand-over"
-                    form={abort.form()}
-                    destructive
-                />
-            </div>
-        </div>
-    );
-}
-
-function MoveChecklist({ checklist }: { checklist: Checklist }) {
-    const { checks, openSteps: open } = checklist;
-    const [openId, setOpenId] = useState<string | null>(
-        open[0] === 'recovery-kit' ? 'old' : (open[0] ?? 'old'),
-    );
-    const check = () =>
-        router.visit(edit({ query: { check: 1 } }), {
-            preserveScroll: true,
-            preserveState: true,
+    const checkDns = () =>
+        router.reload({
+            only: ['dnsSwitch'],
+            data: { check: 1 },
+            onStart: () => setCheckingDns(true),
+            onFinish: () => setCheckingDns(false),
         });
 
+    // The old dashboard's final screen keeps checking until every record switched.
+    useEffect(() => {
+        if (!dnsPending) {
+            return;
+        }
+
+        return schedulePoll(
+            () => router.reload({ only: ['dnsSwitch'], data: { check: 1 } }),
+            DNS_CHECK_MS,
+        );
+    }, [dnsPending]);
+
     return (
         <>
             <Head title="Move launchroom" />
-
-            <p className="max-w-[65ch] type-body text-muted-foreground">
-                launchroom moved to {checklist.current?.name ?? 'this server'}
-                {checklist.startedAt !== null && (
-                    <>
-                        {' '}
-                        <TimeAgo value={checklist.startedAt} />
-                    </>
-                )}
-                . Finish these steps, then close the checklist.
-            </p>
-
-            <ol className="flex flex-col gap-3">
-                <CutoverDnsStep
-                    checks={checks}
-                    number={1}
-                    open={openId === 'dns'}
-                    onOpen={() => setOpenId('dns')}
-                    onCheck={check}
+            {checklist !== null ? (
+                <MoveChecklist
+                    checklist={checklist}
+                    onCheck={() =>
+                        router.visit(edit({ query: { check: 1 } }), {
+                            preserveScroll: true,
+                            preserveState: true,
+                        })
+                    }
                 />
-
-                <CutoverImagesStep
-                    checks={checks}
-                    number={2}
-                    open={openId === 'images'}
-                    onOpen={() => setOpenId('images')}
-                    onCheck={check}
-                    title="Rebuild app images"
-                    rebuild={rebuild.form()}
-                >
-                    Images weren’t copied. Running apps keep their current
-                    image, and each app builds again from its commit on its next
-                    deploy. Rebuild now to have them ready.
-                </CutoverImagesStep>
-
-                <CutoverServersStep
-                    checks={checks}
-                    number={3}
-                    open={openId === 'servers'}
-                    onOpen={() => setOpenId('servers')}
-                    title="Other servers"
-                    notSeen="Not seen since the move. If the dashboard’s address changed, set LR_CONTROL_PLANE_URL in launchroomd/.env on that server and run docker compose up -d there."
+            ) : (
+                <ControlPlaneMoveSteps
+                    {...props}
+                    stopForm={(item) => stop.form(item)}
+                    onCheckDns={() => checkDns()}
+                    checkingDns={checkingDns}
                 />
-
-                <StepCard
-                    id="old"
-                    number={4}
-                    status="pending"
-                    title="Delete the old machine"
-                    line={checklist.previous?.name ?? 'When DNS points here'}
-                    open={openId === 'old'}
-                    onOpen={() => setOpenId('old')}
-                >
-                    <p className="max-w-[65ch] type-body">
-                        {checklist.previous?.name ?? 'The old server'} is
-                        retired. It no longer runs anything for launchroom, and
-                        its key is revoked. Once DNS points here, delete the
-                        machine, or run{' '}
-                        <code className="type-mono-small">
-                            ./launchroom uninstall
-                        </code>{' '}
-                        in its install folder.
-                    </p>
-                    {checklist.previousUrl !== null &&
-                        checklist.previousUrl !== checklist.url && (
-                            <p className="type-small text-muted-foreground">
-                                The dashboard’s address changed from{' '}
-                                {checklist.previousUrl} to {checklist.url}.
-                            </p>
-                        )}
-                    {checklist.needsRecoveryKit && (
-                        <p className="type-small">
-                            Download a new recovery kit on the{' '}
-                            <Link
-                                href={backupSettings()}
-                                className="underline underline-offset-4"
-                            >
-                                Backups page
-                            </Link>
-                            .
-                        </p>
-                    )}
-                </StepCard>
-            </ol>
-
-            <Form {...finish.form()}>
-                {({ processing }) => (
-                    <div className="flex flex-wrap items-center gap-3">
-                        <Button
-                            type="submit"
-                            variant={open.length === 0 ? 'default' : 'outline'}
-                            disabled={processing}
-                        >
-                            {processing && <Spinner />}
-                            Finish
-                        </Button>
-                        {open.length > 0 && (
-                            <span className="type-small text-muted-foreground">
-                                Some steps are still open. Finishing now records
-                                that in the audit log.
-                            </span>
-                        )}
-                    </div>
-                )}
-            </Form>
+            )}
         </>
     );
 }

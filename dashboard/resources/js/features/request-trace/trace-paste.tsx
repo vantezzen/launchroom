@@ -14,8 +14,8 @@ import { traceHref } from './links';
 import { normaliseTrace } from './trace-model';
 
 /**
- * The paste field for a `Launchroom-Trace` header: on submit it opens the
- * trace page with it (the server decodes it). Keeps what was pasted and
+ * The paste field for a ray (the `X-Launchroom-Ray` header): on submit it
+ * opens the trace page with it (the server decodes it). Keeps what was pasted and
  * shows the server's answer when it couldn't read it.
  */
 export function TracePasteForm({
@@ -46,8 +46,8 @@ export function TracePasteForm({
         if (trace === null) {
             setLocal(
                 value.trim() === ''
-                    ? 'Paste the value of a Launchroom-Trace header.'
-                    : 'This doesn’t look like a Launchroom-Trace header.',
+                    ? 'Paste a ray from a response’s X-Launchroom-Ray header.'
+                    : 'There’s no ray in this. Look for the X-Launchroom-Ray header.',
             );
 
             return;
@@ -65,7 +65,7 @@ export function TracePasteForm({
         <form onSubmit={submit} className="flex flex-col gap-3" noValidate>
             <div className="flex flex-col gap-1.5">
                 <label htmlFor={id} className="type-label">
-                    Launchroom-Trace header
+                    Ray
                 </label>
                 <Textarea
                     id={id}
@@ -87,7 +87,7 @@ export function TracePasteForm({
                     spellCheck={false}
                     autoComplete="off"
                     autoCapitalize="off"
-                    placeholder="AQAAAB3k9f…"
+                    placeholder="lr1.AQAAAB3k9f…"
                     rows={compact ? 3 : 4}
                     aria-invalid={shown ? true : undefined}
                     aria-describedby={shown ? `${id}-error` : `${id}-hint`}
@@ -110,14 +110,14 @@ export function TracePasteForm({
                         className="type-small text-muted-foreground"
                     >
                         {compact
-                            ? 'Every response through your edge servers carries one.'
-                            : 'Find it in the response headers in your browser’s network tab, or with curl -I.'}
+                            ? 'Every response through your edge servers carries one in its X-Launchroom-Ray header.'
+                            : 'Find the X-Launchroom-Ray header in your browser’s network tab, or paste the output of curl -i.'}
                     </p>
                 )}
             </div>
             <div className="flex items-center justify-end gap-2">
                 <Button type="submit" size="sm" disabled={busy}>
-                    Trace
+                    Open ray
                 </Button>
             </div>
         </form>
@@ -125,14 +125,14 @@ export function TracePasteForm({
 }
 
 /**
- * "Trace a request" with its paste field in a popover (the log
+ * "Paste a ray" with its paste field in a popover (the log
  * explorer's toolbar, the trace page's header).
  */
 export function TracePastePopover({
     children,
     align = 'end',
 }: {
-    /** The trigger; defaults to an outline "Trace a request" button. */
+    /** The trigger; defaults to an outline "Paste a ray" button. */
     children?: ReactNode;
     align?: 'start' | 'center' | 'end';
 }) {
@@ -144,7 +144,7 @@ export function TracePastePopover({
                 {children ?? (
                     <Button variant="outline" size="sm" className="h-9">
                         <Waypoints aria-hidden="true" />
-                        Trace a request
+                        Paste a ray
                     </Button>
                 )}
             </PopoverTrigger>

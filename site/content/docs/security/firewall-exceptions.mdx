@@ -19,9 +19,9 @@ A request is blocked when the rules it matched add up to the firewall's threshol
 
 Exceptions that already exist are skipped. A few rules can't be excepted. The sheet names them, and requests like this can then still be blocked.
 
-## From a trace
+## From a ray
 
-Every blocked response carries a `Launchroom-Trace` header. Paste it into launchroom ([Trace a request](/docs/observability/request-trace)) to see the rules that matched for that exact request. **Allow requests like this** on the trace adds the same exceptions as the sheet, for the path the trace shows. It covers the whole request under that path, since the trace doesn't record which part a rule matched.
+Every blocked response carries a ray in its `X-Launchroom-Ray` header. Paste it into launchroom ([Rays](/docs/observability/request-trace)) to see the rules that matched for that exact request. **Allow requests like this** on the ray's page adds the same exceptions as the sheet, for the path the ray shows. It covers the whole request under that path, since the ray doesn't record which part a rule matched.
 
 ## By hand
 

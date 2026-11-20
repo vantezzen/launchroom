@@ -84,7 +84,7 @@ final readonly class MovePlanner
     public function services(Server $source): array
     {
         /** @var list<int> $fromPlacements */
-        $fromPlacements = Placement::query()->where('server_id', $source->id)->distinct()->pluck('service_instance_id')->all();
+        $fromPlacements = Placement::query()->present()->where('server_id', $source->id)->distinct()->pluck('service_instance_id')->all();
         /** @var list<int> $fromVolumes */
         $fromVolumes = Volume::query()->where('server_id', $source->id)->distinct()->pluck('service_instance_id')->all();
 
@@ -490,6 +490,32 @@ final readonly class MovePlanner
             ->orderBy('id')
             ->get()
             ->all());
+    }
+
+    /**
+     * The records to change after a control-plane move (docs/14 §13.4),
+     * without live checks: the dashboard's host points at the new server
+     * only (the control plane's own Caddy serves it); when the old server
+     * served your domains, the apps wildcard and every custom domain point
+     * at the remaining edges and the new server, which takes over its roles.
+     *
+     * @return list<MoveDnsRecordData>
+     */
+    public function dnsSwitch(Server $source, Server $target): array
+    {
+        $own = array_values(array_filter([$target->public_ipv4, $target->public_ipv6], is_string(...)));
+        $records = $this->dnsRecords($source, $target, $this->edges($source->team_id), true, true, false);
+        $out = [];
+
+        foreach ($records as $record) {
+            if ($record->kind === 'dashboard') {
+                $out[] = new MoveDnsRecordData('dashboard', $record->host, $own, $record->remove, null);
+            } elseif ($source->hasRole(ServerRole::Edge)) {
+                $out[] = $record;
+            }
+        }
+
+        return $out;
     }
 
     /**

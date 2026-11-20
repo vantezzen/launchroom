@@ -23,5 +23,7 @@ final class MoveChecklistData extends Data
         public CutoverChecksData $checks,
         public bool $needsRecoveryKit,
         public array $openSteps,
+        /** The DNS records to point at this server, from the hand-over. */
+        public ?DnsSwitchData $dnsSwitch = null,
     ) {}
 }

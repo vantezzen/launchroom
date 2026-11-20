@@ -23,6 +23,10 @@ use App\Enums\Contracts\HasTransitionTable;
  * (rolling_back: it starts on the source again, whose volume was never
  * touched) → failed (to retry) or rolled_back (cancelled). Before the
  * cutover nothing changed on the source: failed / cancelled directly.
+ *
+ * Stopped: a stateless service that is stopped (left stopped from the move
+ * page after it failed, or stopped elsewhere) runs nowhere, so there is
+ * nothing to move. Settled like done.
  */
 enum MoveItemStatus: string implements HasTransitionTable
 {
@@ -42,21 +46,22 @@ enum MoveItemStatus: string implements HasTransitionTable
     case RolledBack = 'rolled_back';
     case Cancelled = 'cancelled';
     case Skipped = 'skipped';
+    case Stopped = 'stopped';
 
     public function allowedTransitions(): array
     {
         return match ($this) {
-            self::Pending => [self::Building, self::BackingUp, self::Stopping, self::Starting, self::Done, self::Failed, self::Cancelled, self::Skipped],
+            self::Pending => [self::Building, self::BackingUp, self::Stopping, self::Starting, self::Done, self::Failed, self::Cancelled, self::Skipped, self::Stopped],
             self::Building => [self::BackingUp, self::Stopping, self::Failed, self::Cancelled, self::Skipped],
             self::BackingUp => [self::Stopping, self::Failed, self::Cancelled, self::Skipped],
             self::Stopping => [self::Exporting, self::Failed, self::Cancelled, self::Skipped],
             self::Exporting => [self::Preparing, self::Failed, self::Cancelled, self::Skipped],
             self::Preparing => [self::Importing, self::RollingBack, self::Skipped],
             self::Importing => [self::Starting, self::Done, self::RollingBack, self::Skipped],
-            self::Starting => [self::Done, self::Failed, self::RollingBack, self::Cancelled, self::Skipped],
+            self::Starting => [self::Done, self::Failed, self::RollingBack, self::Cancelled, self::Skipped, self::Stopped],
             self::RollingBack => [self::Failed, self::RolledBack, self::Skipped],
-            self::Failed => [self::Pending, self::Cancelled, self::Skipped],
-            self::Done, self::RolledBack, self::Cancelled, self::Skipped => [],
+            self::Failed => [self::Pending, self::Cancelled, self::Skipped, self::Stopped],
+            self::Done, self::RolledBack, self::Cancelled, self::Skipped, self::Stopped => [],
         };
     }
 
@@ -65,7 +70,7 @@ enum MoveItemStatus: string implements HasTransitionTable
      */
     public function isSettled(): bool
     {
-        return in_array($this, [self::Done, self::Skipped], true);
+        return in_array($this, [self::Done, self::Skipped, self::Stopped], true);
     }
 
     /**

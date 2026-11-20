@@ -1,395 +1,257 @@
 import { Link } from '@inertiajs/react';
 import {
+    CircleCheck,
+    CircleX,
+    CornerDownRight,
+    Eye,
+    Gauge,
     Globe,
-    LayoutDashboard,
+    ListChecks,
+    Network,
     SearchX,
-    ShieldAlert,
-    ShieldCheck,
-    ShieldX,
+    Shield,
+    SlidersHorizontal,
+    Timer,
     X,
 } from 'lucide-react';
-import type { CSSProperties, ReactNode } from 'react';
-import { REQUEST_CLASS } from '@/components/charts/request-breakdown';
+import type { LucideIcon } from 'lucide-react';
+import { useEffect, useRef } from 'react';
+import type { CSSProperties, ReactNode, RefObject } from 'react';
+import AppLogoIcon from '@/components/app-logo-icon';
 import { useMeasuredWidth } from '@/components/charts/use-measure';
-import { deviceStatus } from '@/features/servers/format';
 import { DeviceImage } from '@/components/devices/device-image';
 import { ServiceGlyph } from '@/components/service-glyph';
-import { Status, serverStatus } from '@/components/status';
-import { labelOf, vocabulary } from '@/lib/vocabulary';
+import { Status, StatusPill, serverStatus } from '@/components/status';
+import { deviceStatus } from '@/features/servers/format';
+import { prefersReducedMotion } from '@/lib/motion';
 import { cn } from '@/lib/utils';
-import { firewallWords, tracePath } from './trace-model';
+import { labelOf, vocabulary } from '@/lib/vocabulary';
+import {
+    FIREWALL_DECISION,
+    firewallWords,
+    formatMicros,
+    timing,
+    tracePath,
+} from './trace-model';
 import type {
+    Answer,
     Hop,
-    Outcome,
     PathNode,
     RequestTrace,
     TracePath,
 } from './trace-model';
 import './request-trace.css';
 
-type Box = { x: number; y: number; w: number; h: number };
-type TraceFirewallData = App.Data.Traces.TraceFirewallData;
-type Size = 'visitor' | 'server' | 'target';
+type Size = 'visitor' | 'edge' | 'firewall' | 'target';
 
-/** Node sizes side by side: as wide as there is room for, down to the minimum. */
-const WIDE: Record<Size, number> = { visitor: 140, server: 188, target: 188 };
-const NARROW: Record<Size, number> = { visitor: 112, server: 144, target: 148 };
-const TALL: Record<Size, number> = { visitor: 120, server: 184, target: 156 };
-/** Stacked (phones): one column, picture left. */
-const ROW_H: Record<Size, number> = { visitor: 68, server: 84, target: 72 };
-const MARKER_H = 32;
-const PAD = 24;
-const GATE = 28;
-const MAX_GAP = 168;
-const STEP = 260;
+/** Card widths side by side: as wide as there is room for, down to the minimum. */
+const IDEAL: Record<Size, number> = {
+    visitor: 176,
+    edge: 216,
+    firewall: 196,
+    target: 236,
+};
+const MIN: Record<Size, number> = {
+    visitor: 152,
+    edge: 180,
+    firewall: 172,
+    target: 188,
+};
+/** The picture stage: on top in a row, on the left when stacked. */
+const STAGE = 88;
+const PAD_ROW = 28;
+const PAD_STACK = 16;
+const MAX_GAP = 120;
+const STACK_W = 440;
 
-const ROLE_WORDS = {
-    edge: 'Edge server',
-    app: 'App server',
-    both: 'Edge and app server',
-} as const;
+/** The flying dot (docs/23 §7): slow, one at a time, a rest between runs. */
+const HOP_MS = 1600;
+const LEAD_MS = 900;
+const FADE_MS = 450;
+const REST_MS = 1600;
+const DOT_EASE = 'cubic-bezier(0.45, 0, 0.3, 1)';
 
 function sizeOf(node: PathNode): Size {
-    return node.kind === 'visitor'
-        ? 'visitor'
-        : node.kind === 'server'
-          ? 'server'
-          : 'target';
+    switch (node.kind) {
+        case 'visitor':
+        case 'edge':
+        case 'firewall':
+            return node.kind;
+        default:
+            return 'target';
+    }
 }
 
-function pillWidth(text: string): number {
-    return Math.round(text.length * 7.3 + 22);
-}
-
-/**
- * The narrowest gap a hop needs: its pill (a failed hop's ✕ alone when
- * `iconOnly`), and the firewall gate on the edge's side.
- */
-function minGap(hop: Hop, gate: boolean, iconOnly: boolean): number {
-    const failed = hop.state === 'failed';
-    const pill =
-        failed && iconOnly
-            ? 28
-            : hop.pill
-              ? pillWidth(hop.pill) + (failed ? 16 : 0)
-              : 0;
-
-    return Math.max(56, pill > 0 ? pill + 28 : 0) + (gate ? GATE + 8 : 0);
-}
-
-type Layout = {
-    columns: boolean;
-    /** A failed hop shows only its ✕ (the words are in the tooltip and the facts). */
-    iconOnly: boolean;
-    boxes: Box[];
-    height: number;
-};
-
-function layout(
-    path: TracePath,
-    width: number,
-    gateOn: boolean,
-): Layout | null {
-    if (width <= 0) {
-        return null;
+function pillWidth(hop: Hop, iconOnly: boolean): number {
+    if (hop.state === 'failed') {
+        return iconOnly ? 28 : Math.round((hop.pill ?? '').length * 7.3 + 40);
     }
 
+    return hop.pill ? Math.round(hop.pill.length * 7.3 + 22) : 0;
+}
+
+type Layout =
+    | {
+          columns: true;
+          iconOnly: boolean;
+          widths: number[];
+          gaps: number[];
+      }
+    | { columns: false; width: number };
+
+/**
+ * Cards side by side while they fit at their minimum with each line long
+ * enough for its pill (a failed one shrinks to its ✕ first); else one
+ * column.
+ */
+function layout(path: TracePath, width: number): Layout {
     const sizes = path.nodes.map(sizeOf);
-    const available = width - PAD * 2;
-    const wide = sizes.reduce((sum, s) => sum + WIDE[s], 0);
-    const narrow = sizes.reduce((sum, s) => sum + NARROW[s], 0);
+    const available = width - PAD_ROW * 2;
+    const ideal = sizes.reduce((sum, s) => sum + IDEAL[s], 0);
+    const min = sizes.reduce((sum, s) => sum + MIN[s], 0);
 
     for (const iconOnly of [false, true]) {
-        const gaps = path.hops.map((hop) =>
-            minGap(hop, gateOn && hop.from === path.edge, iconOnly),
+        const needs = path.hops.map((hop) =>
+            Math.max(40, pillWidth(hop, iconOnly) + 24),
         );
-        const gapSum = gaps.reduce((a, b) => a + b, 0);
+        const needed = needs.reduce((a, b) => a + b, 0);
 
-        if (narrow + gapSum > available) {
+        if (min + needed > available) {
             continue;
         }
 
-        // Shrink the nodes towards their minimum, then spread the gaps.
         const t = Math.min(
             1,
-            Math.max(0, (available - gapSum - narrow) / (wide - narrow)),
+            Math.max(0, (available - needed - min) / (ideal - min)),
         );
         const widths = sizes.map((s) =>
-            Math.round(NARROW[s] + (WIDE[s] - NARROW[s]) * t),
+            Math.round(MIN[s] + (IDEAL[s] - MIN[s]) * t),
         );
-        const used = widths.reduce((a, b) => a + b, 0);
-        const spare = Math.max(0, available - used - gapSum);
-        const extra = gaps.length > 0 ? spare / gaps.length : 0;
-        // Never below what a hop needs (its pill, the gate), never
-        // stretched past MAX_GAP for looks.
-        const spread = gaps.map((gap) =>
-            Math.max(gap, Math.min(MAX_GAP, gap + extra)),
+        const spare = available - needed - widths.reduce((a, b) => a + b, 0);
+        const extra = needs.length > 0 ? Math.max(0, spare) / needs.length : 0;
+        const gaps = needs.map((need) =>
+            Math.round(Math.max(need, Math.min(MAX_GAP, need + extra))),
         );
-        const total = used + spread.reduce((a, b) => a + b, 0);
-        const tallest = Math.max(...sizes.map((s) => TALL[s]));
-        const height = tallest + PAD * 2;
-        const centre = height / 2;
-        let x = PAD + (available - total) / 2;
 
-        const boxes = sizes.map((s, i) => {
-            const box = {
-                x: Math.round(x),
-                y: Math.round(centre - TALL[s] / 2),
-                w: widths[i],
-                h: TALL[s],
-            };
-            x += widths[i] + (spread[i] ?? 0);
-
-            return box;
-        });
-
-        return { columns: true, iconOnly, boxes, height };
+        return { columns: true, iconOnly, widths, gaps };
     }
 
-    const w = Math.min(available + PAD, 400);
-    const left = Math.round((width - w) / 2);
-    let y = 16;
-    const boxes = sizes.map((s, i) => {
-        const h = ROW_H[s] + (i === path.end ? MARKER_H : 0);
-        const hop = path.hops[i];
-        const box = { x: left, y, w, h };
-        y +=
-            h +
-            (hop
-                ? (hop.pill ? 52 : 36) +
-                  (gateOn && hop.from === path.edge ? GATE : 0)
-                : 0);
-
-        return box;
-    });
-
-    return { columns: false, iconOnly: false, boxes, height: y + 16 };
+    return {
+        columns: false,
+        width: Math.min(width - PAD_STACK * 2, STACK_W),
+    };
 }
 
-/** The x of the vertical line in the stacked layout: under the pictures. */
-function railX(box: Box): number {
-    return box.x + 44;
-}
-
-function hopPath(columns: boolean, a: Box, b: Box): string {
-    if (!columns) {
-        const x = railX(a);
-
-        return `M${x} ${a.y + a.h}L${x} ${b.y}`;
-    }
-
-    const x1 = a.x + a.w;
-    const y1 = a.y + a.h / 2;
-    const x2 = b.x;
-    const y2 = b.y + b.h / 2;
-    const mid = (x1 + x2) / 2;
-
-    return `M${x1} ${y1}C${mid} ${y1} ${mid} ${y2} ${x2} ${y2}`;
-}
-
-/** Where the gate sits: on the edge server's far side, on the line. */
-function gatePoint(columns: boolean, box: Box): { x: number; y: number } {
-    return columns
-        ? { x: box.x + box.w, y: box.y + box.h / 2 }
-        : { x: railX(box), y: box.y + box.h };
-}
-
-/** Where a hop's pill sits: the middle of the line, past the gate. */
-function pillPoint(
-    columns: boolean,
-    a: Box,
-    b: Box,
-    gate: boolean,
-): { x: number; y: number } {
-    const skip = gate ? GATE / 2 + 4 : 0;
-
-    if (columns) {
-        return {
-            x: (a.x + a.w + skip + b.x) / 2,
-            y: a.y + a.h / 2,
-        };
-    }
-
-    return { x: railX(a) + 12, y: (a.y + a.h + skip + b.y) / 2 };
-}
-
-function delay(ms: number): CSSProperties {
-    return { '--trace-delay': `${Math.round(ms)}ms` } as CSSProperties;
-}
-
-/**
- * When each part appears: the hops draw one after another (300 ms each,
- * overlapping a little), a node fades in as its line arrives, and what
- * wasn't reached and the outcome marker follow.
- */
-function timeline(path: TracePath) {
-    const hopAt = (i: number) => 80 + i * STEP;
-    const nodeAt = (i: number) => (i === 0 ? 0 : hopAt(i - 1) + 200);
-    const settled = nodeAt(path.reached) + 120;
-
-    return { hopAt, nodeAt, settled, marker: settled + 80 };
-}
-
-export function OutcomeMarker({
-    outcome,
-    className,
-    style,
-}: {
-    outcome: Outcome;
-    className?: string;
-    style?: CSSProperties;
-}) {
-    const cls = REQUEST_CLASS[outcome.cls];
-
-    return (
-        <span
-            className={cn(
-                'inline-flex h-6 max-w-full min-w-0 items-center gap-1.5 rounded-full border bg-card px-2 type-label',
-                className,
-            )}
-            style={style}
-        >
-            <Swatch color={cls.color} hatched={cls.hatched === true} />
-            <span className="truncate">{outcome.word}</span>
-        </span>
-    );
-}
-
-export function Swatch({
-    color,
-    hatched,
-    className,
-}: {
-    color: string;
-    hatched: boolean;
-    className?: string;
-}) {
-    return (
-        <span
-            aria-hidden="true"
-            className={cn('size-2.5 shrink-0 rounded-[3px]', className)}
-            style={{
-                backgroundColor: color,
-                backgroundImage: hatched
-                    ? 'repeating-linear-gradient(45deg, transparent 0 2px, color-mix(in oklab, var(--card) 55%, transparent) 2px 3.5px)'
-                    : undefined,
-            }}
-        />
-    );
-}
-
-function Gate({
-    firewall,
-    words,
-}: {
-    firewall: TraceFirewallData;
-    words: string;
-}) {
-    const mode = labelOf(vocabulary.Security.WafMode, firewall.mode) ?? '';
-    const Icon =
-        firewall.outcome === 'blocked'
-            ? ShieldX
-            : firewall.outcome === 'detected'
-              ? ShieldAlert
-              : ShieldCheck;
-    const tone =
-        firewall.outcome === 'blocked'
-            ? REQUEST_CLASS.blocked
-            : firewall.outcome === 'detected'
-              ? REQUEST_CLASS.detected
-              : null;
-    const label = `Firewall, ${mode}: ${words}`;
-    const body = (
-        <>
-            <Icon aria-hidden="true" className="size-4" />
-            <span className="sr-only">{label}</span>
-        </>
-    );
-    const className =
-        'flex size-full items-center justify-center rounded-md border bg-card text-muted-foreground outline-none focus-visible:ring-2 focus-visible:ring-signal';
-    const style: CSSProperties | undefined = tone
-        ? {
-              color: firewall.outcome === 'blocked' ? tone.color : undefined,
-              borderColor: `color-mix(in oklab, ${tone.color} 45%, var(--border))`,
-              backgroundImage: `repeating-linear-gradient(45deg, transparent 0 3px, color-mix(in oklab, ${tone.color} 16%, transparent) 3px 5px)`,
-          }
-        : undefined;
-
-    return firewall.rules.length > 0 ? (
-        <a
-            href="#trace-rules"
-            title={label}
-            className={className}
-            style={style}
-        >
-            {body}
-        </a>
-    ) : (
-        <span title={label} className={className} style={style}>
-            {body}
-        </span>
-    );
-}
-
-function Frame({
-    href,
-    label,
-    dim,
-    dashed,
-    columns,
-    children,
-}: {
-    href?: string | null;
+/** A row of a card: icon, label, value right. */
+type Row = {
+    key: string;
+    icon: LucideIcon;
     label: string;
-    dim: boolean;
-    dashed?: boolean;
-    columns: boolean;
-    children: ReactNode;
-}) {
-    const className = cn(
-        'flex size-full min-w-0 rounded-xl border bg-card shadow-card transition-[border-color,opacity] duration-fast',
-        columns
-            ? 'flex-col items-center justify-center gap-1 px-3 py-3 text-center'
-            : 'items-center gap-3 py-2 pr-3 pl-3',
-        dashed && 'border-dashed bg-transparent shadow-none',
-        dim && 'opacity-50',
-    );
+    value: ReactNode;
+    /** Extra line under the row (a server's state). */
+    after?: ReactNode;
+};
 
-    if (href) {
-        return (
-            <Link
-                href={href}
-                aria-label={label}
-                className={cn(
-                    className,
-                    'outline-none hover:border-border-strong focus-visible:ring-2 focus-visible:ring-signal',
-                )}
-            >
-                {children}
-            </Link>
-        );
+function Rows({ rows }: { rows: Row[] }) {
+    if (rows.length === 0) {
+        return null;
     }
 
     return (
-        <div className={className} aria-label={label} role="group">
-            {children}
+        <dl className="flex flex-col gap-2">
+            {rows.map(({ key, icon: Icon, label, value, after }) => (
+                <div key={key} className="flex min-w-0 flex-col gap-1">
+                    <div className="flex min-w-0 items-center gap-2 type-small">
+                        <Icon
+                            aria-hidden="true"
+                            className="size-3.5 shrink-0 text-faint"
+                        />
+                        <dt className="shrink-0 text-muted-foreground">
+                            {label}
+                        </dt>
+                        <dd className="ml-auto flex min-w-0 items-center justify-end gap-1.5 text-right tabular-nums">
+                            {value}
+                        </dd>
+                    </div>
+                    {after && <div className="flex justify-end">{after}</div>}
+                </div>
+            ))}
+        </dl>
+    );
+}
+
+/** The response a card sent, at its foot: the status pill and why. */
+function AnswerFoot({ answer }: { answer: Answer }) {
+    return (
+        <div className="-mx-3.5 mt-auto flex flex-col items-start gap-1.5 border-t px-3.5 pt-3">
+            <span className="type-small text-muted-foreground">Answered</span>
+            <StatusPill
+                state={answer.state}
+                label={answer.words}
+                className="tabular-nums"
+            />
+            {answer.note && (
+                <p className="type-small text-muted-foreground">
+                    {answer.note}
+                </p>
+            )}
         </div>
     );
 }
 
-/** The picture column: centred over the text, or a fixed column on phones. */
-function Picture({
-    columns,
-    children,
+/** The firewall's decision: an explicit check, ✕ or eye, with its word. */
+export function DecisionIcon({
+    outcome,
+    className,
 }: {
-    columns: boolean;
-    children: ReactNode;
+    outcome: App.Enums.Traces.TraceFirewallOutcome;
+    className?: string;
 }) {
+    const Icon =
+        outcome === 'blocked'
+            ? CircleX
+            : outcome === 'detected'
+              ? Eye
+              : CircleCheck;
+
+    return (
+        <Icon
+            aria-hidden="true"
+            strokeWidth={2}
+            className={cn(
+                'shrink-0',
+                outcome === 'blocked'
+                    ? 'text-status-error'
+                    : outcome === 'detected'
+                      ? 'text-status-progress'
+                      : 'text-status-ok',
+                className,
+            )}
+        />
+    );
+}
+
+function Decision({
+    outcome,
+}: {
+    outcome: App.Enums.Traces.TraceFirewallOutcome;
+}) {
+    return (
+        <span className="inline-flex items-center gap-1.5 type-small">
+            <DecisionIcon outcome={outcome} className="size-3.5" />
+            {FIREWALL_DECISION[outcome].word}
+        </span>
+    );
+}
+
+/** A 44 px tile like the logo tiles, for the cards without device art. */
+function Tile({ children, dashed }: { children: ReactNode; dashed?: boolean }) {
     return (
         <span
             className={cn(
-                'flex shrink-0 items-center justify-center',
-                columns ? 'mb-1' : 'w-16',
+                'relative flex size-11 items-center justify-center rounded-[11px] border bg-card text-foreground',
+                dashed &&
+                    'border-dashed border-border-strong bg-transparent text-faint',
             )}
         >
             {children}
@@ -397,221 +259,740 @@ function Picture({
     );
 }
 
-function Words({
-    columns,
-    children,
-}: {
+type CardProps = {
     columns: boolean;
-    children: ReactNode;
-}) {
+    width: number;
+    label: string;
+    picture: ReactNode;
+    title: ReactNode;
+    subtitle?: ReactNode;
+    mark?: ReactNode;
+    rows?: Row[];
+    answer?: Answer | null;
+    /** Not reached: dashed and quieter. */
+    ghost?: boolean;
+    style?: CSSProperties;
+};
+
+/**
+ * A card on the ray's canvas: the picture on a recessed stage, the name
+ * with its state, labelled rows, and the answer it sent at its foot.
+ */
+function Card({
+    columns,
+    width,
+    label,
+    picture,
+    title,
+    subtitle,
+    mark,
+    rows = [],
+    answer,
+    ghost,
+    style,
+}: CardProps) {
     return (
-        <span
+        <div
+            role="group"
+            aria-label={label}
             className={cn(
-                'flex max-w-full min-w-0 flex-col gap-0.5',
-                columns ? 'items-center' : 'flex-1 items-start',
+                'flex min-w-0 shrink-0 overflow-hidden rounded-[14px] border bg-card shadow-card',
+                columns ? 'flex-col' : 'flex-row',
+                ghost &&
+                    'border-dashed border-border-strong bg-card/50 shadow-none',
             )}
+            style={{ width, ...style }}
         >
-            {children}
-        </span>
+            <div
+                className={cn(
+                    'flex shrink-0 justify-center bg-recessed',
+                    columns
+                        ? 'items-center border-b'
+                        : 'items-start border-r pt-3',
+                    ghost &&
+                        'border-dashed border-border-strong bg-transparent opacity-70',
+                )}
+                style={columns ? { height: STAGE } : { width: STAGE }}
+            >
+                {picture}
+            </div>
+            <div className="flex min-w-0 flex-1 flex-col gap-3 p-3.5">
+                <div
+                    className={cn(
+                        'flex min-w-0 flex-col gap-0.5',
+                        ghost && 'opacity-70',
+                    )}
+                >
+                    <div className="flex min-w-0 items-center justify-between gap-2">
+                        <span className="min-w-0 truncate type-label">
+                            {title}
+                        </span>
+                        {mark && <span className="shrink-0">{mark}</span>}
+                    </div>
+                    {subtitle && (
+                        <span className="truncate type-small text-muted-foreground">
+                            {subtitle}
+                        </span>
+                    )}
+                </div>
+                <Rows rows={rows} />
+                {answer && <AnswerFoot answer={answer} />}
+            </div>
+        </div>
+    );
+}
+
+/** The service's state when the edge couldn't get an answer from it. */
+const SILENT: Partial<
+    Record<
+        App.Enums.Traces.TraceFailure,
+        { word: string; state: 'failed' | 'idle' }
+    >
+> = {
+    refused: { word: 'Refused', state: 'failed' },
+    timeout: { word: 'No answer', state: 'failed' },
+    no_healthy_upstream: { word: 'Unhealthy', state: 'failed' },
+    client_closed: { word: 'No answer', state: 'idle' },
+};
+
+function NotReached() {
+    return (
+        <Status
+            state="idle"
+            label="Not reached"
+            className="type-small text-muted-foreground"
+        />
+    );
+}
+
+/** A server's name as a link to it. */
+function ServerLink({ server }: { server: App.Data.Traces.TraceServerData }) {
+    return (
+        <Link
+            href={server.href}
+            className="truncate rounded-sm outline-none hover:underline focus-visible:ring-2 focus-visible:ring-signal"
+        >
+            {server.name}
+        </Link>
     );
 }
 
 function NodeCard({
     node,
+    index,
     trace,
     path,
-    index,
-    box,
     columns,
-    markerDelay,
+    width,
+    style,
+    pulseRef,
 }: {
     node: PathNode;
+    index: number;
     trace: RequestTrace;
     path: TracePath;
-    index: number;
-    box: Box;
     columns: boolean;
-    markerDelay: number;
+    width: number;
+    style?: CSSProperties;
+    pulseRef?: (el: HTMLElement | null) => void;
 }) {
-    const dim = index > path.reached;
-    const marker =
-        index === path.end ? (
-            <OutcomeMarker
-                outcome={path.outcome}
-                className={cn('trace-enter', columns ? 'mt-1.5' : 'mt-1')}
-                style={delay(markerDelay)}
-            />
-        ) : null;
-    const notReached = dim ? (
-        <span className="type-small text-muted-foreground">Not reached</span>
-    ) : null;
+    const ghost = index > path.reached;
+    const answer = path.answers[index];
+    const time = timing(trace);
+    const common = { columns, width, style, answer, ghost };
 
     switch (node.kind) {
         case 'visitor':
             return (
-                <Frame label="Visitor" dim={false} columns={columns}>
-                    <Picture columns={columns}>
-                        <span className="flex size-10 items-center justify-center rounded-full border bg-recessed text-muted-foreground">
-                            <Globe aria-hidden="true" className="size-4" />
-                        </span>
-                    </Picture>
-                    <Words columns={columns}>
-                        <span className="type-label">Visitor</span>
-                        {(trace.method || trace.protocol) && (
-                            <span className="type-small text-muted-foreground">
-                                {trace.method && (
-                                    <span className="type-mono-small text-foreground">
-                                        {trace.method}
-                                    </span>
-                                )}
-                                {trace.method && trace.protocol && ' over '}
-                                {trace.protocol}
-                            </span>
-                        )}
-                    </Words>
-                </Frame>
+                <Card
+                    {...common}
+                    label="Visitor"
+                    picture={
+                        <Tile>
+                            <Globe aria-hidden="true" className="size-5" />
+                        </Tile>
+                    }
+                    title="Visitor"
+                    rows={[
+                        ...(trace.method
+                            ? [
+                                  {
+                                      key: 'method',
+                                      icon: CornerDownRight,
+                                      label: 'Method',
+                                      value: (
+                                          <span className="type-mono-small">
+                                              {trace.method}
+                                          </span>
+                                      ),
+                                  },
+                              ]
+                            : []),
+                        ...(trace.protocol
+                            ? [
+                                  {
+                                      key: 'protocol',
+                                      icon: Network,
+                                      label: 'Protocol',
+                                      value: trace.protocol,
+                                  },
+                              ]
+                            : []),
+                    ]}
+                />
             );
 
-        case 'server': {
+        case 'edge': {
             const { server } = node;
             const state = serverStatus[server.status];
-            const role = ROLE_WORDS[node.role];
-            const deviceSize = columns ? Math.min(136, box.w - 28) : 60;
+            const edgeUs = time?.edgeUs ?? null;
 
             return (
-                <Frame
-                    href={server.href}
-                    label={`${server.name}, ${role.toLowerCase()}${dim ? ', not reached' : ''}`}
-                    dim={dim}
-                    columns={columns}
-                >
-                    <Picture columns={columns}>
+                <Card
+                    {...common}
+                    label={`${server.name}, ${node.both ? 'edge and app server' : 'edge server'}`}
+                    picture={
                         <DeviceImage
                             device={server.device.kind}
                             status={deviceStatus(server.status)}
-                            size={deviceSize}
+                            size={columns ? 136 : 76}
                         />
-                    </Picture>
-                    <Words columns={columns}>
-                        <span
-                            className="max-w-full truncate type-label"
-                            title={server.name}
-                        >
-                            {server.name}
-                        </span>
-                        <span className="type-small text-muted-foreground">
-                            {role}
-                        </span>
-                        {server.status !== 'online' && (
-                            <Status
-                                state={state.state}
-                                label={state.label}
-                                className="type-small"
-                            />
-                        )}
-                        {notReached}
-                        {marker}
-                    </Words>
-                </Frame>
+                    }
+                    title={<ServerLink server={server} />}
+                    subtitle={node.both ? 'Edge and app server' : 'Edge server'}
+                    mark={
+                        <Status
+                            state={state.state}
+                            label={state.label}
+                            className="type-small"
+                        />
+                    }
+                    rows={
+                        edgeUs !== null
+                            ? [
+                                  {
+                                      key: 'time',
+                                      icon: Timer,
+                                      label: 'Time here',
+                                      value: formatMicros(edgeUs),
+                                  },
+                              ]
+                            : []
+                    }
+                />
             );
         }
 
-        case 'service': {
-            const { service } = node;
+        case 'firewall': {
+            const { firewall } = node;
+            const count = firewall.rules.length;
+            const mode =
+                labelOf(vocabulary.Security.WafMode, firewall.mode) ??
+                firewall.mode;
 
             return (
-                <Frame
-                    href={service.href}
-                    label={`${service.name} in ${service.projectName}, ${service.environmentName}${dim ? ', not reached' : ''}`}
-                    dim={dim}
-                    columns={columns}
-                >
-                    <Picture columns={columns}>
-                        <ServiceGlyph logo={service.logo ?? 'app'} size="md" />
-                    </Picture>
-                    <Words columns={columns}>
-                        <span
-                            className="max-w-full truncate type-label"
-                            title={service.name}
-                        >
-                            {service.name}
-                        </span>
-                        <span className="max-w-full truncate type-small text-muted-foreground">
-                            {service.projectName}, {service.environmentName}
-                        </span>
-                        {trace.origin === 'stopped' ? (
+                <Card
+                    {...common}
+                    label={`Firewall: ${firewallWords(trace) ?? ''}`}
+                    picture={
+                        <Tile>
+                            <Shield aria-hidden="true" className="size-5" />
+                            <span
+                                ref={pulseRef}
+                                className="absolute -right-1.5 -bottom-1.5 flex size-5 items-center justify-center rounded-full bg-card"
+                            >
+                                <DecisionIcon
+                                    outcome={firewall.outcome}
+                                    className="size-4"
+                                />
+                            </span>
+                        </Tile>
+                    }
+                    title="Firewall"
+                    subtitle={`on ${trace.edge.name}`}
+                    mark={<Decision outcome={firewall.outcome} />}
+                    rows={[
+                        {
+                            key: 'mode',
+                            icon: SlidersHorizontal,
+                            label: 'Mode',
+                            value:
+                                firewall.mode === 'log' ? (
+                                    <span className="inline-flex h-5 items-center rounded-full border px-1.5 type-small">
+                                        {mode}
+                                    </span>
+                                ) : (
+                                    mode
+                                ),
+                        },
+                        {
+                            key: 'score',
+                            icon: Gauge,
+                            label: 'Score',
+                            value: firewall.score,
+                        },
+                        {
+                            key: 'rules',
+                            icon: ListChecks,
+                            label: 'Rules matched',
+                            value:
+                                count > 0 ? (
+                                    <a
+                                        href="#trace-rules"
+                                        className="rounded-sm underline decoration-border-strong underline-offset-2 outline-none hover:decoration-foreground focus-visible:ring-2 focus-visible:ring-signal"
+                                    >
+                                        {count}
+                                    </a>
+                                ) : (
+                                    'None'
+                                ),
+                        },
+                    ]}
+                />
+            );
+        }
+
+        case 'service':
+        case 'dashboard': {
+            const service = node.kind === 'service' ? node.service : null;
+            const appUs = time?.appUs ?? null;
+            const runsOn = node.runsOn;
+            const runsState = runsOn ? serverStatus[runsOn.status] : null;
+            const stopped = trace.origin === 'stopped';
+            const silent =
+                trace.origin === 'upstream_failure' && trace.failure
+                    ? SILENT[trace.failure]
+                    : null;
+            const rows: Row[] = [];
+
+            if (runsOn && runsState) {
+                rows.push({
+                    key: 'runs',
+                    icon: CornerDownRight,
+                    label: 'Runs on',
+                    value: (
+                        <>
+                            <DeviceImage
+                                device={runsOn.device.kind}
+                                status={deviceStatus(runsOn.status)}
+                                size={24}
+                            />
+                            <ServerLink server={runsOn} />
+                        </>
+                    ),
+                    after:
+                        runsOn.status !== 'online' ? (
+                            <Status
+                                state={runsState.state}
+                                label={runsState.label}
+                                className="type-small"
+                            />
+                        ) : undefined,
+                });
+            }
+
+            if (appUs !== null && index <= path.reached) {
+                rows.push({
+                    key: 'time',
+                    icon: Timer,
+                    label: 'Time here',
+                    value: formatMicros(appUs),
+                });
+            }
+
+            return (
+                <Card
+                    {...common}
+                    ghost={ghost || stopped}
+                    label={
+                        service
+                            ? `${service.name} in ${service.projectName}, ${service.environmentName}${ghost ? ', not reached' : ''}`
+                            : `Dashboard${ghost ? ', not reached' : ''}`
+                    }
+                    picture={
+                        service ? (
+                            <ServiceGlyph
+                                logo={service.logo ?? 'app'}
+                                size="lg"
+                            />
+                        ) : (
+                            <Tile>
+                                <AppLogoIcon className="size-6" />
+                            </Tile>
+                        )
+                    }
+                    title={
+                        service ? (
+                            <Link
+                                href={service.href}
+                                className="rounded-sm outline-none hover:underline focus-visible:ring-2 focus-visible:ring-signal"
+                            >
+                                {service.name}
+                            </Link>
+                        ) : (
+                            'Dashboard'
+                        )
+                    }
+                    subtitle={
+                        service
+                            ? `${service.projectName} / ${service.environmentName}`
+                            : 'launchroom itself'
+                    }
+                    mark={
+                        stopped ? (
                             <Status
                                 state="idle"
                                 label="Stopped"
                                 className="type-small"
                             />
-                        ) : (
-                            notReached
-                        )}
-                        {marker}
-                    </Words>
-                </Frame>
+                        ) : silent ? (
+                            <Status
+                                state={silent.state}
+                                label={silent.word}
+                                className="type-small"
+                            />
+                        ) : ghost ? (
+                            <NotReached />
+                        ) : null
+                    }
+                    rows={rows}
+                />
             );
         }
 
-        case 'dashboard':
-            return (
-                <Frame
-                    label={`Dashboard${dim ? ', not reached' : ''}`}
-                    dim={dim}
-                    columns={columns}
-                >
-                    <Picture columns={columns}>
-                        <span className="flex size-8 items-center justify-center rounded-lg border bg-recessed text-muted-foreground">
-                            <LayoutDashboard
-                                aria-hidden="true"
-                                className="size-4"
-                            />
-                        </span>
-                    </Picture>
-                    <Words columns={columns}>
-                        <span className="type-label">Dashboard</span>
-                        <span className="type-small text-muted-foreground">
-                            launchroom itself
-                        </span>
-                        {notReached}
-                        {marker}
-                    </Words>
-                </Frame>
-            );
-
         default:
             return (
-                <Frame
+                <Card
+                    {...common}
+                    ghost
                     label="No service: no domain matched"
-                    dim={false}
-                    dashed
-                    columns={columns}
-                >
-                    <Picture columns={columns}>
-                        <span className="flex size-8 items-center justify-center text-faint">
+                    picture={
+                        <Tile dashed>
                             <SearchX aria-hidden="true" className="size-5" />
-                        </span>
-                    </Picture>
-                    <Words columns={columns}>
-                        <span className="type-label text-muted-foreground">
-                            No service
-                        </span>
-                        <span className="type-small text-muted-foreground">
-                            No domain matched
-                        </span>
-                    </Words>
-                </Frame>
+                        </Tile>
+                    }
+                    title="No service"
+                    subtitle="No app at this address"
+                />
             );
     }
 }
 
-function nodeWords(node: PathNode): string {
+/** A line between two cards, its pill, and the dot's track along it. */
+function Connector({
+    hop,
+    columns,
+    length,
+    iconOnly,
+    style,
+    trackRef,
+    dotRef,
+    pulseRef,
+}: {
+    hop: Hop;
+    columns: boolean;
+    length: number;
+    iconOnly: boolean;
+    style?: CSSProperties;
+    trackRef: (el: HTMLElement | null) => void;
+    dotRef: (el: HTMLElement | null) => void;
+    pulseRef?: (el: HTMLElement | null) => void;
+}) {
+    const failed = hop.state === 'failed';
+    const travelled = hop.state === 'travelled';
+    const stroke = travelled
+        ? 'var(--foreground)'
+        : failed
+          ? 'var(--status-error)'
+          : 'var(--foreground)';
+
+    return (
+        <div
+            aria-hidden="true"
+            className={cn(
+                'relative shrink-0',
+                columns ? 'self-start' : 'self-stretch',
+            )}
+            style={
+                columns
+                    ? {
+                          width: length,
+                          height: 0,
+                          marginTop: STAGE / 2,
+                          ...style,
+                      }
+                    : { height: length, ...style }
+            }
+        >
+            <svg
+                className="absolute overflow-visible"
+                style={
+                    columns
+                        ? { left: 0, top: -1, width: '100%', height: 2 }
+                        : {
+                              left: STAGE / 2 - 1,
+                              top: 0,
+                              width: 2,
+                              height: '100%',
+                          }
+                }
+            >
+                <line
+                    x1={columns ? 0 : 1}
+                    y1={columns ? 1 : 0}
+                    x2={columns ? '100%' : 1}
+                    y2={columns ? 1 : '100%'}
+                    stroke={stroke}
+                    strokeWidth={1.5}
+                    strokeOpacity={travelled ? 0.55 : failed ? 0.85 : 0.22}
+                    strokeDasharray={
+                        travelled ? undefined : failed ? '5 4' : '3 4'
+                    }
+                />
+            </svg>
+            <span
+                ref={trackRef}
+                className="pointer-events-none absolute"
+                style={
+                    columns
+                        ? { left: 0, top: 0, width: '100%', height: 0 }
+                        : { left: STAGE / 2, top: 0, width: 0, height: '100%' }
+                }
+            >
+                <span
+                    ref={dotRef}
+                    className="absolute -top-[2.5px] -left-[2.5px] size-[5px] rounded-full bg-foreground/60 opacity-0"
+                />
+            </span>
+            {(hop.pill || failed) && (
+                <span
+                    title={hop.title ?? undefined}
+                    className={cn(
+                        'absolute flex h-5 items-center gap-1 rounded-full border bg-card px-2 type-mono-small whitespace-nowrap tabular-nums',
+                        failed
+                            ? 'border-[color-mix(in_oklab,var(--status-error)_40%,var(--border))] text-foreground'
+                            : 'text-muted-foreground',
+                        failed && iconOnly && 'px-1',
+                    )}
+                    style={
+                        columns
+                            ? {
+                                  left: '50%',
+                                  top: 0,
+                                  transform: 'translate(-50%, -50%)',
+                              }
+                            : {
+                                  left: STAGE / 2 + 14,
+                                  top: '50%',
+                                  transform: 'translateY(-50%)',
+                              }
+                    }
+                >
+                    {failed && (
+                        <span ref={pulseRef} className="inline-flex">
+                            <X
+                                aria-hidden="true"
+                                strokeWidth={2.5}
+                                className="size-3 text-status-error"
+                            />
+                        </span>
+                    )}
+                    {failed && iconOnly ? null : hop.pill}
+                </span>
+            )}
+        </div>
+    );
+}
+
+type Leg = { hop: number; from: number; to: number; ms: number };
+
+/**
+ * Where the dot goes: along every travelled hop to the furthest card,
+ * halfway into a connection that failed, else back to the card that
+ * answered when that came earlier (a firewall that refused the app's
+ * response, an edge that answered after its firewall).
+ */
+export function dotLegs(path: TracePath): Leg[] {
+    const legs: Leg[] = [];
+
+    for (let i = 0; i < path.reached; i++) {
+        legs.push({ hop: i, from: 0, to: 1, ms: HOP_MS });
+    }
+
+    const failed = path.hops.findIndex((hop) => hop.state === 'failed');
+
+    if (failed >= 0) {
+        legs.push({ hop: failed, from: 0, to: 0.5, ms: HOP_MS / 2 });
+
+        return legs;
+    }
+
+    for (let i = path.reached - 1; i >= path.end; i--) {
+        legs.push({ hop: i, from: 1, to: 0, ms: HOP_MS });
+    }
+
+    return legs;
+}
+
+/**
+ * The flying dot: one Web Animation per connector on a shared cycle, so
+ * one dot moves at a time. Paused while the tab is hidden; none with
+ * reduced motion.
+ */
+function useFlyingDot(
+    path: TracePath,
+    columns: boolean | null,
+    tracks: RefObject<(HTMLElement | null)[]>,
+    dots: RefObject<(HTMLElement | null)[]>,
+    pulse: RefObject<HTMLElement | null>,
+    layoutKey: string,
+) {
+    useEffect(() => {
+        if (
+            columns === null ||
+            prefersReducedMotion() ||
+            typeof Element === 'undefined' ||
+            typeof Element.prototype.animate !== 'function'
+        ) {
+            return;
+        }
+
+        const legs = dotLegs(path);
+
+        if (legs.length === 0) {
+            return;
+        }
+
+        let t = LEAD_MS;
+        const windows = legs.map((leg, i) => {
+            const w = {
+                ...leg,
+                s: t,
+                e: t + leg.ms,
+                last: i === legs.length - 1,
+            };
+            t += leg.ms;
+
+            return w;
+        });
+        const arrive = t;
+        const total = t + FADE_MS + REST_MS;
+        const at = (ms: number) => Math.min(1, Math.max(0, ms / total));
+        const pos = (f: number) =>
+            columns
+                ? `translateX(${(f * 100).toFixed(2)}%)`
+                : `translateY(${(f * 100).toFixed(2)}%)`;
+        const animations: Animation[] = [];
+
+        path.hops.forEach((_, hop) => {
+            const own = windows.filter((w) => w.hop === hop);
+            const track = tracks.current[hop];
+            const dot = dots.current[hop];
+
+            if (own.length === 0 || !track || !dot) {
+                return;
+            }
+
+            const moves: Keyframe[] = [
+                { offset: 0, transform: pos(own[0].from) },
+            ];
+            const fades: Keyframe[] = [{ offset: 0, opacity: 0 }];
+
+            for (const w of own) {
+                const edgeMs = Math.min(140, (w.e - w.s) / 4);
+                moves.push(
+                    {
+                        offset: at(w.s),
+                        transform: pos(w.from),
+                        easing: DOT_EASE,
+                    },
+                    { offset: at(w.e), transform: pos(w.to) },
+                );
+                fades.push(
+                    { offset: at(w.s), opacity: 0 },
+                    { offset: at(w.s + edgeMs), opacity: 1 },
+                );
+
+                if (w.last) {
+                    // Stops where the request ended and fades there.
+                    fades.push(
+                        { offset: at(w.e), opacity: 1 },
+                        { offset: at(w.e + FADE_MS), opacity: 0 },
+                    );
+                } else {
+                    fades.push(
+                        { offset: at(w.e - edgeMs), opacity: 1 },
+                        { offset: at(w.e), opacity: 0 },
+                    );
+                }
+            }
+
+            moves.push({ offset: 1, transform: pos(own[own.length - 1].to) });
+            fades.push({ offset: 1, opacity: 0 });
+
+            const options = { duration: total, iterations: Infinity };
+            animations.push(track.animate(moves, options));
+            animations.push(dot.animate(fades, options));
+        });
+
+        if (pulse.current) {
+            animations.push(
+                pulse.current.animate(
+                    [
+                        { offset: 0, transform: 'scale(1)' },
+                        { offset: at(arrive), transform: 'scale(1)' },
+                        {
+                            offset: at(arrive + 160),
+                            transform: 'scale(1.3)',
+                            easing: 'cubic-bezier(0.2, 0.8, 0.2, 1)',
+                        },
+                        { offset: at(arrive + 480), transform: 'scale(1)' },
+                        { offset: 1, transform: 'scale(1)' },
+                    ],
+                    { duration: total, iterations: Infinity },
+                ),
+            );
+        }
+
+        const start = document.timeline.currentTime;
+
+        for (const animation of animations) {
+            animation.startTime = start;
+        }
+
+        const onVisibility = () => {
+            if (document.hidden) {
+                animations.forEach((animation) => animation.pause());
+
+                return;
+            }
+
+            const now = animations[0]?.currentTime ?? 0;
+            animations.forEach((animation) => {
+                animation.currentTime = now;
+                animation.play();
+            });
+        };
+
+        document.addEventListener('visibilitychange', onVisibility);
+
+        return () => {
+            document.removeEventListener('visibilitychange', onVisibility);
+            animations.forEach((animation) => animation.cancel());
+        };
+        // The layout key stands for the path and the geometry.
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [layoutKey, columns]);
+}
+
+function nodeWords(node: PathNode, trace: RequestTrace): string {
     switch (node.kind) {
         case 'visitor':
             return 'Visitor';
-        case 'server':
-            return `${node.server.name}, ${ROLE_WORDS[node.role].toLowerCase()}`;
+        case 'edge':
+            return `${node.server.name}, ${node.both ? 'edge and app server' : 'edge server'}`;
+        case 'firewall':
+            return `Firewall on ${trace.edge.name}: ${firewallWords(trace) ?? ''}`;
         case 'service':
             return node.service.name;
         case 'dashboard':
@@ -622,260 +1003,149 @@ function nodeWords(node: PathNode): string {
 }
 
 /**
- * The request's path drawn left to right (docs/23 §7): visitor, edge
- * server with the firewall as a gate on its far side, app server, service.
- * Hops are curves with timing pills, drawn on once; where the request
- * ended carries the outcome's colour and word, and what came after is
- * dashed and dimmed. Stacks into one column on narrow screens.
+ * The request's path as cards on a dotted canvas (docs/23 §7): visitor,
+ * edge server, its firewall, the service. Solid lines where the request
+ * went, dashed beyond, red where the edge couldn't connect, with a dot
+ * flying along the way it took. One column on narrow screens.
  */
-export function TracePathDiagram({ trace }: { trace: RequestTrace }) {
+export function TraceCanvas({ trace }: { trace: RequestTrace }) {
     const [ref, width] = useMeasuredWidth<HTMLDivElement>();
     const path = tracePath(trace);
-    const gateOn = trace.firewall !== null;
-    const geometry = layout(path, width, gateOn);
-    const time = timeline(path);
-    const fw = firewallWords(trace);
+    const geometry = width > 0 ? layout(path, width) : null;
+    const tracks = useRef<(HTMLElement | null)[]>([]);
+    const dots = useRef<(HTMLElement | null)[]>([]);
+    const pulse = useRef<HTMLElement | null>(null);
+    // What pulses when the dot stops: the firewall's ✕, or the ✕ of a
+    // connection that failed.
+    const pulseOn = path.hops.some((hop) => hop.state === 'failed')
+        ? 'failed'
+        : path.nodes[path.end]?.kind === 'firewall' &&
+            trace.firewall?.outcome === 'blocked'
+          ? 'firewall'
+          : null;
+    const layoutKey = geometry
+        ? geometry.columns
+            ? `c|${geometry.widths.join(',')}|${geometry.gaps.join(',')}|${geometry.iconOnly}`
+            : `s|${geometry.width}`
+        : '';
+
+    useFlyingDot(
+        path,
+        geometry ? geometry.columns : null,
+        tracks,
+        dots,
+        pulse,
+        `${trace.requestId}|${layoutKey}`,
+    );
+
+    const pulseRef = (el: HTMLElement | null) => {
+        pulse.current = el;
+    };
 
     return (
-        <div className="flex flex-col">
-            <div
-                ref={ref}
-                className="relative w-full"
-                style={{ height: geometry?.height ?? 232 }}
-            >
-                {geometry && (
-                    <Drawing
-                        trace={trace}
-                        path={path}
-                        geometry={geometry}
-                        width={width}
-                        time={time}
-                        gate={
-                            trace.firewall && fw
-                                ? { firewall: trace.firewall, words: fw }
-                                : null
-                        }
-                    />
-                )}
-            </div>
+        <div
+            ref={ref}
+            className="trace-canvas relative w-full min-w-0"
+            style={{ minHeight: geometry ? undefined : 260 }}
+        >
+            {geometry && (
+                <div
+                    className={cn(
+                        'flex w-full',
+                        geometry.columns
+                            ? 'flex-row items-start justify-center'
+                            : 'flex-col items-center',
+                    )}
+                    style={{
+                        padding: geometry.columns
+                            ? `32px ${PAD_ROW}px`
+                            : `20px ${PAD_STACK}px`,
+                    }}
+                >
+                    {path.nodes.map((node, i) => {
+                        const hop = path.hops[i];
+                        const cardWidth = geometry.columns
+                            ? geometry.widths[i]
+                            : geometry.width;
+
+                        return (
+                            <div
+                                key={node.id}
+                                className={cn(
+                                    'flex',
+                                    geometry.columns
+                                        ? 'flex-row items-start'
+                                        : 'flex-col',
+                                )}
+                                style={
+                                    geometry.columns
+                                        ? undefined
+                                        : { width: geometry.width }
+                                }
+                            >
+                                <NodeCard
+                                    node={node}
+                                    index={i}
+                                    trace={trace}
+                                    path={path}
+                                    columns={geometry.columns}
+                                    width={cardWidth}
+                                    pulseRef={
+                                        pulseOn === 'firewall'
+                                            ? pulseRef
+                                            : undefined
+                                    }
+                                />
+                                {hop && (
+                                    <Connector
+                                        hop={hop}
+                                        columns={geometry.columns}
+                                        length={
+                                            geometry.columns
+                                                ? geometry.gaps[i]
+                                                : hop.pill ||
+                                                    hop.state === 'failed'
+                                                  ? 52
+                                                  : 36
+                                        }
+                                        iconOnly={
+                                            geometry.columns &&
+                                            geometry.iconOnly
+                                        }
+                                        trackRef={(el) => {
+                                            tracks.current[i] = el;
+                                        }}
+                                        dotRef={(el) => {
+                                            dots.current[i] = el;
+                                        }}
+                                        pulseRef={
+                                            pulseOn === 'failed'
+                                                ? pulseRef
+                                                : undefined
+                                        }
+                                    />
+                                )}
+                            </div>
+                        );
+                    })}
+                </div>
+            )}
             <ol className="sr-only">
                 {path.nodes.map((node, i) => {
                     const hop = path.hops[i];
+                    const answer = path.answers[i];
 
                     return (
-                        <li key={node.id + i}>
-                            {nodeWords(node)}
+                        <li key={node.id}>
+                            {nodeWords(node, trace)}
                             {i > path.reached && ', not reached'}
-                            {i === path.edge && fw && `. Firewall: ${fw}`}
-                            {i === path.end &&
-                                `. Answered: ${path.outcome.word}`}
+                            {answer &&
+                                `. Answered ${answer.words}${answer.note ? `: ${answer.note}` : ''}`}
                             {hop?.title && `. Then ${hop.title}`}
                         </li>
                     );
                 })}
             </ol>
         </div>
-    );
-}
-
-function Drawing({
-    trace,
-    path,
-    geometry,
-    width,
-    time,
-    gate,
-}: {
-    trace: RequestTrace;
-    path: TracePath;
-    geometry: Layout;
-    width: number;
-    time: ReturnType<typeof timeline>;
-    gate: { firewall: TraceFirewallData; words: string } | null;
-}) {
-    const { columns, iconOnly, boxes, height } = geometry;
-    const edgeBox = boxes[path.edge];
-    const gateAt = gatePoint(columns, edgeBox);
-
-    return (
-        <>
-            <svg
-                width={width}
-                height={height}
-                aria-hidden="true"
-                className="absolute inset-0 block overflow-visible"
-            >
-                {path.hops.map((hop) => {
-                    const d = hopPath(columns, boxes[hop.from], boxes[hop.to]);
-
-                    if (hop.state === 'reached') {
-                        return (
-                            <path
-                                key={hop.to}
-                                d={d}
-                                pathLength={1}
-                                fill="none"
-                                strokeWidth={1.5}
-                                strokeLinecap="round"
-                                className="trace-draw"
-                                style={{
-                                    stroke: 'var(--foreground)',
-                                    opacity: 0.75,
-                                    ...delay(time.hopAt(hop.from)),
-                                }}
-                            />
-                        );
-                    }
-
-                    return (
-                        <g
-                            key={hop.to}
-                            className="trace-fade"
-                            style={delay(time.settled)}
-                        >
-                            <path
-                                d={d}
-                                fill="none"
-                                strokeWidth={1.5}
-                                strokeLinecap="round"
-                                strokeDasharray={
-                                    hop.state === 'failed' ? '5 4' : '3 5'
-                                }
-                                style={{
-                                    stroke:
-                                        hop.state === 'failed'
-                                            ? 'var(--status-error)'
-                                            : 'var(--foreground)',
-                                    opacity: hop.state === 'failed' ? 0.9 : 0.3,
-                                }}
-                            />
-                        </g>
-                    );
-                })}
-            </svg>
-
-            {path.hops.map((hop) => {
-                if (!hop.pill && hop.state !== 'failed') {
-                    return null;
-                }
-
-                const at = pillPoint(
-                    columns,
-                    boxes[hop.from],
-                    boxes[hop.to],
-                    gate !== null && hop.from === path.edge,
-                );
-                const failed = hop.state === 'failed';
-
-                return (
-                    <div
-                        key={`pill-${hop.to}`}
-                        aria-hidden="true"
-                        className="absolute"
-                        style={{
-                            left: at.x,
-                            top: at.y,
-                            transform: columns
-                                ? 'translate(-50%, -50%)'
-                                : 'translate(0, -50%)',
-                        }}
-                    >
-                        <span
-                            title={hop.title ?? undefined}
-                            className={cn(
-                                'trace-enter flex h-5 items-center gap-1 rounded-full border bg-card px-2 type-mono-small whitespace-nowrap tabular-nums',
-                                failed
-                                    ? 'border-[color-mix(in_oklab,var(--status-error)_40%,var(--border))] text-foreground'
-                                    : 'text-muted-foreground',
-                            )}
-                            style={delay(
-                                failed
-                                    ? time.settled
-                                    : time.hopAt(hop.from) + 150,
-                            )}
-                        >
-                            {failed && (
-                                <X
-                                    aria-hidden="true"
-                                    strokeWidth={2.5}
-                                    className="size-3 text-status-error"
-                                />
-                            )}
-                            {failed && iconOnly ? null : hop.pill}
-                        </span>
-                    </div>
-                );
-            })}
-
-            {path.nodes.map((node, i) => {
-                const box = boxes[i];
-
-                return (
-                    <div
-                        key={node.id + i}
-                        className={cn(
-                            'absolute',
-                            i > path.reached ? 'trace-fade' : 'trace-enter',
-                        )}
-                        style={{
-                            left: box.x,
-                            top: box.y,
-                            width: box.w,
-                            height: box.h,
-                            ...delay(
-                                i > path.reached
-                                    ? time.settled
-                                    : time.nodeAt(i),
-                            ),
-                        }}
-                    >
-                        <NodeCard
-                            node={node}
-                            trace={trace}
-                            path={path}
-                            index={i}
-                            box={box}
-                            columns={columns}
-                            markerDelay={time.marker}
-                        />
-                    </div>
-                );
-            })}
-
-            {gate && (
-                <div
-                    className="absolute flex flex-col items-center"
-                    style={{
-                        left: gateAt.x,
-                        top: gateAt.y,
-                        width: GATE,
-                        transform: 'translate(-50%, -50%)',
-                    }}
-                >
-                    <div
-                        className="trace-enter"
-                        style={{
-                            width: GATE,
-                            height: GATE,
-                            ...delay(time.nodeAt(path.edge) + 120),
-                        }}
-                    >
-                        <Gate firewall={gate.firewall} words={gate.words} />
-                    </div>
-                    <span
-                        aria-hidden="true"
-                        className={cn(
-                            'trace-fade absolute type-small whitespace-nowrap text-muted-foreground',
-                            columns
-                                ? 'top-[calc(100%+4px)]'
-                                : 'top-1/2 left-[calc(100%+8px)] -translate-y-1/2',
-                        )}
-                        style={delay(time.nodeAt(path.edge) + 160)}
-                    >
-                        Firewall
-                    </span>
-                </div>
-            )}
-        </>
     );
 }

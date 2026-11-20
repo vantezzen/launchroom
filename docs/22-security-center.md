@@ -353,7 +353,7 @@ Include @owasp_crs/*.conf
 - Coraza collects at most 256 fields per collection (query, body, path). It has no per-request setting for this, so the limit is the same for every route and every body setting. Further fields pass uninspected.
 - Multipart uploads: Coraza writes file parts to a temporary file that no CRS 4.25 rule reads. Field names, file names, file sizes and the other fields are inspected, so a 1 MiB upload costs about as much as a small form.
 - WebSocket upgrades and server-sent events pass through (coraza-caddy unwraps hijacking; response bodies aren't buffered).
-- A blocked request gets status 403 and launchroom's edge page "This request was blocked by the web firewall" with the reference id (Coraza's transaction id, `{http.error.id}`; on edges with the request trace every `waf` handler has `tx_id_req_header: X-Request-Id`, so the reference and `WafEvent.reference` are the request id, a lowercase UUID, and the request's `Launchroom-Trace` shows the same id), in the error-page style of [05](05-networking-ingress.md) §4 (plain line for non-HTML clients).
+- A blocked request gets status 403 and launchroom's edge page "This request was blocked by the web firewall" with the reference id (Coraza's transaction id, `{http.error.id}`; on edges with the request trace every `waf` handler has `tx_id_req_header: X-Request-Id`, so the reference and `WafEvent.reference` are the request id, a lowercase UUID, and the request's ray (`X-Launchroom-Ray`) shows the same id), in the error-page style of [05](05-networking-ingress.md) §4 (plain line for non-HTML clients).
 
 ### 6.4 Exclusions
 

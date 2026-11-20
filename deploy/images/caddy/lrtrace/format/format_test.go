@@ -31,6 +31,7 @@ type keyFixture struct {
 type recipe struct {
 	KeyID   uint32          `json:"keyId"`
 	Version *byte           `json:"version"`
+	Prefix  *string         `json:"prefix"`
 	Nonce   string          `json:"nonce"`
 	Payload string          `json:"payload"`
 	Mutate  *mutation       `json:"mutate"`
@@ -77,6 +78,15 @@ func readJSON(t *testing.T, path string, v any) []byte {
 	return data
 }
 
+// prefix is the recipe's text prefix: Prefix unless the recipe names one
+// ("" for a value from an edge before the prefix).
+func (r recipe) prefix() string {
+	if r.Prefix != nil {
+		return *r.Prefix
+	}
+	return Prefix
+}
+
 // build makes the header a recipe describes (fixtures README).
 func build(t *testing.T, aead cipher.AEAD, r recipe) string {
 	t.Helper()
@@ -113,7 +123,7 @@ func build(t *testing.T, aead cipher.AEAD, r recipe) string {
 		}
 		suffix = m.Append
 	}
-	return base64.RawURLEncoding.EncodeToString(raw) + suffix
+	return r.prefix() + base64.RawURLEncoding.EncodeToString(raw) + suffix
 }
 
 var reHeader = regexp.MustCompile(`"header": (null|"[^"]*")`)
@@ -177,7 +187,7 @@ func TestValidFixtures(t *testing.T) {
 			header := build(t, aead, r)
 			nonce, _ := hex.DecodeString(r.Nonce)
 			sealed, err := Seal(aead, r.KeyID, nonce, payload)
-			if err != nil || sealed != header {
+			if err != nil || sealed != Prefix+strings.TrimPrefix(header, r.prefix()) {
 				t.Fatalf("Seal = %s, %v; want %s", sealed, err, header)
 			}
 			id, opened, err := Open(header, keys(k, aead))
@@ -200,7 +210,7 @@ func TestInvalidFixtures(t *testing.T) {
 			var r recipe
 			data := readJSON(t, path, &r)
 			switch r.Reason {
-			case "format", "key", "auth", "payload":
+			case "format", "newer", "key", "auth", "payload":
 			default:
 				t.Fatalf("reason %q", r.Reason)
 			}

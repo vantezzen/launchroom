@@ -85,6 +85,6 @@ enum DaemonFeature: string
     case CleanupTask = 'cleanupTask';
     /** The `cert_retry` task ("Retry now" on a certificate). */
     case CertificateRetry = 'certificateRetry';
-    /** `NodeState.ingress.trace`, `RouteSpec.service`, `RouteSpec.upstreams[].server`: the `Launchroom-Trace` header on every edge response (docs/23). */
+    /** `NodeState.ingress.trace`, `RouteSpec.service`, `RouteSpec.upstreams[].server`: the `X-Launchroom-Ray` header on every edge response (docs/23). */
     case RequestTrace = 'requestTrace';
 }

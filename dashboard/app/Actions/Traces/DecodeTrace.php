@@ -13,7 +13,7 @@ use App\Support\Traces\TraceCodec;
 use App\Support\Traces\TraceEnvelope;
 
 /**
- * Opens a pasted `Launchroom-Trace` value (docs/23 §6): parse, find the key
+ * Opens a pasted ray, the `X-Launchroom-Ray` value (docs/23 §6): parse, find the key
  * by its id among the team's edges, decrypt, check the key's server is the
  * edge the payload names, decode the fields. Null for anything else,
  * without saying why: a malformed value, an unknown or deleted key, another
@@ -22,8 +22,11 @@ use App\Support\Traces\TraceEnvelope;
  */
 final readonly class DecodeTrace
 {
-    /** The one answer for a trace that can't be shown, whatever the reason (docs/23 §6). */
-    public const string NOT_READABLE = "This trace isn't from one of your services.";
+    /** The one answer for a ray that can't be shown, whatever the reason (docs/23 §6). */
+    public const string NOT_READABLE = "This ray isn't from one of your services.";
+
+    /** The answer for a ray in a newer format (`lr2.` and up): its prefix is public, so saying so leaks nothing. */
+    public const string NEWER = 'This ray was made by a newer version of launchroom. Update launchroom to read it.';
 
     public function __construct(
         private TraceKeys $keys,
@@ -49,5 +52,16 @@ final readonly class DecodeTrace
         $trace = $payload === null ? null : TraceCodec::fields($payload);
 
         return $trace instanceof DecodedTrace && hash_equals($key->server->public_id, $trace->edge) ? $trace : null;
+    }
+
+    /**
+     * Why a ray handle() refused can't be shown: NEWER for a newer format,
+     * NOT_READABLE for everything else.
+     */
+    public function refusal(string $input): string
+    {
+        $value = TraceCodec::value($input);
+
+        return $value !== null && TraceCodec::newer($value) ? self::NEWER : self::NOT_READABLE;
     }
 }

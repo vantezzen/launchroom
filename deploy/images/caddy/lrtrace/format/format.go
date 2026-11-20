@@ -1,5 +1,6 @@
-// Package format is the Launchroom-Trace header, version 1 (docs/23 §2):
-// a tag-length-value payload sealed with AES-256-GCM under the edge's key.
+// Package format is the X-Launchroom-Ray header, version 1 (docs/23 §2):
+// a tag-length-value payload sealed with AES-256-GCM under the edge's key,
+// written as "lr1." and the base64url envelope.
 // It has no Caddy dependency, so the vectors in protocol/fixtures/v1/trace
 // test it alone.
 package format
@@ -11,14 +12,20 @@ import (
 	"encoding/binary"
 	"errors"
 	"io"
+	"strings"
 	"unicode/utf8"
 )
 
-// Header is the response header that carries the trace.
-const Header = "Launchroom-Trace"
+// Header is the response header that carries the trace (the "ray").
+const Header = "X-Launchroom-Ray"
 
 // Version is the only format version.
 const Version = 1
+
+// Prefix starts every value: "lr" and the version, so a reader can tell a
+// newer format from a broken one before decoding. Edges before it sent the
+// envelope alone (header Launchroom-Trace); Open still reads those.
+const Prefix = "lr1."
 
 // Sizes of the sealed form.
 const (
@@ -373,7 +380,8 @@ func CutPath(p string) string {
 	return p
 }
 
-// Seal encrypts a payload into the header value. nonce is nil in
+// Seal encrypts a payload into the header value (Prefix and the base64url
+// envelope). nonce is nil in
 // production (a random one is drawn); tests pass a fixed one.
 func Seal(aead cipher.AEAD, keyID uint32, nonce, payload []byte) (string, error) {
 	out := make([]byte, prefixSize, minSealed+len(payload))
@@ -390,12 +398,15 @@ func Seal(aead cipher.AEAD, keyID uint32, nonce, payload []byte) (string, error)
 	}
 	out = append(out, nonce...)
 	out = aead.Seal(out, nonce, payload, out[:prefixSize])
-	return base64.RawURLEncoding.EncodeToString(out), nil
+	return Prefix + base64.RawURLEncoding.EncodeToString(out), nil
 }
 
 // Open decrypts a header value with the key the key id names (keys returns
-// nil for an unknown id) and returns the key id and the payload.
+// nil for an unknown id) and returns the key id and the payload. The value
+// has Prefix, or none (edges before the prefix); any other prefix ("lr2.")
+// is unreadable here.
 func Open(header string, keys func(keyID uint32) cipher.AEAD) (uint32, []byte, error) {
+	header = strings.TrimPrefix(header, Prefix)
 	if !base64URL(header) {
 		return 0, nil, ErrUnreadable
 	}

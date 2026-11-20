@@ -49,7 +49,13 @@ launchroom: This server’s code is K7QM-3XRT.
 
 The dashboard shows the new machine's name, architecture and address. Type the code from the terminal into the dashboard to confirm. The dashboard never shows the code itself: it only accepts the code of the machine that claimed the move. If the terminal shows an error instead of a code, or the dashboard refuses your code, someone else used the token: cancel the move and start again.
 
-The new machine then joins as a server. Keep the command running: it finishes the move later. If it stops, run the same command again; it continues where it stopped.
+The new machine then joins as a server. Keep the command running: it finishes the move later. If it stops (a closed terminal, a reboot, an error), run this in the install folder on the new machine:
+
+```sh
+cd launchroom && ./launchroom move continue
+```
+
+It continues from wherever the move stopped: joining, waiting for the hand-over, taking over, connecting the new server and cleaning up. It is safe to run again.
 
 If the new machine is already connected to your dashboard as a server (for example after you cancelled an earlier move to it), the terminal and the dashboard say so ("already connected as …"). The move then continues with that server, and it doesn't join again.
 </Step>
@@ -63,6 +69,8 @@ The dashboard shows the plan:
 - **Back up first**: with a backup destination, each database and volume can be backed up right before it moves.
 
 Click **Move apps and data**. Databases and volumes move one at a time. For each one, launchroom stops the apps that write to it, takes its final data, loads it on the new server and starts everything there. Follow each service on the page. If one fails, it runs on the old server again with its data as it was, and you can **Retry** it.
+
+An app without data that fails on the new server (for example because its build fails there) can also be left behind: **Stop** stops it together with its workers and crons, and the move goes on without it. It keeps its settings, domains and deployments. Start it from its page later; it then starts on the new server. Services with data can only be retried, because their data would stay on the old server.
 </Step>
 <Step>
 ### Switch DNS for your apps
@@ -74,18 +82,26 @@ Certificates for the new server are issued automatically once DNS points at it.
 <Step>
 ### Hand over the dashboard
 
-When everything runs on the new server, click **Hand over** and type `hand over`. The new machine's installer must still be running.
+When everything runs on the new server, click **Hand over** and type `hand over`. The new machine's installer must still be running (or start `./launchroom move continue` there). If a service still runs or keeps data on the old server, the page names it with its project and the hand-over waits until you move, stop or remove it.
 
 - The old dashboard pauses changes. Pages stay readable, apps keep serving, and launchroom doesn't deploy, build or back up during the hand-over. A git push during this time doesn't deploy; push again afterwards.
 - It takes a final copy of its database and keys, encrypted so that only the new machine can open it.
 - The new machine restores it, starts the dashboard, takes over and reports back. For a small instance this takes 1 to 3 minutes.
 
-Afterwards every page of the old dashboard says where launchroom moved.
+Afterwards every page of the old dashboard says where launchroom moved. Signed in as an instance owner, **Settings → Move launchroom** there still shows the DNS records to change.
 </Step>
 <Step>
 ### Switch DNS for the dashboard
 
-Point the dashboard's domain at the new server. The installer prints the address to use. Sign in on the new dashboard once DNS has changed.
+The old dashboard's last page and the new dashboard's checklist list every record to change: the dashboard's domain, the wildcard of your platform domain and each custom domain, with the new server's address to set (A for IPv4, AAAA for IPv6) and the old one to remove. **Check DNS** shows which records already point at the new server.
+
+Until the dashboard's domain points there, reach the new dashboard through an SSH tunnel from your computer:
+
+```sh
+ssh -L 8000:127.0.0.1:8000 root@<new server's IP>
+```
+
+Then open `http://localhost:8000`. The installer prints the same command. If your dashboard's address contains the server's IP (`…sslip.io`), the new address works right away.
 </Step>
 <Step>
 ### Check everything
@@ -128,8 +144,11 @@ Builds take as long as a normal build. A build server for the new architecture i
 | An app fails to start on the new server | It keeps running on the old server | **Retry** |
 | A database or volume fails | It runs on the old server again, with its data as it was | **Retry** |
 | You want to stop halfway | Services that moved stay on the new server, the rest stay on the old one | **Cancel move** |
-| The hand-over fails | The old dashboard takes changes again | Run the install command again, then hand over again |
-| The installer stopped after the restore | The new dashboard has the data but didn't take over | Run `./launchroom move-takeover` in the new install folder |
+| An app fails and you don't need it there | It keeps running on the old server | **Stop**: it stops with its workers and crons, and the move goes on |
+| The hand-over says a service is still on the old server | Nothing changed | Move, stop or remove that service, then hand over again |
+| The hand-over fails | The old dashboard takes changes again | `./launchroom move continue` on the new machine, then hand over again |
+| The new server refuses to take over | The installer prints why; the old dashboard takes changes again and shows the reason | Fix it in the old dashboard, hand over again, then `./launchroom move continue` on the new machine |
+| The installer stopped somewhere | The move waits where it stopped | `./launchroom move continue` in the install folder on the new machine |
 | After the hand-over | The new server runs launchroom | To go back, move again |
 
 **Abort hand-over** in the old dashboard only works until the new dashboard runs. Use it only if the new machine's installer failed.

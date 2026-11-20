@@ -10,7 +10,7 @@ import (
 )
 
 // Request trace (docs/23 §3): launchroom-caddy carries the module
-// deploy/images/caddy/lrtrace, which writes an encrypted Launchroom-Trace
+// deploy/images/caddy/lrtrace, which writes an encrypted X-Launchroom-Ray
 // header on every response. launchroomd renders its handler first on both
 // servers, so it wraps every other route, and tags the routes with variables
 // the handler reads when the response headers are written.

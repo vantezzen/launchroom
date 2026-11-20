@@ -15,6 +15,10 @@ export type TransferSide = {
     detail?: string | null;
     /** Takes public traffic right now: the tag people look for first. */
     serving?: boolean;
+    /** More tags under the name ("Runs the dashboard"). */
+    tags?: string[];
+    /** Not connected yet: drawn as a dashed outline (the new machine). */
+    ghost?: boolean;
     /** A dead server (Replace): drawn greyed. */
     gone?: boolean;
     /** Under the card (Retire {source} once everything moved). */
@@ -28,6 +32,8 @@ function Side({ side, label }: { side: TransferSide; label: string }) {
                 className={cn(
                     'flex w-full flex-col items-center gap-2 rounded-xl border bg-card px-3 pt-2 pb-3',
                     side.gone && 'opacity-60',
+                    side.ghost &&
+                        'border-dashed border-border-strong bg-transparent',
                 )}
             >
                 <span className="sr-only">{label}: </span>
@@ -35,7 +41,10 @@ function Side({ side, label }: { side: TransferSide; label: string }) {
                     device={side.device}
                     status={side.status}
                     size={96}
-                    className={cn(side.gone && 'grayscale')}
+                    className={cn(
+                        side.gone && 'grayscale',
+                        side.ghost && 'opacity-50 grayscale',
+                    )}
                 />
                 <span className="max-w-full truncate type-label">
                     {side.name}
@@ -45,9 +54,19 @@ function Side({ side, label }: { side: TransferSide; label: string }) {
                         {side.detail}
                     </span>
                 )}
-                {side.serving && (
-                    <span className="inline-flex h-5 items-center rounded-full bg-hover px-2 type-small">
-                        Serving traffic
+                {(side.serving || (side.tags?.length ?? 0) > 0) && (
+                    <span className="flex flex-wrap justify-center gap-1">
+                        {[
+                            ...(side.tags ?? []),
+                            ...(side.serving ? ['Serving traffic'] : []),
+                        ].map((tag) => (
+                            <span
+                                key={tag}
+                                className="inline-flex h-5 items-center rounded-full bg-hover px-2 type-small"
+                            >
+                                {tag}
+                            </span>
+                        ))}
                     </span>
                 )}
             </div>

@@ -36,6 +36,7 @@ import { QueryBar } from '@/features/log-explorer/query-bar';
 import type { LogEntry, LogLevel } from '@/features/log-explorer/types';
 import type { QueryKey } from '@/features/log-explorer/query';
 import { TraceGallery } from '@/features/request-trace/trace-gallery';
+import { MoveStatesGallery } from '@/features/design-gallery/move-states';
 
 /*
  * Showcase of the visual primitives with fixed sample data
@@ -973,6 +974,7 @@ export const VISUAL_SECTIONS = [
     'logs',
     'map',
     'trace',
+    'moves',
 ];
 
 export default function VisualPrimitives() {
@@ -986,6 +988,13 @@ export default function VisualPrimitives() {
             <LogsSection />
             <MapSection />
             <TraceSection />
+            <Section
+                id="moves"
+                title="Moves"
+                description="Every step of moving launchroom to a new server, a server move and the old dashboard afterwards."
+            >
+                <MoveStatesGallery />
+            </Section>
         </div>
     );
 }

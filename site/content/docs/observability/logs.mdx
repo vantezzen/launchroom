@@ -63,9 +63,9 @@ On a project's Logs tab, a switch next to the source sets the scope: the current
 
 Live following works inside one environment only.
 
-### Trace a request
+### Paste a ray
 
-**Trace a request** in the toolbar of a project's Logs tab and the team's Logs page takes the `Launchroom-Trace` header of a response and shows where that request went. From the trace, **Open logs** comes back here with the lines of that minute that contain the request's id. See [Trace a request](/docs/observability/request-trace).
+**Paste a ray** in the toolbar of a project's Logs tab and the team's Logs page takes the ray from a response's `X-Launchroom-Ray` header and shows where that request went. From the ray, **Open logs** comes back here with the lines of that minute that contain the request's id. See [Rays](/docs/observability/request-trace).
 
 ## Follow live
 
@@ -137,7 +137,7 @@ cd launchroom
 `GET /api/v1/environments/{environment}/logs` runs the explorer's query (with `range`, `source`, `service` and `q`, or `from` and `to` in epoch seconds for a fixed window), and `…/logs/stream` follows lines as server-sent events. See the [API reference](/docs/reference/api#follow-logs).
 
 <Cards>
-  <Card title="Trace a request" href="/docs/observability/request-trace" description="Follow one request from the visitor to your app." />
+  <Card title="Rays" href="/docs/observability/request-trace" description="Follow one request from the visitor to your app." />
   <Card title="Resources" href="/docs/observability/metrics" description="CPU, memory, latency and bandwidth per service and server." />
   <Card title="Alerts" href="/docs/observability/alerts" description="Hear about failed deploys, crashing services and full disks." />
   <Card title="Troubleshooting builds" href="/docs/troubleshooting/builds" description="Read a failed build log and fix the usual causes." />

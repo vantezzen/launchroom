@@ -19,7 +19,15 @@ export const itemStates: Record<
     rolled_back: ['idle', 'Back on the old server'],
     cancelled: ['idle', 'Stays'],
     skipped: ['idle', 'Skipped'],
+    stopped: ['idle', 'Stopped'],
 };
+
+/** The state and word of an item, also for a status this build doesn't know yet. */
+export function itemState(item: {
+    status: App.Enums.Moves.MoveItemStatus;
+}): [StatusState, string] {
+    return itemStates[item.status] ?? ['idle', item.status];
+}
 
 export const moveStates: Record<
     App.Enums.Moves.ServerMoveStatus,

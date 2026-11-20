@@ -6,19 +6,22 @@ import { ChoiceTiles } from '@/components/patterns/choice-tiles';
 import { MetaDivider, MetaLine } from '@/components/patterns/meta-line';
 import { Page, PageHeader } from '@/components/patterns/page';
 import { Section } from '@/components/patterns/section';
-import { ConfirmAction } from '@/components/confirm-action';
 import { Button } from '@/components/ui/button';
 import { Checkbox } from '@/components/ui/checkbox';
 import { Label } from '@/components/ui/label';
+import { ConfirmForm } from '@/features/moves/confirm-form';
+import { ActionRow } from '@/features/moves/continue-command';
 import { DnsRecords } from '@/features/moves/dns-records';
+import { MoveBlockers } from '@/features/moves/move-blockers';
 import { MovePlanView } from '@/features/moves/move-plan';
 import { MoveProgress } from '@/features/moves/move-progress';
 import { TypedConfirm } from '@/features/moves/typed-confirm';
+import type { MoveBlockerData } from '@/features/moves/types';
 import { deviceStatus } from '@/features/servers/format';
 import { roleLabels, ServerStatus } from '@/features/servers/server-status';
 import { edit as moveLaunchroom } from '@/routes/move';
 import { create, index, move as moveRoute, show } from '@/routes/servers';
-import { cancel, retire, retry, store } from '@/routes/servers/move';
+import { cancel, retire, retry, stop, store } from '@/routes/servers/move';
 import { useLiveProps } from '@/hooks/use-live-props';
 import { formatEstimate, formatMemory } from '@/lib/format';
 import { vocabulary } from '@/lib/vocabulary';
@@ -32,6 +35,8 @@ type Props = {
     dns?: App.Data.Moves.MoveDnsRecordData[];
     move: App.Data.Moves.ServerMoveData | null;
     canEnroll: boolean;
+    /** While the move is ready: what makes Retire refuse. */
+    retireBlockers?: MoveBlockerData[];
 };
 
 /** ["Runtime and Edge", "linux/amd64", "40 GB free"]. */
@@ -60,13 +65,14 @@ export default function MoveServer({
     dns,
     move,
     canEnroll,
+    retireBlockers = [],
 }: Props) {
     const status =
         move === null ? null : vocabulary.Moves.ServerMoveStatus[move.status];
     const open = status?.isOpen ?? false;
     const [backupFirst, setBackupFirst] = useState(false);
 
-    useLiveProps(['move', 'server'], {
+    useLiveProps(['move', 'server', 'retireBlockers'], {
         while: status?.isAdvancing ?? false,
         everyMs: 3000,
     });
@@ -111,6 +117,13 @@ export default function MoveServer({
                             move={move}
                             retryForm={(item) =>
                                 retry.form({
+                                    server: server.id,
+                                    move: move.id,
+                                    item,
+                                })
+                            }
+                            stopForm={(item) =>
+                                stop.form({
                                     server: server.id,
                                     move: move.id,
                                     item,
@@ -162,6 +175,17 @@ export default function MoveServer({
                                         />
                                     </Section>
 
+                                    {move.status === 'ready' &&
+                                        retireBlockers.length > 0 && (
+                                            <MoveBlockers
+                                                blockers={retireBlockers}
+                                            >
+                                                {server.name} can’t retire until
+                                                nothing is left on it. Open each
+                                                one to move or stop it.
+                                            </MoveBlockers>
+                                        )}
+
                                     <div className="flex flex-col gap-4 rounded-xl border bg-card p-5 shadow-card sm:flex-row sm:items-center">
                                         <p className="min-w-0 flex-1 type-small text-muted-foreground">
                                             {move.status === 'ready'
@@ -172,45 +196,61 @@ export default function MoveServer({
                                         </p>
                                         <div className="flex flex-wrap gap-2">
                                             {move.status === 'running' && (
-                                                <ConfirmAction
-                                                    trigger="Cancel move"
+                                                <ConfirmForm
                                                     title="Cancel the move?"
-                                                    description={`Services that already run on ${move.target.name} stay there. The one being copied goes back to ${server.name} with its data. ${server.name} takes new work again.`}
+                                                    consequence={`The service being copied goes back to ${server.name} with its data, and ${server.name} takes new work again.`}
                                                     confirmLabel="Cancel move"
                                                     form={cancel.form({
                                                         server: server.id,
                                                         move: move.id,
                                                     })}
-                                                />
+                                                >
+                                                    <Button variant="destructive">
+                                                        Cancel move
+                                                    </Button>
+                                                </ConfirmForm>
                                             )}
                                             {move.status === 'ready' && (
-                                                <TypedConfirm
-                                                    trigger={`Retire ${server.name}`}
-                                                    title={`Retire ${server.name}?`}
-                                                    object={{
-                                                        name: server.name,
-                                                        detail: `to ${move.target.name}`,
-                                                    }}
-                                                    goesHeading="Ends"
-                                                    goes={[
-                                                        `${server.name}’s apps stop`,
-                                                        'Its key is revoked',
-                                                        'Traffic that still reaches it fails, so switch DNS first',
-                                                    ]}
-                                                    kept={[
-                                                        `Everything that moved keeps running on ${move.target.name}`,
-                                                        `${move.target.name} takes over its roles and labels`,
-                                                        'Its disk isn’t touched',
-                                                    ]}
-                                                    description={null}
-                                                    expected={server.name}
-                                                    confirmLabel="Retire server"
-                                                    form={retire.form({
-                                                        server: server.id,
-                                                        move: move.id,
-                                                    })}
-                                                    destructive
-                                                />
+                                                <ActionRow
+                                                    reason={
+                                                        retireBlockers.length >
+                                                        0
+                                                            ? 'Possible once nothing is left on it.'
+                                                            : null
+                                                    }
+                                                >
+                                                    <TypedConfirm
+                                                        trigger={`Retire ${server.name}`}
+                                                        title={`Retire ${server.name}?`}
+                                                        object={{
+                                                            name: server.name,
+                                                            detail: `to ${move.target.name}`,
+                                                        }}
+                                                        goesHeading="Ends"
+                                                        goes={[
+                                                            `${server.name}’s apps stop`,
+                                                            'Its key is revoked',
+                                                            'Traffic that still reaches it fails, so switch DNS first',
+                                                        ]}
+                                                        kept={[
+                                                            `Everything that moved keeps running on ${move.target.name}`,
+                                                            `${move.target.name} takes over its roles and labels`,
+                                                            'Its disk isn’t touched',
+                                                        ]}
+                                                        description={null}
+                                                        expected={server.name}
+                                                        confirmLabel="Retire server"
+                                                        form={retire.form({
+                                                            server: server.id,
+                                                            move: move.id,
+                                                        })}
+                                                        disabled={
+                                                            retireBlockers.length >
+                                                            0
+                                                        }
+                                                        destructive
+                                                    />
+                                                </ActionRow>
                                             )}
                                         </div>
                                     </div>
@@ -339,20 +379,31 @@ export default function MoveServer({
                                         </div>
                                     )}
                                     <div className="flex flex-col gap-4 sm:flex-row sm:items-center">
-                                        <p className="flex min-w-0 flex-1 flex-wrap items-center gap-2 type-small text-muted-foreground">
-                                            <span>{server.name}</span>
-                                            <ArrowRight
-                                                aria-hidden="true"
-                                                className="size-3.5"
-                                            />
-                                            <span>{plan.target.name}</span>
-                                            <MetaDivider />
-                                            <span>
-                                                {plan.downtimeSeconds === 0
-                                                    ? 'No downtime'
-                                                    : `Downtime ${formatEstimate(plan.downtimeSeconds)}`}
-                                            </span>
-                                        </p>
+                                        <div className="flex min-w-0 flex-1 flex-col gap-1">
+                                            <p className="flex min-w-0 flex-wrap items-center gap-2 type-small text-muted-foreground">
+                                                <span>{server.name}</span>
+                                                <ArrowRight
+                                                    aria-hidden="true"
+                                                    className="size-3.5"
+                                                />
+                                                <span>{plan.target.name}</span>
+                                                <MetaDivider />
+                                                <span>
+                                                    {plan.downtimeSeconds === 0
+                                                        ? 'No downtime'
+                                                        : `Downtime ${formatEstimate(plan.downtimeSeconds)}`}
+                                                </span>
+                                            </p>
+                                            {plan.blockers.length > 0 && (
+                                                <p className="type-small">
+                                                    Fix{' '}
+                                                    {plan.blockers.length === 1
+                                                        ? 'the blocker'
+                                                        : 'the blockers'}{' '}
+                                                    above to start.
+                                                </p>
+                                            )}
+                                        </div>
                                         <TypedConfirm
                                             trigger="Start the move"
                                             title={`Move ${server.name} to ${plan.target.name}?`}

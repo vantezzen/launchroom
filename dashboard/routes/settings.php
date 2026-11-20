@@ -133,6 +133,9 @@ Route::middleware(['auth', 'verified'])->group(function (): void {
     Route::post('settings/move/items/{item}/retry', [ControlPlaneMoveController::class, 'retry'])
         ->middleware('throttle:20,1')
         ->name('move.retry');
+    Route::post('settings/move/items/{item}/stop', [ControlPlaneMoveController::class, 'stop'])
+        ->middleware('throttle:20,1')
+        ->name('move.stop');
     Route::post('settings/move/hand-over', [ControlPlaneMoveController::class, 'handover'])
         ->middleware('throttle:6,1')
         ->name('move.handover');

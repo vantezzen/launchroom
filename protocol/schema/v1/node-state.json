@@ -443,7 +443,7 @@
           "oneOf": [
             {
               "$ref": "#/$defs/Sealed",
-              "description": "Trace is the edge's request trace key (docs/23 §4): a sealed\nIngressSecret (purpose \"trace\") with \"key\" (32 random bytes, standard\nbase64) and \"keyId\" (decimal 1–4294967295). The edge encrypts the\nLaunchroom-Trace header of every response with it. Omitted: no trace\nheader (daemon feature requestTrace)."
+              "description": "Trace is the edge's request trace key (docs/23 §4): a sealed\nIngressSecret (purpose \"trace\") with \"key\" (32 random bytes, standard\nbase64) and \"keyId\" (decimal 1–4294967295). The edge encrypts the\nX-Launchroom-Ray header of every response with it. Omitted: no trace\nheader (daemon feature requestTrace)."
             },
             {
               "type": "null"

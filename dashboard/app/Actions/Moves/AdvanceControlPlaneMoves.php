@@ -31,7 +31,7 @@ final readonly class AdvanceControlPlaneMoves
     /** How long the new machine may take to use its join token before the page says so. */
     public const int JOINING_PATIENCE_SECONDS = 300;
 
-    public const string STALLED = 'The new server hasn’t used its join token for 5 minutes. If its terminal says it joined, it was already connected to this dashboard: run the move command there again, and the move continues with that server. Otherwise check the terminal for errors, or cancel the move.';
+    public const string STALLED = 'The new server hasn’t used its join token for 5 minutes. If its terminal says it joined, it was already connected to this dashboard: the continue command below picks the move up with that server. Otherwise check its terminal for errors, or cancel the move.';
 
     public function __construct(
         private ApproveServer $approve,

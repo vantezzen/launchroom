@@ -186,6 +186,7 @@ enum AuditAction: string
     case ServerMoveStarted = 'server.move_started';
     case ServerMoveItemFinished = 'server.move_item_finished';
     case ServerMoveItemRetried = 'server.move_item_retried';
+    case ServerMoveItemStopped = 'server.move_item_stopped';
     case ServerMoveCancelled = 'server.move_cancelled';
     case ServerMoveCompleted = 'server.move_completed';
     case ControlPlaneMoveStarted = 'instance.control_plane_move_started';

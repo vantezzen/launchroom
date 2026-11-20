@@ -70,7 +70,7 @@ const base: RequestTrace = {
     dashboard: false,
     endsAt: 'service',
     requestClass: 'success',
-    summary: 'The app answered with 200.',
+    summary: 'web answered with 200.',
     logsHref: `/p/${P}/${E}/logs?service=web&q=3f2b9c1e-6a4d-4e8f-9b0a-7c5d2e1f8a6b`,
     firewallHref: `/p/${P}/${E}/s/${S}/settings/firewall`,
     allow: null,
@@ -149,8 +149,7 @@ export const TRACE_FIXTURES = {
                 },
             ],
         },
-        summary:
-            'The app answered with 200. The firewall would have blocked it.',
+        summary: 'web answered with 200. The firewall would have blocked it.',
     },
 
     /** Connection refused after three attempts. */
@@ -209,7 +208,7 @@ export const TRACE_FIXTURES = {
         upstreamServer: null,
         endsAt: 'edge',
         requestClass: 'serverError',
-        summary: 'The service is stopped, so the edge answered 503.',
+        summary: 'web is stopped, so the edge answered with 503.',
     },
 
     /** No domain on the edge matched the host. */
@@ -249,6 +248,48 @@ export const TRACE_FIXTURES = {
         summary: 'The edge redirected this request.',
     },
 
+    /** Sign-in protection refused the request before the app saw it. */
+    accessRefused: {
+        ...base,
+        path: '/admin',
+        status: 401,
+        origin: 'access_refused',
+        edgeTimeUs: 600,
+        upstreamTimeUs: null,
+        attempts: null,
+        firewall: null,
+        upstreamServer: null,
+        endsAt: 'edge',
+        requestClass: 'clientError',
+        summary: 'Sign-in protection refused this request.',
+    },
+
+    /** The app answered, the firewall refused its response on the way back. */
+    responseBlocked: {
+        ...base,
+        path: '/api/export',
+        status: 403,
+        upstreamStatus: 200,
+        origin: 'firewall',
+        edgeTimeUs: 31_400,
+        upstreamTimeUs: 29_800,
+        firewall: {
+            mode: 'block',
+            outcome: 'blocked',
+            score: 5,
+            rules: [
+                {
+                    id: 951220,
+                    message: 'MSSQL SQL Information Leakage',
+                    category: 'sqli',
+                },
+            ],
+        },
+        endsAt: 'firewall',
+        requestClass: 'blocked',
+        summary: 'The firewall blocked web’s response. 1 rule matched.',
+    },
+
     /** The dashboard's own route. */
     dashboard: {
         ...base,
@@ -261,6 +302,7 @@ export const TRACE_FIXTURES = {
         host: 'launchroom.example.com',
         service: null,
         dashboard: true,
+        summary: 'The dashboard answered with 200.',
         logsHref: null,
         firewallHref: null,
     },

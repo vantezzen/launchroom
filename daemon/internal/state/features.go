@@ -103,7 +103,7 @@ const (
 
 // FeatureRequestTrace announces NodeState.ingress.trace, RouteSpec.service
 // and RouteSpec.upstreams[].server: the edge writes an encrypted
-// Launchroom-Trace header on every response (docs/23). Announced only while
+// X-Launchroom-Ray header on every response (docs/23). Announced only while
 // the running Caddy image carries the trace module (image label
 // io.vantezzen.launchroom.trace=1).
 const FeatureRequestTrace DaemonFeature = "requestTrace"

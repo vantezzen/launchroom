@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Data\Moves;
 
+use App\Data\Servers\DeviceData;
 use App\Models\Server;
 use Spatie\LaravelData\Data;
 
@@ -18,10 +19,11 @@ final class CutoverMachineData extends Data
     public function __construct(
         public string $name,
         public array $addresses,
+        public ?DeviceData $device = null,
     ) {}
 
     public static function fromServer(Server $server): self
     {
-        return new self($server->name, array_values(array_filter([$server->public_ipv4, $server->public_ipv6])));
+        return new self($server->name, array_values(array_filter([$server->public_ipv4, $server->public_ipv6])), DeviceData::fromServer($server));
     }
 }

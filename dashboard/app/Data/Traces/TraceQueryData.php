@@ -7,7 +7,7 @@ namespace App\Data\Traces;
 use Spatie\LaravelData\Data;
 
 /**
- * `GET /trace?t=`: the pasted `Launchroom-Trace` value or header line
+ * `GET /trace?t=`: the pasted `X-Launchroom-Ray` value or header line
  * (docs/23 §6). Length and shape are App\Support\Traces\TraceCodec's to
  * judge, so every unreadable value gets the same answer.
  */
