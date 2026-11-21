@@ -67,7 +67,7 @@ final readonly class ControlPlaneBackups extends AlertCondition
 
         if ($latest?->status === BackupRunStatus::Failed) {
             $title = 'launchroom’s own backup failed';
-            $summary = 'The newest backup of the dashboard’s database and keys did not finish. Without one, a broken main server can’t be restored. The error is on the Backups page.';
+            $summary = 'The newest backup of the dashboard’s database and keys did not finish. Without one, a broken main server can’t be restored. The error is in Settings → Backups.';
         } elseif ($overdue) {
             $title = 'launchroom’s own backup is overdue';
             $summary = "No backup of the dashboard’s database and keys succeeded in the last {$hours} hours.";

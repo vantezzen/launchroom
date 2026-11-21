@@ -1,6 +1,7 @@
 import { aiAgents as editAiAgents } from '@/routes';
 import { index as editApiTokens } from '@/routes/api-tokens';
 import { edit as editAppearance } from '@/routes/appearance';
+import { index as editBackups } from '@/routes/backups';
 import { edit as editDashboardDomain } from '@/routes/dashboard-domain';
 import { edit as editDockerfileGeneration } from '@/routes/dockerfile-generation';
 import { edit as editGit } from '@/routes/git';
@@ -67,6 +68,13 @@ export const SETTINGS_PAGES: SettingsPageEntry[] = [
         group: 'Team',
         url: () => editTeam().url,
         keywords: 'team invite people roles',
+    },
+    {
+        label: 'Backups',
+        group: 'Team',
+        url: () => editBackups().url,
+        keywords:
+            'backup restore snapshots storage bucket s3 r2 recovery kit passphrase',
     },
     {
         label: 'Robot tokens',

@@ -532,6 +532,7 @@ export function StorageSection({
     return (
         <Section
             id="storage"
+            data-setting="storage"
             title="Where backups go"
             description="Backups are encrypted on your servers before they’re uploaded."
             actions={

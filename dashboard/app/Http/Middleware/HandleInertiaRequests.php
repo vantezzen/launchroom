@@ -62,6 +62,7 @@ final class HandleInertiaRequests extends Middleware
             'sidebarOpen' => ! $request->hasCookie('sidebar_state') || $request->cookie('sidebar_state') === 'true',
             'teams' => fn (): ?TeamContextData => $this->teamContext($user, $teams()),
             'version' => fn (): ?string => $signedIn ? config()->string('launchroom.version') : null,
+            'releasesUrl' => fn (): ?string => $signedIn ? $this->releasesUrl() : null,
             'recoveryKit' => fn (): ?RecoveryKitStatusData => RecoveryKitStatusData::forUser($user),
             'recoveryMode' => fn (): bool => $signedIn && $user->is_instance_owner && RecoveryMode::active(),
             'instanceMove' => fn (): ?InstanceMoveData => $signedIn ? InstanceMoveData::for($user) : null,
@@ -114,5 +115,18 @@ final class HandleInertiaRequests extends Middleware
             canAddServers: $currentTeam instanceof Team && $gate->allows('create', [Server::class, $currentTeam]),
             canInvite: $currentTeam instanceof Team && $gate->allows('create', [TeamInvitation::class, $currentTeam]),
         );
+    }
+
+    /**
+     * The account menu's "Release notes": the releases of the repository
+     * Settings → Updates checks, when that is an owner/name pair.
+     */
+    private function releasesUrl(): ?string
+    {
+        $repository = config()->string('launchroom.updates.repository');
+
+        return preg_match('#^[A-Za-z0-9_.-]{1,100}/[A-Za-z0-9_.-]{1,100}$#D', $repository) === 1
+            ? "https://github.com/{$repository}/releases"
+            : null;
     }
 }

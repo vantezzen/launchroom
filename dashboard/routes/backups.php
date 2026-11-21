@@ -18,14 +18,14 @@ use Illuminate\Support\Facades\Route;
 */
 
 Route::middleware(['web', 'auth', 'verified'])->group(function (): void {
-    // The Backups page (team sidebar).
-    Route::get('backups', [BackupsController::class, 'index'])->name('backups.index');
-    // Settings → Backups moved to the Backups page. GET only (Route::redirect
-    // would register every verb).
-    Route::get('settings/backups', RedirectController::class)
-        ->defaults('destination', '/backups')
-        ->defaults('status', 302)
-        ->name('backups.settings');
+    // Settings → Backups (team settings, D114).
+    Route::get('settings/backups', [BackupsController::class, 'index'])->name('backups.index');
+    // The Backups page was a sidebar page (D95); old links, alerts and emails
+    // keep working. GET only (Route::redirect would register every verb).
+    Route::get('backups', RedirectController::class)
+        ->defaults('destination', '/settings/backups')
+        ->defaults('status', 301)
+        ->name('backups.moved');
     Route::post('backups/everything', [BackupsController::class, 'everything'])
         ->middleware('throttle:6,1')
         ->name('backups.everything');

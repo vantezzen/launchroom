@@ -365,7 +365,7 @@ final readonly class ControlPlaneHealth
         $ago = $last instanceof CarbonInterface ? $this->ago($last, $now) : null;
 
         $backup = match ($status->status) {
-            BackupHealth::Unconfigured => $this->check('backup', 'Control-plane backup', SystemCheckStatus::Warn, 'Off: without a backup destination, losing this server loses every project’s settings. Set it up on the Backups page.'),
+            BackupHealth::Unconfigured => $this->check('backup', 'Control-plane backup', SystemCheckStatus::Warn, 'Off: without a backup destination, losing this server loses every project’s settings. Set it up in Settings → Backups.'),
             BackupHealth::Failing => $this->check('backup', 'Control-plane backup', SystemCheckStatus::Fail, 'The latest backup failed'.($ago === null ? '.' : ", the last good one is {$ago} old."), $status->lastError === null ? [] : [mb_substr($status->lastError, 0, 200)]),
             BackupHealth::Stale => $this->check('backup', 'Control-plane backup', SystemCheckStatus::Warn, 'No backup succeeded for '.($ago ?? 'a long time').'.'),
             BackupHealth::None => $this->check('backup', 'Control-plane backup', SystemCheckStatus::Ok, 'Scheduled; no backup has run yet.'),
@@ -378,7 +378,7 @@ final readonly class ControlPlaneHealth
         }
 
         return [$backup, $settings->recovery_kit_confirmed_at === null
-            ? $this->check('recovery-kit', 'Recovery kit', SystemCheckStatus::Warn, 'Not saved yet. Without it, a backup can’t be restored on a new server. Download it on the Backups page.')
+            ? $this->check('recovery-kit', 'Recovery kit', SystemCheckStatus::Warn, 'Not saved yet. Without it, a backup can’t be restored on a new server. Download it in Settings → Backups.')
             : $this->check('recovery-kit', 'Recovery kit', SystemCheckStatus::Ok, 'Saved.')];
     }
 

@@ -7,6 +7,9 @@ namespace App\Queries;
 use App\Data\AppUpdates\UpdateCandidateData;
 use App\Data\Attention\AttentionItemData;
 use App\Data\Canvas\ProjectSummaryData;
+use App\Enums\Alerts\AlertRule;
+use App\Enums\Alerts\AlertSeverity;
+use App\Enums\Alerts\AlertStatus;
 use App\Enums\AppUpdates\UpdateCheckStatus;
 use App\Enums\DeploymentStatus;
 use App\Enums\EnvironmentKind;
@@ -16,6 +19,7 @@ use App\Enums\Permission;
 use App\Enums\Previews\PreviewStatus;
 use App\Enums\ServerStatus;
 use App\Enums\StatusTone;
+use App\Models\Alerts\Alert;
 use App\Models\AppUpdates\AppUpdateCheck;
 use App\Models\Deployment;
 use App\Models\Environment;
@@ -35,8 +39,10 @@ use Illuminate\Contracts\Database\Query\Builder;
  * the user right now, most urgent first, each with a link to the place that
  * fixes it. Failed services come from the project summaries (no second
  * status pass); then servers that are down, waiting for approval or almost
- * full, known problems live apps log (G12), open security findings that need action, apps more than a
- * year behind (D106), staged changes waiting to
+ * full, known problems live apps log (G12), backups that failed or are
+ * overdue (open backup alerts; Backups sits in Settings since D114), open
+ * security findings that need action, apps more than a year behind (D106),
+ * staged changes waiting to
  * deploy, paused auto-deploy and fork pull requests waiting for approval.
  * Healthy, deploying and idle things never show up here.
  */
@@ -61,6 +67,7 @@ final readonly class TeamAttention
             ...$this->services($summaries),
             ...$this->servers($team),
             ...$this->runtimeFindings($team),
+            ...$this->backups($team),
             ...$this->security($team),
             ...$this->outdated($team),
             ...$this->environments($team),
@@ -218,6 +225,46 @@ final readonly class TeamAttention
         }
 
         return $items;
+    }
+
+    /**
+     * Backups that failed, failed their check, are overdue or whose archive
+     * lags: the open backup alerts (docs/14 §10.6), launchroom's own
+     * included. Each links to where it's fixed (the service's Backups
+     * settings, or Settings → Backups).
+     *
+     * @return list<AttentionItemData>
+     */
+    private function backups(Team $team): array
+    {
+        return array_values(Alert::query()
+            ->where('team_id', $team->id)
+            ->where('rule', AlertRule::BackupFailed->value)
+            ->where('status', AlertStatus::Firing->value)
+            ->with(['environment:id,public_id,name,kind,project_id', 'environment.project:id,public_id,name'])
+            ->latest('opened_at')
+            ->limit(10)
+            ->get()
+            ->map(static function (Alert $alert): AttentionItemData {
+                $environment = $alert->environment;
+
+                return new AttentionItemData(
+                    key: "backup:{$alert->public_id}",
+                    kind: 'backup',
+                    state: $alert->severity === AlertSeverity::Critical ? StatusTone::Failed : StatusTone::Warning,
+                    title: $alert->title,
+                    context: match (true) {
+                        ! $environment instanceof Environment => null,
+                        $environment->kind === EnvironmentKind::Production => $environment->project->name,
+                        default => "{$environment->project->name}, {$environment->name}",
+                    },
+                    detail: null,
+                    at: $alert->opened_at,
+                    href: $alert->href ?? route('backups.index', absolute: false),
+                    action: 'See why',
+                );
+            })
+            ->all());
     }
 
     /**

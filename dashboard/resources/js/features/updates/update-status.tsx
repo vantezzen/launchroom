@@ -676,12 +676,12 @@ export function UpdateAttention({
           : backupFailed
             ? [
                   <>
-                      Check the backup storage on the{' '}
+                      Check the backup storage in{' '}
                       <Link
                           href={backupSettings()}
                           className="text-signal underline-offset-4 hover:underline"
                       >
-                          Backups page
+                          Settings → Backups
                       </Link>{' '}
                       (a test backup shows the problem), then try again.
                   </>,
@@ -710,7 +710,7 @@ export function UpdateAttention({
                                     href={backupSettings()}
                                     className="text-signal underline-offset-4 hover:underline"
                                 >
-                                    Backups page
+                                    Settings → Backups
                                 </Link>
                                 )
                             </>

@@ -2,7 +2,11 @@
 
 declare(strict_types=1);
 
+use App\Actions\Alerts\RaiseAlert;
+use App\Data\Alerts\AlertSignal;
 use App\Data\Canvas\NodeStatusData;
+use App\Enums\Alerts\AlertRule;
+use App\Enums\Alerts\AlertSeverity;
 use App\Enums\DeploymentStatus;
 use App\Enums\NodeStatusReason;
 use App\Enums\ServerStatus;
@@ -111,4 +115,34 @@ test('servers that are down, staged changes and paused auto-deploy need you; oth
         ->and(json_encode($items->all()))->not->toContain($other->server->public_id)
         // Never variable values.
         ->and(json_encode($items->all()))->not->toContain('debug');
+});
+
+test('failed and overdue backups need you, launchroom\'s own included, and link to where they are fixed', function (): void {
+    $world = DeploymentUi::make();
+    $other = DeploymentUi::make();
+    $raise = resolve(RaiseAlert::class);
+    $href = '/p/'.$world->project->public_id.'/'.$world->production->public_id.'/s/'.$world->postgres->public_id.'/settings/backups';
+    $raise->handle(new AlertSignal(team: $world->team, rule: AlertRule::BackupFailed, subject: 'backup_overdue:'.$world->postgres->public_id,
+        title: 'postgres hasn’t been backed up for 30 hours', summary: 'Overdue.', severity: AlertSeverity::Warning,
+        href: $href, project: $world->project, environment: $world->production));
+    $raise->handle(new AlertSignal(team: $world->team, rule: AlertRule::BackupFailed, subject: 'control_plane:backup',
+        title: 'launchroom’s own backup failed', summary: 'Failed.', severity: AlertSeverity::Critical, href: route('backups.index', absolute: false)));
+    $raise->handle(new AlertSignal(team: $other->team, rule: AlertRule::BackupFailed, subject: 'control_plane:backup',
+        title: 'Another team’s backup failed', summary: 'Failed.'));
+    // Other rules have their own rows (or none).
+    $raise->handle(new AlertSignal(team: $world->team, rule: AlertRule::CpuHigh, subject: 'server:'.$world->server->public_id,
+        title: 'CPU is high', summary: 'High.'));
+
+    $items = collect(resolve(TeamAttention::class)->for($world->team, $world->member(TeamRole::Viewer), resolve(ProjectSummaries::class)->for($world->team)))
+        ->where('kind', 'backup')->values();
+
+    expect($items)->toHaveCount(2)
+        ->and($items[0]->title)->toBe('launchroom’s own backup failed')
+        ->and($items[0]->state)->toBe(StatusTone::Failed)
+        ->and($items[0]->context)->toBeNull()
+        ->and($items[0]->href)->toBe('/settings/backups')
+        ->and($items[1]->state)->toBe(StatusTone::Warning)
+        ->and($items[1]->context)->toBe('shop')
+        ->and($items[1]->href)->toBe($href)
+        ->and($items[1]->action)->toBe('See why');
 });

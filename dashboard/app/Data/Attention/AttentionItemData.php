@@ -17,7 +17,7 @@ final class AttentionItemData extends Data
     public function __construct(
         /** Stable across reloads (a React key). */
         public string $key,
-        /** service | server | staged | security | update | paused | preview */
+        /** service | server | backup | staged | security | update | paused | preview */
         public string $kind,
         public StatusTone $state,
         /** "api failed to deploy". */

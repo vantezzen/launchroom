@@ -1,6 +1,5 @@
 import { router } from '@inertiajs/react';
 import { useState } from 'react';
-import { PageHeader } from '@/components/patterns/page';
 import { StatusIcon } from '@/components/status';
 import type { StatusState } from '@/components/status';
 import { Button } from '@/components/ui/button';
@@ -22,7 +21,11 @@ const tones: Record<BackupsSummary['state'], StatusState | null> = {
  * "Back up everything now": while a batch runs the button is its progress
  * ("Backing up 3 of 8"), disabled; a blocked one keeps its reason under it.
  */
-function EverythingButton({ everything }: { everything: BackupEverything }) {
+export function EverythingButton({
+    everything,
+}: {
+    everything: BackupEverything;
+}) {
     const [starting, setStarting] = useState(false);
     const { action, batch } = everything;
 
@@ -76,95 +79,82 @@ function EverythingButton({ everything }: { everything: BackupEverything }) {
 }
 
 /**
- * The page header with the state as its headline (docs/design/flows.md
- * §14): one sentence with an icon, the items that need you as links, and
- * the run-all action. A finished batch says how it went for an hour.
+ * The state as the page's headline (docs/design/flows.md §14): one
+ * sentence with an icon and the items that need you as links. Settings →
+ * Backups shows it as its description; nothing before storage is connected.
  */
-export function BackupsHero({
-    summary,
-    everything,
-}: {
-    summary: BackupsSummary;
-    everything: BackupEverything;
-}) {
+export function BackupsHeadline({ summary }: { summary: BackupsSummary }) {
     const tone = tones[summary.state];
+
+    if (tone === null) {
+        return null;
+    }
+
+    return (
+        <span
+            className="flex items-start gap-2 text-foreground"
+            aria-live="polite"
+        >
+            <StatusIcon state={tone} className="mt-[3px]" />
+            <span>
+                {heroTitle(summary)}
+                {summary.state === 'attention' &&
+                    summary.attention.length > 1 && (
+                        <span className="text-muted-foreground">
+                            {' '}
+                            {summary.attention.map((item, index) => (
+                                <span key={item.id}>
+                                    {index > 0 &&
+                                        (index === summary.attention.length - 1
+                                            ? ' and '
+                                            : ', ')}
+                                    <a
+                                        href={`#backup-${item.id}`}
+                                        className="text-signal underline-offset-4 hover:underline"
+                                    >
+                                        {item.name}
+                                    </a>
+                                </span>
+                            ))}
+                            .
+                        </span>
+                    )}
+            </span>
+        </span>
+    );
+}
+
+/** How the last "Back up everything now" went, for an hour after it. */
+export function BatchOutcome({ everything }: { everything: BackupEverything }) {
     const batch = everything.batch;
     const outcome = batch !== null ? batchOutcome(batch) : null;
 
-    return (
-        <div className="flex flex-col gap-4">
-            <PageHeader
-                title="Backups"
-                actions={<EverythingButton everything={everything} />}
-            >
-                {tone !== null && (
-                    <p
-                        className="flex items-start gap-2 type-body"
-                        aria-live="polite"
-                    >
-                        <StatusIcon state={tone} className="mt-[3px]" />
-                        <span>
-                            {heroTitle(summary)}
-                            {summary.state === 'attention' &&
-                                summary.attention.length > 1 && (
-                                    <span className="text-muted-foreground">
-                                        {' '}
-                                        {summary.attention.map(
-                                            (item, index) => (
-                                                <span key={item.id}>
-                                                    {index > 0 &&
-                                                        (index ===
-                                                        summary.attention
-                                                            .length -
-                                                            1
-                                                            ? ' and '
-                                                            : ', ')}
-                                                    <a
-                                                        href={`#backup-${item.id}`}
-                                                        className="text-signal underline-offset-4 hover:underline"
-                                                    >
-                                                        {item.name}
-                                                    </a>
-                                                </span>
-                                            ),
-                                        )}
-                                        .
-                                    </span>
-                                )}
-                        </span>
-                    </p>
-                )}
-            </PageHeader>
+    if (batch === null || (outcome === null && batch.refused.length === 0)) {
+        return null;
+    }
 
-            {batch !== null &&
-                (outcome !== null || batch.refused.length > 0) && (
-                    <div className="flex flex-col gap-1 type-small text-muted-foreground">
-                        {outcome !== null && (
-                            <p className="flex items-center gap-2">
-                                <StatusIcon
-                                    state={
-                                        batch.failed > 0 ? 'failed' : 'active'
-                                    }
-                                />
-                                <span className="text-foreground">
-                                    {outcome}
-                                </span>
-                            </p>
-                        )}
-                        {batch.refused.length > 0 && (
-                            <p>
-                                Not started:{' '}
-                                {listNames(
-                                    batch.refused.map(
-                                        (item) =>
-                                            `${item.name} (${item.message.replace(/\.$/, '')})`,
-                                    ),
-                                )}
-                                .
-                            </p>
-                        )}
-                    </div>
-                )}
+    return (
+        <div className="flex flex-col gap-1 type-small text-muted-foreground">
+            {outcome !== null && (
+                <p className="flex items-center gap-2">
+                    <StatusIcon
+                        state={batch.failed > 0 ? 'failed' : 'active'}
+                    />
+                    <span className="text-foreground">{outcome}</span>
+                </p>
+            )}
+            {batch.refused.length > 0 && (
+                <p>
+                    Not started:{' '}
+                    {listNames(
+                        batch.refused.map(
+                            (item) =>
+                                `${item.name} (${item.message.replace(/\.$/, '')})`,
+                        ),
+                    )}
+                    .
+                </p>
+            )}
         </div>
     );
 }

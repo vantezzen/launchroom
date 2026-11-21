@@ -164,7 +164,7 @@ final readonly class StartBackupRun
 
     private function noDestination(): Refusal
     {
-        return Refusal::on('destination', 'Connect backup storage on the Backups page first.');
+        return Refusal::on('destination', 'Connect backup storage in Settings → Backups first.');
     }
 
     private function inFlight(ServiceInstance $instance, ?Volume $volume): ?BackupRun

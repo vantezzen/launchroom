@@ -57,7 +57,7 @@ function protection(backup: App.Data.Backups.ServiceBackupStatusData | null): {
         return {
             icon: <ShieldQuestion className="size-4" />,
             title: 'Not backed up yet',
-            detail: 'Connect storage on the Backups page.',
+            detail: 'Connect storage in Settings → Backups.',
             tone: 'text-muted-foreground',
         };
     }

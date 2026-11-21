@@ -129,12 +129,12 @@ export function MoveChecklist({
                         )}
                     {checklist.needsRecoveryKit && (
                         <p className="type-small">
-                            Download a new recovery kit on the{' '}
+                            Download a new recovery kit in{' '}
                             <Link
                                 href={backupSettings()}
                                 className="underline underline-offset-4"
                             >
-                                Backups page
+                                Settings → Backups
                             </Link>
                             .
                         </p>

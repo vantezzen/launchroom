@@ -306,7 +306,7 @@ test('the Backups page lists storage and the database it protects', function ():
     $this->actingAs($owner)->get(route('backups.index'))
         ->assertOk()
         ->assertInertia(fn ($page) => $page
-            ->component('backups/index')
+            ->component('settings/backups')
             ->has('page.storage.destinations', 1)
             ->has('page.groups', 2)
             ->where('page.groups.1.items.0.serviceInstanceId', $instance->public_id)
@@ -365,7 +365,7 @@ test('the Backups page shows a 30-day strip per item and what each storage holds
     $this->actingAs($owner)->get(route('backups.index'))
         ->assertOk()
         ->assertInertia(fn ($page) => $page
-            ->component('backups/index')
+            ->component('settings/backups')
             ->where('page.groups.1.items.0.schedule.id', $schedule->public_id)
             ->has('page.groups.1.items.0.days', 30)
             ->where('page.groups.1.items.0.days.29.status', 'ok')

@@ -50,7 +50,7 @@ final readonly class UpdatePointInTimeRecovery
 
             if (! $archive instanceof WalArchive) {
                 if (! $destination instanceof BackupDestination) {
-                    throw DomainRuleViolation::on('destination', 'Connect backup storage on the Backups page first.');
+                    throw DomainRuleViolation::on('destination', 'Connect backup storage in Settings → Backups first.');
                 }
 
                 $hash = crc32($instance->public_id.'|base');

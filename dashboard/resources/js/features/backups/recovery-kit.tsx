@@ -272,6 +272,7 @@ export function RecoveryKitCard({ kit }: { kit: RecoveryKit }) {
     return (
         <Section
             id="recovery-kit"
+            data-setting="recovery-kit"
             title="Recovery kit"
             description="With it and your passphrase, launchroom comes back on a new server."
             className="scroll-mt-24"

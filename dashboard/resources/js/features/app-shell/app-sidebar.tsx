@@ -1,8 +1,8 @@
 import { Link, usePage } from '@inertiajs/react';
-import { BookOpen, Search } from 'lucide-react';
+import { Search } from 'lucide-react';
 import AppLogoIcon from '@/components/app-logo-icon';
 import { NavMain } from './nav-main';
-import { teamNavItems } from './nav-items';
+import { navGroup, teamNavItems } from './nav-items';
 import { NavUser } from './nav-user';
 import { TeamSwitcher } from './team-switcher';
 import {
@@ -18,7 +18,6 @@ import {
 import { openCommandPalette } from '@/features/command-palette/command-palette';
 import { ControlPlaneLoadNotice } from '@/features/servers/control-plane-load-notice';
 import { dashboard } from '@/routes';
-import { useDocsUrl } from '@/components/settings/settings-card';
 import { modShortcut } from '@/lib/platform';
 
 /**
@@ -26,7 +25,7 @@ import { modShortcut } from '@/lib/platform';
  */
 function SearchField() {
     return (
-        <SidebarGroup className="py-0">
+        <SidebarGroup className="py-0 pb-1">
             <SidebarMenu>
                 <SidebarMenuItem>
                     <SidebarMenuButton
@@ -67,8 +66,13 @@ function AppVersion() {
     );
 }
 
+/**
+ * The team sidebar (docs/08 §1, D114): the mark and team, Search and Get
+ * started, the daily pages, then a quiet group pinned to the bottom
+ * (Activity, Docs, Settings) with attention notices between it and the
+ * account, the way hosting dashboards keep "Action required" there.
+ */
 export function AppSidebar() {
-    const docsUrl = useDocsUrl();
     const props = usePage().props;
     const items = teamNavItems(props);
 
@@ -92,28 +96,24 @@ export function AppSidebar() {
             </SidebarHeader>
 
             <SidebarContent className="gap-3">
-                <SearchField />
-                <NavMain items={items} />
+                <div className="flex flex-col gap-1">
+                    <SearchField />
+                    <NavMain items={navGroup(items, 'start')} label="Setup" />
+                </div>
+                <NavMain items={navGroup(items, 'main')} label="Pages" />
             </SidebarContent>
 
-            <SidebarFooter className="gap-1">
+            <SidebarFooter className="gap-2">
+                <NavMain
+                    items={navGroup(items, 'bottom')}
+                    label="More"
+                    className="px-0"
+                />
                 <ControlPlaneLoadNotice />
-                <SidebarMenu>
-                    <SidebarMenuItem>
-                        <SidebarMenuButton asChild tooltip="Docs">
-                            <a
-                                href={docsUrl('')}
-                                target="_blank"
-                                rel="noreferrer"
-                            >
-                                <BookOpen aria-hidden="true" />
-                                <span>Docs</span>
-                            </a>
-                        </SidebarMenuButton>
-                    </SidebarMenuItem>
-                </SidebarMenu>
-                <NavUser />
-                <AppVersion />
+                <div className="flex flex-col gap-1">
+                    <NavUser />
+                    <AppVersion />
+                </div>
             </SidebarFooter>
         </Sidebar>
     );

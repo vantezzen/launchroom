@@ -95,7 +95,7 @@ final readonly class StartControlPlaneUpdate
             }
 
             if (! $destination instanceof BackupDestination && ! $input->skipBackup) {
-                throw DomainRuleViolation::on('skipBackup', 'launchroom itself isn’t backed up yet. Set it up on the Backups page, or confirm updating without an off-site backup.');
+                throw DomainRuleViolation::on('skipBackup', 'launchroom itself isn’t backed up yet. Set it up in Settings → Backups, or confirm updating without an off-site backup.');
             }
 
             $backup = $destination instanceof BackupDestination && ! $automatic && $input->backupRunId !== null

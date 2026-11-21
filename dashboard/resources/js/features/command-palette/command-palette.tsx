@@ -79,10 +79,16 @@ type Palette = App.Data.CommandPalette.PaletteData;
 type Item = App.Data.CommandPalette.PaletteItemData;
 
 const OPEN_EVENT = 'launchroom:command-palette';
+const SHORTCUTS_EVENT = 'launchroom:shortcuts';
 
 /** Opens ⌘K from anywhere (e.g. a top-bar button). */
 export function openCommandPalette(search = '') {
     window.dispatchEvent(new CustomEvent(OPEN_EVENT, { detail: search }));
+}
+
+/** Opens the keyboard shortcuts sheet (`?`) from anywhere (the account menu). */
+export function openShortcuts() {
+    window.dispatchEvent(new CustomEvent(SHORTCUTS_EVENT));
 }
 
 /**
@@ -236,9 +242,15 @@ export function CommandPalette() {
             setOpen(true);
         };
 
-        window.addEventListener(OPEN_EVENT, onOpen);
+        const onShortcuts = () => setSheet(true);
 
-        return () => window.removeEventListener(OPEN_EVENT, onOpen);
+        window.addEventListener(OPEN_EVENT, onOpen);
+        window.addEventListener(SHORTCUTS_EVENT, onShortcuts);
+
+        return () => {
+            window.removeEventListener(OPEN_EVENT, onOpen);
+            window.removeEventListener(SHORTCUTS_EVENT, onShortcuts);
+        };
     }, []);
 
     useEffect(() => recordVisit(page), [page]);
@@ -1028,14 +1040,38 @@ export function CommandPalette() {
 
                             <CommandGroup heading="Navigate">
                                 {navItems.map((item) =>
-                                    navigateRow(
-                                        `go ${item.title} ${item.keywords}`,
-                                        item.icon ? (
-                                            <item.icon aria-hidden="true" />
-                                        ) : null,
-                                        item.title,
-                                        hrefOf(item.href),
-                                        item.shortcut,
+                                    item.external ? (
+                                        <CommandItem
+                                            key={`go ${item.title}`}
+                                            value={`go ${item.title} ${item.keywords}`}
+                                            onSelect={() => {
+                                                setOpen(false);
+                                                window.open(
+                                                    hrefOf(item.href),
+                                                    '_blank',
+                                                    'noopener',
+                                                );
+                                            }}
+                                        >
+                                            {item.icon && (
+                                                <item.icon aria-hidden="true" />
+                                            )}
+                                            {item.title}
+                                            <ArrowUpRight
+                                                aria-hidden="true"
+                                                className="ml-auto text-muted-foreground"
+                                            />
+                                        </CommandItem>
+                                    ) : (
+                                        navigateRow(
+                                            `go ${item.title} ${item.keywords}`,
+                                            item.icon ? (
+                                                <item.icon aria-hidden="true" />
+                                            ) : null,
+                                            item.title,
+                                            hrefOf(item.href),
+                                            item.shortcut,
+                                        )
                                     ),
                                 )}
                                 {!searching &&

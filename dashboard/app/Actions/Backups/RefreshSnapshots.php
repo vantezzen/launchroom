@@ -35,7 +35,7 @@ final readonly class RefreshSnapshots
         $destination = BackupDestination::forService($instance);
 
         if (! $destination instanceof BackupDestination) {
-            throw DomainRuleViolation::on('destination', 'Connect backup storage on the Backups page first.');
+            throw DomainRuleViolation::on('destination', 'Connect backup storage in Settings → Backups first.');
         }
 
         $server = DatabaseWorkloads::servingPlacement($instance)->server

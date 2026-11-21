@@ -2,13 +2,18 @@ import { useCallback, useEffect, useState } from 'react';
 import { ChannelEvents } from '@/components/channel-events';
 import { Logo } from '@/components/logo';
 import { Section } from '@/components/patterns/section';
+import { SettingsPage } from '@/components/settings/settings-page';
 import { Button } from '@/components/ui/button';
 import { useLiveProps } from '@/hooks/use-live-props';
 import { listNames, plural } from '@/lib/format';
 import { liveReload } from '@/lib/live-reload';
 import { channelName } from '@/lib/realtime';
 import { ActionReason, BackupsFixContext } from './action-reason';
-import { BackupsHero } from './backups-hero';
+import {
+    BackupsHeadline,
+    BatchOutcome,
+    EverythingButton,
+} from './backups-hero';
 import { BackupItemRow, ItemGroup } from './item-row';
 import { LaunchroomHistory } from './launchroom-history';
 import { NotBackedUp } from './not-backed-up';
@@ -61,8 +66,8 @@ function ConnectStorage({
 }
 
 /**
- * The Backups page (owner decision 1, docs/design/flows.md §14): the state
- * as a headline with Back up everything now, one row per thing that holds
+ * Settings → Backups (D114, docs/design/flows.md §14): the state as the
+ * page's description with Back up everything now, one row per thing that holds
  * data grouped by project, what isn't backed up and why, where backups go
  * and the recovery kit. It stays live: Reverb nudges, and polling while
  * something runs or a test is pending.
@@ -122,84 +127,97 @@ export function BackupsOverview({ page }: { page: BackupsPage }) {
                 onEvent={() => liveReload(['page'])}
             />
 
-            <BackupsHero summary={page.summary} everything={page.everything} />
-
-            {unconfigured ? (
-                <ConnectStorage
-                    page={page}
-                    onConnect={() => openSetup({ step: 'where' })}
-                />
-            ) : (
-                <Section
-                    title="What’s protected"
-                    description={plural(page.summary.total, 'item')}
-                >
-                    <div className="overflow-hidden rounded-xl border bg-card shadow-card">
-                        {page.groups.map((group) => (
-                            <ItemGroup
-                                key={group.key}
-                                title={
-                                    group.kind === 'launchroom'
-                                        ? null
-                                        : group.name
-                                }
-                                summary={groupSummary(group.items)}
-                            >
-                                {group.items.map((item) => (
-                                    <BackupItemRow
-                                        key={item.id}
-                                        item={item}
-                                        onShowHistory={
-                                            item.kind === 'control_plane' &&
-                                            launchroom?.isOwner
-                                                ? () => setHistory(true)
-                                                : undefined
-                                        }
-                                    />
-                                ))}
-                            </ItemGroup>
-                        ))}
-                    </div>
-                </Section>
-            )}
-
-            <NotBackedUp items={page.notBackedUp} />
-
-            <StorageSection
-                storage={page.storage}
-                onAdd={() => openSetup({ step: 'where' })}
-                onReconnect={(removed) =>
-                    openSetup({ step: 'reconnect', removed })
+            <SettingsPage
+                title="Backups"
+                description={
+                    unconfigured ? (
+                        'Copies of your databases and volumes, off your servers.'
+                    ) : (
+                        <BackupsHeadline summary={page.summary} />
+                    )
                 }
-            />
+                actions={<EverythingButton everything={page.everything} />}
+                className="gap-10"
+            >
+                <BatchOutcome everything={page.everything} />
 
-            {kit !== null &&
-                kit !== undefined &&
-                launchroom?.destination !== null && (
-                    <RecoveryKitCard kit={kit} />
+                {unconfigured ? (
+                    <ConnectStorage
+                        page={page}
+                        onConnect={() => openSetup({ step: 'where' })}
+                    />
+                ) : (
+                    <Section
+                        title="What’s protected"
+                        description={plural(page.summary.total, 'item')}
+                    >
+                        <div className="overflow-hidden rounded-xl border bg-card shadow-card">
+                            {page.groups.map((group) => (
+                                <ItemGroup
+                                    key={group.key}
+                                    title={
+                                        group.kind === 'launchroom'
+                                            ? null
+                                            : group.name
+                                    }
+                                    summary={groupSummary(group.items)}
+                                >
+                                    {group.items.map((item) => (
+                                        <BackupItemRow
+                                            key={item.id}
+                                            item={item}
+                                            onShowHistory={
+                                                item.kind === 'control_plane' &&
+                                                launchroom?.isOwner
+                                                    ? () => setHistory(true)
+                                                    : undefined
+                                            }
+                                        />
+                                    ))}
+                                </ItemGroup>
+                            ))}
+                        </div>
+                    </Section>
                 )}
 
-            {setup !== null && (
-                <SetupSheet
-                    key={setupKey}
-                    open
-                    onOpenChange={(open) => {
-                        if (!open) {
-                            setSetup(null);
-                        }
-                    }}
-                    start={setup}
-                    page={page}
-                />
-            )}
+                <NotBackedUp items={page.notBackedUp} />
 
-            {launchroom?.isOwner && (
-                <LaunchroomHistory
-                    runs={launchroom.runs}
-                    open={history}
-                    onOpenChange={setHistory}
+                <StorageSection
+                    storage={page.storage}
+                    onAdd={() => openSetup({ step: 'where' })}
+                    onReconnect={(removed) =>
+                        openSetup({ step: 'reconnect', removed })
+                    }
                 />
-            )}
+
+                {kit !== null &&
+                    kit !== undefined &&
+                    launchroom?.destination !== null && (
+                        <RecoveryKitCard kit={kit} />
+                    )}
+
+                {setup !== null && (
+                    <SetupSheet
+                        key={setupKey}
+                        open
+                        onOpenChange={(open) => {
+                            if (!open) {
+                                setSetup(null);
+                            }
+                        }}
+                        start={setup}
+                        page={page}
+                    />
+                )}
+
+                {launchroom?.isOwner && (
+                    <LaunchroomHistory
+                        runs={launchroom.runs}
+                        open={history}
+                        onOpenChange={setHistory}
+                    />
+                )}
+            </SettingsPage>
         </BackupsFixContext.Provider>
     );
 }

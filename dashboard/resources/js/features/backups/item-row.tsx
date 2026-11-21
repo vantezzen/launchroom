@@ -198,12 +198,12 @@ export function BackupItemRow({
     return (
         <li
             id={`backup-${item.id}`}
-            className="group/row flex scroll-mt-24 flex-col gap-3 px-4 py-4 sm:px-5"
+            className="group/row @container flex scroll-mt-24 flex-col gap-3 px-4 py-4 sm:px-5"
         >
             <div className="flex flex-wrap items-start gap-x-3.5 gap-y-3">
                 <ItemMedia item={item} />
 
-                <div className="grid min-w-0 flex-1 basis-60 gap-x-6 gap-y-2 md:grid-cols-[minmax(0,1.3fr)_minmax(0,1fr)_5.5rem]">
+                <div className="grid min-w-0 flex-1 basis-60 gap-x-6 gap-y-2 @2xl:grid-cols-[minmax(0,1.3fr)_minmax(0,1fr)_5.5rem]">
                     <div className="flex min-w-0 flex-col gap-0.5">
                         <span
                             className={cn(
@@ -252,12 +252,12 @@ export function BackupItemRow({
                                 }))}
                                 label={`${label}, last 30 days`}
                                 height={14}
-                                className="mt-0.5 hidden w-36 md:block"
+                                className="mt-0.5 hidden w-36 @2xl:block"
                             />
                         )}
                     </div>
 
-                    <div className="flex flex-col md:items-end">
+                    <div className="flex flex-col @2xl:items-end">
                         {size !== null && (
                             <>
                                 <span className="type-body tabular-nums">
@@ -273,7 +273,7 @@ export function BackupItemRow({
                     </div>
                 </div>
 
-                <div className="flex shrink-0 items-center gap-1 max-sm:w-full max-sm:pl-[46px] md:w-60 md:justify-end">
+                <div className="flex shrink-0 items-center gap-1 @max-2xl:w-full @max-2xl:pl-[46px] @2xl:justify-end @4xl:w-60">
                     <BackUpButton item={item} />
                     {hasMenu && (
                         <ConfirmPopover

@@ -34,10 +34,10 @@ use Inertia\Inertia;
 use Inertia\Response;
 
 /**
- * The Backups page (docs/14 §3, docs/design/flows.md §14) and its actions:
- * back up one row or everything now, turn a volume's backups on or off, and
- * give launchroom itself its own copy of a team storage. Settings → Backups
- * redirects here.
+ * Settings → Backups (docs/14 §3, docs/design/flows.md §14, D114) and its
+ * actions: back up one row or everything now, turn a volume's backups on or
+ * off, and give launchroom itself its own copy of a team storage. The old
+ * `/backups` address redirects here.
  */
 final class BackupsController extends Controller
 {
@@ -45,7 +45,7 @@ final class BackupsController extends Controller
     {
         Gate::authorize('viewAny', [BackupDestination::class, $team]);
 
-        return Inertia::render('backups/index', ['page' => $page->for($team, $user)]);
+        return Inertia::render('settings/backups', ['page' => $page->for($team, $user)]);
     }
 
     public function everything(Request $request, #[CurrentUser] User $user, #[CurrentTeam] Team $team, StartAllBackups $start): RedirectResponse

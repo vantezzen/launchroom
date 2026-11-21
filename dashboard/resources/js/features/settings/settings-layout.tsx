@@ -3,6 +3,7 @@ import {
     Bell,
     Bot,
     Container,
+    DatabaseBackup,
     FileCode2,
     Fingerprint,
     Gauge,
@@ -32,6 +33,7 @@ import { accountSettingsIndex } from './settings-index';
 import { aiAgents as editAiAgents } from '@/routes';
 import { index as editApiTokens } from '@/routes/api-tokens';
 import { edit as editAppearance } from '@/routes/appearance';
+import { index as editBackups } from '@/routes/backups';
 import { edit as editDashboardDomain } from '@/routes/dashboard-domain';
 import { edit as editDockerfileGeneration } from '@/routes/dockerfile-generation';
 import { edit as editGit } from '@/routes/git';
@@ -57,6 +59,7 @@ const routes = {
     'ai-agents': editAiAgents,
     appearance: editAppearance,
     team: editTeam,
+    backups: editBackups,
     'robot-tokens': editRobotTokens,
     git: editGit,
     registries: editRegistryCredentials,
@@ -72,6 +75,9 @@ const routes = {
 } satisfies Record<string, () => { url: string }>;
 
 export type AccountPage = keyof typeof routes;
+
+/** Pages that render their own `SettingsPage` (a live headline and action). */
+const SELF_TITLED: AccountPage[] = ['backups'];
 
 /** One sentence under each page title; Move launchroom opens with its own. */
 const descriptions: Partial<Record<AccountPage, string>> = {
@@ -176,6 +182,25 @@ export default function SettingsLayout({ children }: PropsWithChildren) {
                     icon: Users,
                     summary: 'People and roles',
                     keywords: ['team', 'invite', 'people', 'roles'],
+                },
+                // D114 (was a sidebar page, D95): every member sees it;
+                // the actions say what each role may do.
+                {
+                    id: 'backups',
+                    label: 'Backups',
+                    icon: DatabaseBackup,
+                    summary: 'Storage and what’s protected',
+                    keywords: [
+                        'backup',
+                        'restore',
+                        'snapshot',
+                        'storage',
+                        'bucket',
+                        's3',
+                        'r2',
+                        'recovery kit',
+                        'passphrase',
+                    ],
                 },
                 // docs/16 §1.4: team-owned tokens for CI.
                 {
@@ -334,13 +359,17 @@ export default function SettingsLayout({ children }: PropsWithChildren) {
                     index={accountSettingsIndex(visible)}
                     emptyHint="Try “password”, “token” or “domain”."
                 >
-                    <SettingsPage
-                        title={page?.label ?? 'Settings'}
-                        description={descriptions[current]}
-                        className="gap-10"
-                    >
-                        {children}
-                    </SettingsPage>
+                    {SELF_TITLED.includes(current) ? (
+                        children
+                    ) : (
+                        <SettingsPage
+                            title={page?.label ?? 'Settings'}
+                            description={descriptions[current]}
+                            className="gap-10"
+                        >
+                            {children}
+                        </SettingsPage>
+                    )}
                 </SettingsShell>
             </Page>
         </AppLayout>

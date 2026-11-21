@@ -45,7 +45,7 @@ final readonly class StartControlPlaneBackup
             $destination = BackupDestination::query()->instanceWide()->lockForUpdate()->first();
 
             if (! $destination instanceof BackupDestination) {
-                throw DomainRuleViolation::on('destination', 'Set up storage for launchroom itself on the Backups page first.');
+                throw DomainRuleViolation::on('destination', 'Set up storage for launchroom itself in Settings → Backups first.');
             }
 
             if (InstanceSettings::current()->recovery_public_key === null) {

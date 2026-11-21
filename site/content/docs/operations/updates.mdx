@@ -74,7 +74,7 @@ The Updates page then shows an amber card with what happened, step by step, and 
 | Outcome | What to do |
 |---|---|
 | Rolled back | Nothing to fix. You're on the previous version. **Try again** when you're ready, or wait for the next release |
-| Backup failed | Nothing changed. Open **Backups** in the sidebar to see why, then try again |
+| Backup failed | Nothing changed. Open **Settings → Backups** to see why, then try again |
 | Failed | Run `./launchroom doctor` on the control-plane server and keep the pre-update backup at hand. See [When the dashboard is down](/docs/operations/when-the-dashboard-is-down) |
 | The rollback didn't finish | In the launchroom folder on the main server, run `./launchroom doctor`. It offers `--fix update-rollback`, which finishes going back to the previous version. Then try the update again |
 

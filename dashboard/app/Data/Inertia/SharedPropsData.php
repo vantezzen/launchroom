@@ -28,6 +28,8 @@ final class SharedPropsData extends Data
         public ?TeamContextData $teams,
         /** The sidebar footer's version, signed-in users only. */
         public ?string $version,
+        /** launchroom's release notes (the update repository's releases), signed-in users only. */
+        public ?string $releasesUrl,
         /** "Save your recovery kit" warning, instance owners only (docs/14 §4). */
         public ?RecoveryKitStatusData $recoveryKit,
         /** After `install.sh --restore` (docs/14 §5.2), instance owners only. */

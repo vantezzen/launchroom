@@ -20,6 +20,6 @@ test('Backups page rows link to the service\'s Backups tab, where restoring happ
     $this->actingAs($owner)->get(route('backups.index'))
         ->assertOk()
         ->assertInertia(fn ($page) => $page
-            ->component('backups/index')
+            ->component('settings/backups')
             ->where('page.groups.1.items.0.restoreHref', "/p/{$instance->environment->project->public_id}/{$instance->environment->public_id}/s/{$instance->service->public_id}/settings/backups"));
 });

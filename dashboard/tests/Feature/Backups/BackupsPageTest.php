@@ -29,11 +29,20 @@ beforeEach(function (): void {
     Backups::fakeEnvironment();
 });
 
-test('Settings → Backups redirects to the Backups page', function (): void {
+test('Backups lives in Settings, and the old Backups page address moved there for good', function (): void {
     $team = Team::factory()->create();
     $owner = memberOf($team, TeamRole::Owner);
 
-    $this->actingAs($owner)->get(route('backups.settings'))->assertRedirect(route('backups.index'));
+    expect(route('backups.index', [], false))->toBe('/settings/backups');
+
+    $this->actingAs($owner)->get('/backups')
+        ->assertStatus(301)
+        ->assertRedirect('/settings/backups');
+    // Only GET moved: the old address takes no other verb.
+    $this->actingAs($owner)->post('/backups')->assertNotFound();
+    $this->actingAs($owner)->get(route('backups.index'))
+        ->assertOk()
+        ->assertInertia(fn ($page) => $page->component('settings/backups'));
 });
 
 test('before storage is connected every row says what to do, and launchroom itself is set up separately', function (): void {
@@ -45,7 +54,7 @@ test('before storage is connected every row says what to do, and launchroom itse
     $this->actingAs($owner)->get(route('backups.index'))
         ->assertOk()
         ->assertInertia(fn ($page) => $page
-            ->component('backups/index')
+            ->component('settings/backups')
             ->where('page.summary.state', 'unconfigured')
             ->where('page.groups.0.key', 'launchroom')
             ->where('page.groups.0.items.0.backUp.url', null)

@@ -107,6 +107,26 @@ export function accountSettingsIndex(
             anchor: 'console-recording',
         },
         {
+            target: 'backups',
+            label: 'Back up everything now',
+            hint: 'Every database and volume at once',
+            keywords: ['backup now', 'run backup', 'snapshot'],
+        },
+        {
+            target: 'backups',
+            label: 'Backup storage',
+            hint: 'The bucket backups go to',
+            keywords: ['s3', 'r2', 'bucket', 'destination', 'hetzner'],
+            anchor: 'storage',
+        },
+        {
+            target: 'backups',
+            label: 'Recovery kit',
+            hint: 'Bring launchroom back on a new server',
+            keywords: ['passphrase', 'disaster recovery', 'restore launchroom'],
+            anchor: 'recovery-kit',
+        },
+        {
             target: 'robot-tokens',
             label: 'Robot tokens',
             hint: 'Team tokens for CI',
