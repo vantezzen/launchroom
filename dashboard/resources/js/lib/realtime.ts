@@ -10,6 +10,7 @@ type Exhaustive<T extends Record<BroadcastName, unknown>> = T;
 
 export type BroadcastPayloads = Exhaustive<{
     'canvas.changed': App.Data.Broadcasts.CanvasChangedData;
+    'service.status': App.Data.Broadcasts.ServiceStatusChangedData;
     'deployment.updated': App.Data.Broadcasts.DeploymentUpdatedData;
     'logs.appended': App.Data.Broadcasts.LogsAppendedData;
     'server.metrics': App.Data.Broadcasts.ServerMetricsData;

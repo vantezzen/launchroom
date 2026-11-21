@@ -1428,6 +1428,12 @@
               "type": "null"
             }
           ]
+        },
+        "outputLimit": {
+          "type": "integer",
+          "maximum": 67108864,
+          "minimum": 1024,
+          "description": "OutputLimit caps the bytes of container output shipped as log lines\n(one-off commands, D105; daemon feature \"commandRuns\"). Past it,\nlaunchroomd ships one system line, drops the rest of the output and\nlets the command run to its end (RunOnceResult.outputTruncated).\nOmitted: no limit."
         }
       },
       "additionalProperties": false,

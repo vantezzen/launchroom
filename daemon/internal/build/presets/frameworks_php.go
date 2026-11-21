@@ -58,7 +58,7 @@ func (l laravel) PrePlan(f Facts) map[string]PrePlan {
 func (laravel) Propose(f Facts, i Info) Proposal {
 	l := f.PHP.Laravel
 	health := l.HealthPath
-	p := Proposal{Framework: "laravel", Port: 8080, HealthPath: "/"}
+	p := Proposal{Framework: "laravel", Port: 8080, HealthPath: "/", Commands: laravelCommands()}
 	if health != "" {
 		p.HealthPath = health
 	}
@@ -163,16 +163,19 @@ func (symfony) Match(f Facts, i Info) bool {
 
 func (symfony) Propose(f Facts, _ Info) Proposal {
 	p := Proposal{Framework: "symfony", Port: 8080, HealthPath: "/"}
+	var migrate []string
 	if f.ComposerRequire["doctrine/doctrine-migrations-bundle"] {
+		migrate = []string{"php", "bin/console", "doctrine:migrations:migrate", "--no-interaction", "--allow-no-migration"}
 		p.Decisions = append(p.Decisions, Decision{
 			ID: "release-migrations", Title: "Run migrations once per deploy",
 			Detail: "doctrine:migrations:migrate runs as the release command instead of at every container start on every replica.",
 			Effect: Effect{
 				Plan:           PlanPatch{DeployVariables: map[string]string{"RAILPACK_SKIP_MIGRATIONS": "true"}},
-				ReleaseCommand: []string{"php", "bin/console", "doctrine:migrations:migrate", "--no-interaction", "--allow-no-migration"},
+				ReleaseCommand: migrate,
 			},
 		})
 	}
+	p.Commands = symfonyCommands(migrate)
 	p.Decisions = append(p.Decisions,
 		Decision{
 			ID: "app-secret", Title: "Generate APP_SECRET",

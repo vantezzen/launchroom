@@ -18,6 +18,8 @@ type SparklineProps = {
     min?: number;
     max?: number;
     strokeWidth?: number;
+    /** Stretches without reports (`findGaps`), drawn as quiet bands behind the line. */
+    gaps?: { first: number; last: number }[];
     /** Hover/keyboard crosshair; reports the active index (null on leave). */
     onActiveChange?: (index: number | null) => void;
     className?: string;
@@ -87,6 +89,7 @@ export function Sparkline({
     min,
     max,
     strokeWidth = 1.75,
+    gaps = [],
     onActiveChange,
     className,
 }: SparklineProps) {
@@ -178,6 +181,26 @@ export function Sparkline({
                     className="block overflow-visible"
                     aria-hidden="true"
                 >
+                    {gaps.map((gap) => {
+                        const step =
+                            values.length > 1 ? width / (values.length - 1) : 0;
+                        // A gap runs from the last report before it to the
+                        // first one after it.
+                        const from = Math.max(0, (gap.first - 1) * step);
+                        const to = Math.min(width, (gap.last + 1) * step);
+
+                        return (
+                            <rect
+                                key={gap.first}
+                                x={from}
+                                y={0}
+                                width={Math.max(0, to - from)}
+                                height={height}
+                                rx={3}
+                                style={{ fill: 'var(--hover)' }}
+                            />
+                        );
+                    })}
                     {area && (
                         <>
                             <defs>

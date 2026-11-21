@@ -9,17 +9,30 @@ Select **Security** in the sidebar. The page covers every project of your team a
 
 | Part | What it shows | Details |
 |---|---|---|
-| Status | How many vulnerabilities need you, which protections are on, packages watched, attacks blocked and how many public services block attacks | |
-| Action needed | Vulnerabilities you should fix now, one card per vulnerability with the fix and each affected service with what its investigation found | [Alert levels](/docs/security/alert-levels) |
+| Status | How many things there are to fix, which protections are on, packages watched, attacks blocked and how many public services block attacks | |
+| Action needed | What to fix now: one card per package with the update that fixes it, what an attacker could do and the affected services | [Alert levels](/docs/security/alert-levels) |
 | Web firewall | Blocked requests per hour, the mix of attack kinds, services that only log attacks, the latest blocks and the most targeted services | [Web firewall](/docs/security/web-firewall) |
-| Worth knowing | Everything else: development dependencies, operating system packages, runtimes past their end of life | [Alert levels](/docs/security/alert-levels#worth-knowing) |
+| Worth knowing | Everything else, folded away until you open it: development dependencies, operating system packages, runtimes past their end of life | [Alert levels](/docs/security/alert-levels#worth-knowing) |
 | Inventory | Search for a package or runtime across all services, and the runtimes, engines and base images in use | [Inventory](/docs/security/inventory) |
 
-**Day**, **Week** and **Month** at the top right set the range of the firewall section. **How it works** sums up the data sources and rules. Owners and admins can select **Check now** to ask for new advisory data right away, at most once every 10 minutes.
+**Hour**, **Day**, **Week** and **Month** at the top right set the range of the firewall section. **How it works** sums up the data sources and rules. Owners and admins can select **Check now** to ask for new advisory data right away, at most once every 10 minutes.
 
 Under the cards, past findings stay findable: **Marked not affected** and **Fixed in the last 30 days** each open their list, and a row there opens the finding.
 
-The sidebar entry shows how many vulnerabilities need action. One advisory that affects ten services counts once. When something needs action, launchroom also sends a [notification](/docs/observability/alerts).
+## One card per thing to fix
+
+A single update often fixes many advisories at once, in every service that uses the package. So **Action needed** shows one card per package, not one per advisory or service. A card says:
+
+- the update, for example **Update next to 15.5.24**, and the versions you run;
+- what an attacker could do, in plain words, from the kinds of weakness the advisories describe;
+- the most severe advisory, and whether a vulnerability is known to be exploited;
+- the affected services as small chips, production first. Select one to open its finding.
+
+**See the fix** opens the finding that matters most. Open the row at the bottom of the card to list every service, with its version, the version that fixes it and what its investigation found, and every advisory. Cards that touch production come first; packages only used outside production follow under **Only outside production**. The first four cards show, the rest behind **Show more**.
+
+To mark a whole card as not affected, open its **⋯** menu and choose **Not affected…**. Every service is ticked; untick the ones the reason doesn't apply to. A service that gets the package later, or a new advisory for it, brings the card back.
+
+The sidebar entry shows how many things there are to fix. A package that affects ten services counts once. When something needs action, launchroom sends one [notification](/docs/observability/alerts) per package, naming the services it affects, and the Activity page shows the findings of one check as a single entry.
 
 ## Next steps
 

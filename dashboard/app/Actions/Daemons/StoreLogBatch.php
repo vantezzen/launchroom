@@ -7,10 +7,12 @@ namespace App\Actions\Daemons;
 use App\Data\Protocol\V1\LogBatch;
 use App\Data\Protocol\V1\LogChunk as LogChunkData;
 use App\Data\Protocol\V1\LogLine;
+use App\Enums\DaemonTaskPurpose;
 use App\Enums\DaemonTaskType;
 use App\Enums\LogSourceKind;
 use App\Events\LogChunksStored;
 use App\Exceptions\DomainRuleViolation;
+use App\Models\Commands\CommandRun;
 use App\Models\DaemonTask;
 use App\Models\Deployment;
 use App\Models\LogChunk;
@@ -59,7 +61,8 @@ final readonly class StoreLogBatch
 
         foreach ($batch->chunks as $chunk) {
             /** @var LogChunkData $chunk */
-            [$taskId, $deploymentId, $tail] = $this->owner($server, $chunk);
+            [$taskId, $deploymentId, $tail, $maskWith] = $this->owner($server, $chunk);
+            $maskWith ??= $deploymentId;
 
             if ($taskId === null && $deploymentId === null && $chunk->source->kind !== LogSourceKind::Task) {
                 Log::warning('Dropped log chunk for a source this server does not run.', [
@@ -78,10 +81,10 @@ final readonly class StoreLogBatch
                 && array_all($chunk->lines, static fn (LogLine $line): bool => $line->step === self::STARTUP_STEP);
             $section = $startup ? $this->section($deploymentId) : null;
 
-            $lines = array_map(function (LogLine $line) use ($deploymentId, $section): array {
+            $lines = array_map(function (LogLine $line) use ($maskWith, $section): array {
                 /** @var array<string, mixed> $data */
                 $data = $line->toArray();
-                $data['text'] = $deploymentId !== null ? $this->masker->mask($deploymentId, $line->text) : $line->text;
+                $data['text'] = $maskWith !== null ? $this->masker->mask($maskWith, $line->text) : $line->text;
 
                 if ($section !== null) {
                     $data['step'] = $section;
@@ -117,11 +120,13 @@ final readonly class StoreLogBatch
     }
 
     /**
-     * The task and deployment a chunk belongs to on this server, and whether
-     * it is a live tail; [null, null, false] when a deployment/workload
-     * source isn't this server's.
+     * The task and deployment a chunk belongs to on this server, whether it
+     * is a live tail, and the deployment whose secrets to mask when it isn't
+     * the one it belongs to (a one-off command, D105, belongs to none);
+     * [null, null, false, null] when a deployment/workload source isn't this
+     * server's.
      *
-     * @return array{int|null, int|null, bool}
+     * @return array{int|null, int|null, bool, int|null}
      *
      * @throws DomainRuleViolation for tasks this server doesn't hold
      */
@@ -129,13 +134,13 @@ final readonly class StoreLogBatch
     {
         return match ($chunk->source->kind) {
             LogSourceKind::Task => $this->taskOwner($server, $chunk->source->id),
-            LogSourceKind::Deployment => [null, $this->deploymentOnServer($server, $chunk->source->id), false],
-            LogSourceKind::Workload => [null, $this->workloadDeployment($server, $chunk->source->id), false],
+            LogSourceKind::Deployment => [null, $this->deploymentOnServer($server, $chunk->source->id), false, null],
+            LogSourceKind::Workload => [null, $this->workloadDeployment($server, $chunk->source->id), false, null],
         };
     }
 
     /**
-     * @return array{int, int|null, bool}
+     * @return array{int, int|null, bool, int|null}
      *
      * @throws DomainRuleViolation
      */
@@ -144,13 +149,17 @@ final readonly class StoreLogBatch
         $task = DaemonTask::query()
             ->where('public_id', $publicId)
             ->where('server_id', $server->id)
-            ->first(['id', 'type', 'deployment_id']);
+            ->first(['id', 'type', 'deployment_id', 'purpose']);
 
         if (! $task instanceof DaemonTask) {
             throw DomainRuleViolation::forbidden('Logs can only be shipped for tasks this server holds.');
         }
 
-        return [$task->id, $task->deployment_id, $task->type === DaemonTaskType::Logs];
+        $command = $task->purpose === DaemonTaskPurpose::CommandRun
+            ? CommandRun::query()->where('daemon_task_id', $task->id)->value('deployment_id')
+            : null;
+
+        return [$task->id, $task->deployment_id, $task->type === DaemonTaskType::Logs, is_int($command) ? $command : null];
     }
 
     /**

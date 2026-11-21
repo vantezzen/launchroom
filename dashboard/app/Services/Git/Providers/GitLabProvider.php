@@ -4,12 +4,14 @@ declare(strict_types=1);
 
 namespace App\Services\Git\Providers;
 
+use App\Data\Git\CommitCheckData;
 use App\Data\Git\CommitData;
 use App\Data\Git\FilePullRequest;
 use App\Data\Git\GitBranchData;
 use App\Data\Git\PushPayload;
 use App\Data\Git\RepositoryRef;
 use App\Data\Git\RepositoryTree;
+use App\Enums\Git\CommitCheckState;
 use App\Enums\Git\DeploymentReportState;
 use App\Enums\Git\GitProviderKind;
 use App\Enums\Git\GitServerKind;
@@ -386,6 +388,37 @@ final class GitLabProvider extends ApiGitProvider
             'description' => $description,
             ...($url === null ? [] : ['target_url' => $url]),
         ]];
+    }
+
+    protected function checksRequest(GitRepository $repository, string $sha): array
+    {
+        // The latest status per name (`all` false): pipeline jobs and external statuses.
+        return [$this->repositoryPath($repository).'/repository/commits/'.$sha.'/statuses', ['per_page' => 100]];
+    }
+
+    protected function parseChecks(string $body): array
+    {
+        $checks = [];
+
+        foreach (JsonObject::decodeList($body) as $status) {
+            $name = $status->stringOrNull('name') ?? '';
+
+            if ($name === '') {
+                continue;
+            }
+
+            $state = match ($status->stringOrNull('status')) {
+                'success', 'skipped', 'manual' => CommitCheckState::Passed,
+                // A job allowed to fail doesn't hold the deploy back.
+                'failed' => $status->bool('allow_failure') ? CommitCheckState::Passed : CommitCheckState::Failed,
+                'canceled' => CommitCheckState::Failed,
+                default => CommitCheckState::Pending,
+            };
+
+            $checks[] = new CommitCheckData(mb_substr($name, 0, 255), $state, CommitCheckData::link($status->stringOrNull('target_url')));
+        }
+
+        return $checks;
     }
 
     protected function statusState(DeploymentReportState $state): string

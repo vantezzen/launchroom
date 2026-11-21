@@ -20,6 +20,8 @@ final class CliTokenData extends Data
         public string $expiresAt,
         public ApiTeamData $team,
         public array $abilities,
+        /** Every ability the role allows, including ones added later (D113); `abilities` is what that is now. */
+        public bool $fullAccess,
         public ApiUserData $user,
     ) {}
 

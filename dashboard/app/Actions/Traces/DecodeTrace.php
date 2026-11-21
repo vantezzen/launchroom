@@ -22,12 +22,6 @@ use App\Support\Traces\TraceEnvelope;
  */
 final readonly class DecodeTrace
 {
-    /** The one answer for a ray that can't be shown, whatever the reason (docs/23 §6). */
-    public const string NOT_READABLE = "This ray isn't from one of your services.";
-
-    /** The answer for a ray in a newer format (`lr2.` and up): its prefix is public, so saying so leaks nothing. */
-    public const string NEWER = 'This ray was made by a newer version of launchroom. Update launchroom to read it.';
-
     public function __construct(
         private TraceKeys $keys,
     ) {}
@@ -52,16 +46,5 @@ final readonly class DecodeTrace
         $trace = $payload === null ? null : TraceCodec::fields($payload);
 
         return $trace instanceof DecodedTrace && hash_equals($key->server->public_id, $trace->edge) ? $trace : null;
-    }
-
-    /**
-     * Why a ray handle() refused can't be shown: NEWER for a newer format,
-     * NOT_READABLE for everything else.
-     */
-    public function refusal(string $input): string
-    {
-        $value = TraceCodec::value($input);
-
-        return $value !== null && TraceCodec::newer($value) ? self::NEWER : self::NOT_READABLE;
     }
 }

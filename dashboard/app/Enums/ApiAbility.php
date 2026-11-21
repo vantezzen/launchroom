@@ -9,8 +9,11 @@ namespace App\Enums;
  * one (RequireTokenAbility) and {@see self::grants()} narrows the owner's
  * role inside User::hasTeamPermission(), so a token never exceeds its owner
  * and never reaches a permission no ability maps to (servers, members, team,
- * exec, exposure; backups only through the opt-in `data:transfer` on the
- * transfer endpoints). Values are stored on tokens: never rename one.
+ * exposure; backups only through the opt-in `data:transfer` on the transfer
+ * endpoints; exec only through the opt-in `run` on the command endpoints,
+ * D105, and never a console or SSH; image changes only through `update` on
+ * the app-update endpoint, D106). Values are stored on tokens: never
+ * rename one.
  */
 enum ApiAbility: string
 {
@@ -21,6 +24,9 @@ enum ApiAbility: string
     case SecretsRead = 'secrets:read';
     case DomainsWrite = 'domains:write';
     case DataTransfer = 'data:transfer';
+    case Run = 'run';
+    case Fix = 'fix';
+    case Update = 'update';
 
     /**
      * The team permission this ability lets a token exercise (∩ the role),
@@ -38,6 +44,12 @@ enum ApiAbility: string
             self::DomainsWrite => Permission::ManageProjects,
             // Only the transfer, import and export endpoints are routed with it (docs/14 §12.7).
             self::DataTransfer => Permission::ManageBackups,
+            // Only the command endpoints are routed with it; consoles and SSH refuse tokens (D105).
+            self::Run => Permission::ExecContainers,
+            // Only the failure-fix endpoint is routed with it, next to `deploy` (D111).
+            self::Fix => Permission::ManageProjects,
+            // Only the app-update endpoint is routed with it, next to `deploy` (D106).
+            self::Update => Permission::ManageProjects,
         };
     }
 
@@ -59,6 +71,9 @@ enum ApiAbility: string
             self::SecretsRead => 'Read secret values',
             self::DomainsWrite => 'Manage domains',
             self::DataTransfer => 'Import and export data',
+            self::Run => 'Run commands',
+            self::Fix => 'Apply suggested fixes',
+            self::Update => 'Update apps',
         };
     }
 
@@ -72,6 +87,9 @@ enum ApiAbility: string
             self::SecretsRead => 'Read secret values, for env pull and run. Every read is audited.',
             self::DomainsWrite => 'Add and remove custom domains.',
             self::DataTransfer => 'Import dumps and archives, download database and volume data. Every transfer is audited.',
+            self::Run => 'Run one-off commands in a service\'s live version, like migrations. Every run is audited.',
+            self::Fix => 'Apply the fix launchroom suggests for a failed deployment, like the port the app listens on, and redeploy. Needs Deploy too.',
+            self::Update => 'Update image services to a newer release launchroom found, after a backup of their data. Needs Deploy too.',
         };
     }
 
@@ -87,7 +105,7 @@ enum ApiAbility: string
      */
     public static function defaults(): array
     {
-        return [self::Read, self::Deploy, self::EnvRead, self::EnvWrite];
+        return [self::Read, self::Deploy, self::EnvRead, self::EnvWrite, self::Fix];
     }
 
     /**

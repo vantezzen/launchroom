@@ -1,0 +1,114 @@
+# launchroom GitHub Action (docs/16 §6): installs the launchroom CLI with the
+# release installer's signature and checksum verification, then deploys a
+# service or waits for a pull request's preview.
+#
+#   - uses: vantezzen/launchroom/deploy/actions/launchroom@v0.2.0
+#     with:
+#       url: https://launchroom.example.com
+#       token: ${{ secrets.LAUNCHROOM_TOKEN }}
+#       project: shop
+#       service: web
+#
+# Inputs reach the scripts as environment variables only, never as
+# `${{ inputs.* }}` inside a script (no script injection).
+name: launchroom
+description: Deploy to launchroom, or wait for a pull request's preview, with the launchroom CLI.
+author: vantezzen
+branding:
+  icon: upload-cloud
+  color: gray-dark
+
+inputs:
+  url:
+    description: Your launchroom dashboard's address, e.g. https://launchroom.example.com.
+    required: true
+  token:
+    description: An API token (store it as a secret). A robot token keeps working when people leave the team.
+    required: true
+  project:
+    description: Project id or slug.
+    required: true
+  environment:
+    description: Environment id or slug (default: the project's production environment).
+    required: false
+    default: ""
+  service:
+    description: Service id or slug. Required for `deploy`.
+    required: false
+    default: ""
+  command:
+    description: "`deploy` (default) or `preview-wait`."
+    required: false
+    default: deploy
+  sha:
+    description: "Commit to deploy, or the preview commit to wait for. Default: the pushed commit on push events, the pull request's head on pull_request events, else the tracked branch's latest commit."
+    required: false
+    default: ""
+  ref:
+    description: Branch or tag to deploy (`deploy` only, instead of `sha`).
+    required: false
+    default: ""
+  pr:
+    description: "Pull request number (`preview-wait`). Default: the event's pull request."
+    required: false
+    default: ""
+  timeout:
+    description: How long `preview-wait` waits, e.g. 20m.
+    required: false
+    default: 20m
+  version:
+    description: "CLI version to install, e.g. 0.2.0. Default: the version of this action's tag, else the latest release."
+    required: false
+    default: ""
+
+outputs:
+  url:
+    description: The service's address (`deploy`) or the preview's first address (`preview-wait`). Empty when it has none.
+    value: ${{ steps.run.outputs.url }}
+  deployment:
+    description: The deployment id (`deploy`), or the preview's first deployment (`preview-wait`).
+    value: ${{ steps.run.outputs.deployment }}
+  dashboard-url:
+    description: The deployment's page (`deploy`) or the project's previews (`preview-wait`) in the dashboard.
+    value: ${{ steps.run.outputs.dashboard-url }}
+
+runs:
+  using: composite
+  steps:
+    - name: Install the launchroom CLI
+      shell: bash
+      env:
+        INPUT_VERSION: ${{ inputs.version }}
+        ACTION_REF: ${{ github.action_ref }}
+        # Fail closed: the installer never skips the signature here.
+        LR_ALLOW_UNSIGNED: "0"
+      run: |
+        set -euo pipefail
+        version="${INPUT_VERSION#v}"
+        if [ -z "$version" ]; then
+          if [[ "${ACTION_REF:-}" =~ ^v[0-9]+\.[0-9]+\.[0-9]+ ]]; then
+            version="${ACTION_REF#v}"
+          else
+            version=latest
+          fi
+        fi
+        dir="$RUNNER_TEMP/launchroom-cli"
+        sh "$GITHUB_ACTION_PATH/../../install/cli.sh" --version "$version" --dir "$dir"
+        echo "$dir" >> "$GITHUB_PATH"
+
+    - name: Run launchroom
+      id: run
+      shell: bash
+      env:
+        LAUNCHROOM_URL: ${{ inputs.url }}
+        LAUNCHROOM_TOKEN: ${{ inputs.token }}
+        INPUT_PROJECT: ${{ inputs.project }}
+        INPUT_ENVIRONMENT: ${{ inputs.environment }}
+        INPUT_SERVICE: ${{ inputs.service }}
+        INPUT_COMMAND: ${{ inputs.command }}
+        INPUT_SHA: ${{ inputs.sha }}
+        INPUT_REF: ${{ inputs.ref }}
+        INPUT_PR: ${{ inputs.pr }}
+        INPUT_TIMEOUT: ${{ inputs.timeout }}
+        NO_COLOR: "1"
+      run: sh "$GITHUB_ACTION_PATH/run.sh"

@@ -87,4 +87,6 @@ enum DaemonFeature: string
     case CertificateRetry = 'certificateRetry';
     /** `NodeState.ingress.trace`, `RouteSpec.service`, `RouteSpec.upstreams[].server`: the `X-Launchroom-Ray` header on every edge response (docs/23). */
     case RequestTrace = 'requestTrace';
+    /** run_once `outputLimit` and `RunOnceResult.outputTruncated`: one-off commands (D105). */
+    case CommandRuns = 'commandRuns';
 }

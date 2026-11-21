@@ -2,12 +2,12 @@ import { Link } from '@inertiajs/react';
 import { Hammer } from 'lucide-react';
 import { useState } from 'react';
 import { StatTile } from '@/components/charts/stat-tile';
-import { TimeRangeSelect } from '@/components/charts/time-range-select';
+import { RangeSelect } from '@/components/charts/time-range-select';
 import { UsageMeter } from '@/components/charts/usage-meter';
 import { colorForSlot } from '@/components/charts/palette';
 import { MetaLine } from '@/components/patterns/meta-line';
 import { Section } from '@/components/patterns/section';
-import { RANGE_SETS, rangeOptions } from '@/lib/observe-scope';
+import { RANGE_SETS } from '@/lib/observe-scope';
 import { canvas as projectCanvas } from '@/routes/projects';
 import { formatCores, formatMemory, plural } from '@/lib/format';
 import { formatOf } from '@/features/servers/format';
@@ -53,6 +53,7 @@ export function ServerUsage({
                   min: 0,
                   max: 100,
                   format,
+                  markGaps: true,
               }
             : undefined;
     const pct = (v: number) => `${Math.round(v)}%`;
@@ -74,10 +75,10 @@ export function ServerUsage({
             className="scroll-mt-20"
             title="Usage"
             actions={
-                <TimeRangeSelect
+                <RangeSelect
+                    page="resources"
                     value={range}
                     onChange={onRangeChange}
-                    options={rangeOptions(RANGE_SETS.resources)}
                 />
             }
         >

@@ -7,6 +7,8 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"net/url"
+	"slices"
 	"strings"
 	"time"
 
@@ -19,12 +21,13 @@ import (
 
 // loginResult is `login --json`'s stdout document.
 type loginResult struct {
-	URL       string   `json:"url"`
-	User      api.User `json:"user"`
-	Team      api.Team `json:"team"`
-	Abilities []string `json:"abilities"`
-	ExpiresAt string   `json:"expiresAt"`
-	Store     string   `json:"store"`
+	URL        string   `json:"url"`
+	User       api.User `json:"user"`
+	Team       api.Team `json:"team"`
+	Abilities  []string `json:"abilities"`
+	FullAccess bool     `json:"fullAccess"`
+	ExpiresAt  string   `json:"expiresAt"`
+	Store      string   `json:"store"`
 }
 
 // loginPending is the one-line JSON `login --json` prints on stderr while
@@ -46,6 +49,8 @@ var newLoginClient = func(url, userAgent string) *loginClient { return api.New(u
 func (a *App) loginCmd() *cobra.Command {
 	var rawURL string
 	var noBrowser bool
+	var abilities []string
+	var fullAccess bool
 	cmd := &cobra.Command{
 		Use:   "login",
 		Short: "Sign in through the dashboard (opens your browser)",
@@ -63,11 +68,26 @@ func (a *App) loginCmd() *cobra.Command {
 			if err != nil {
 				return exitcode.New(exitcode.Usage, err)
 			}
+			for _, ab := range abilities {
+				if !slices.Contains(api.APIAbilityValues, ab) {
+					return exitcode.Usagef("--abilities: %q is not a permission (%s)", ab, strings.Join(api.APIAbilityValues, ", "))
+				}
+			}
 			host, _ := a.Hostname()
 			client := newLoginClient(u, a.UserAgent())
 			sess, err := client.StartLogin(ctx, host, a.Version)
 			if err != nil {
 				return err
+			}
+			switch {
+			case fullAccess:
+				// Preselects Full access (D113); the person still sees and
+				// approves it.
+				sess.VerificationURLComplete = withQuery(sess.VerificationURLComplete, "access", "full")
+			case len(abilities) > 0:
+				// Preselects them on the approval page; the person still
+				// sees and approves them (docs/16 §7.6).
+				sess.VerificationURLComplete = withQuery(sess.VerificationURLComplete, "abilities", strings.Join(abilities, ","))
 			}
 			p := a.Printer
 			if p.JSON {
@@ -102,7 +122,7 @@ func (a *App) loginCmd() *cobra.Command {
 			if err := cfg.Save(a.ConfigDir); err != nil {
 				return err
 			}
-			res := loginResult{URL: u, User: tok.User, Team: tok.Team, Abilities: tok.Abilities, ExpiresAt: tok.ExpiresAt, Store: store}
+			res := loginResult{URL: u, User: tok.User, Team: tok.Team, Abilities: tok.Abilities, FullAccess: tok.FullAccess, ExpiresAt: tok.ExpiresAt, Store: store}
 			return p.Result(res, func(w io.Writer) {
 				where := "the system keychain"
 				if store == config.StoreFile {
@@ -116,7 +136,31 @@ func (a *App) loginCmd() *cobra.Command {
 	}
 	cmd.Flags().StringVar(&rawURL, "url", "", "dashboard URL, e.g. https://launchroom.example.com")
 	cmd.Flags().BoolVar(&noBrowser, "no-browser", false, "don't open a browser; print the link only")
+	cmd.Flags().StringSliceVar(&abilities, "abilities", nil, "preselect these permissions on the approval page, e.g. read,deploy,fix,env:read,env:write,run")
+	cmd.Flags().BoolVar(&fullAccess, "full-access", false, "preselect Full access on the approval page: every permission your role allows, including ones added later")
+	cmd.MarkFlagsMutuallyExclusive("abilities", "full-access")
 	return cmd
+}
+
+// withQuery adds a preselection (abilities, access) to the approval link.
+func withQuery(link, key, value string) string {
+	u, err := url.Parse(link)
+	if err != nil {
+		return link
+	}
+	q := u.Query()
+	q.Set(key, value)
+	u.RawQuery = q.Encode()
+	return u.String()
+}
+
+// accessLine is a token's access in one phrase: "Full access (read, …)"
+// or its abilities.
+func accessLine(t api.Token) string {
+	if t.FullAccess {
+		return "Full access (" + strings.Join(t.Abilities, ", ") + ")"
+	}
+	return strings.Join(t.Abilities, ", ")
 }
 
 // pollLogin waits for the dashboard to approve the sign-in (RFC 8628 style).
@@ -212,7 +256,7 @@ func (a *App) whoamiCmd() *cobra.Command {
 				_, _ = fmt.Fprintf(w, "%s %s\n", p.Bold(me.User.Name), p.Dim("<"+me.User.Email+">"))
 				_, _ = fmt.Fprintf(w, "Team       %s (%s)\n", me.Team.Name, me.Team.Role)
 				_, _ = fmt.Fprintf(w, "Dashboard  %s\n", s.URL)
-				_, _ = fmt.Fprintf(w, "Token      %s · %s\n", me.Token.Name, strings.Join(me.Token.Abilities, ", "))
+				_, _ = fmt.Fprintf(w, "Token      %s · %s\n", me.Token.Name, accessLine(me.Token))
 				expires := "never"
 				if me.Token.ExpiresAt != nil {
 					expires = shortTime(*me.Token.ExpiresAt)

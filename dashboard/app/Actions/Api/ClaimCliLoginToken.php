@@ -7,7 +7,6 @@ namespace App\Actions\Api;
 use App\Data\Api\ApiTeamData;
 use App\Data\Api\ApiUserData;
 use App\Data\Api\CliTokenData;
-use App\Enums\ApiAbility;
 use App\Enums\CliLoginStatus;
 use App\Exceptions\ApiError;
 use App\Models\CliLoginRequest;
@@ -61,7 +60,8 @@ final class ClaimCliLoginToken
                 token: $plainText,
                 expiresAt: (string) $token->expires_at?->toIso8601String(),
                 team: new ApiTeamData($team->public_id, $team->name, $user->roleIn($team)),
-                abilities: array_values(array_filter(array_map(ApiAbility::tryFrom(...), $token->abilities))),
+                abilities: $token->effectiveAbilities(),
+                fullAccess: $token->full_access,
                 user: new ApiUserData($user->name, $user->email),
             );
         });

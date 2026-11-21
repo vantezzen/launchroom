@@ -63,8 +63,8 @@ Servers, Activity and Search.
 
 Each box shows:
 
-- the service's logo and name
-- its status with its age (Live, Deploying, Failed, …)
+- the service's logo (the framework its build detected, such as Next.js or Laravel) and name
+- its status with why and since when, such as "Not running | exited 2h ago" (see [What a status means](#what-a-status-means))
 - its address or, for a database, when it was last backed up
 - for a cron job, its schedule in words, such as "Weekdays at 09:00"
 - CPU and memory once metrics exist
@@ -92,6 +92,34 @@ added, after you confirm.
 
 When launchroom creates several services at once (a new preview, a template or a Compose import), databases start
 first so they are ready for the apps connected to them.
+
+## What a status means
+
+A service has one status, and every place that shows it says the same word: its box on the canvas, its panel, the
+current deployment, the environment menu at the top and the command palette. They update together as soon as
+something changes on the server.
+
+| Status | What it means |
+|---|---|
+| **Live** | It runs and answers on its domain. |
+| **Running** | It runs, without a public address (workers, cron jobs, databases). |
+| **Starting** | Its containers are being created after a deploy, start or restart. |
+| **Deploying** | A new version is on its way, with the step it is at (Building, Health check). |
+| **Not running** | It should run, but no container does. The reason follows, such as "exited" or "waiting for fra-1". **Start** brings it back with the live version. |
+| **Crashed** | Its container stopped with an error, with what the exit means, such as "ran out of memory". **Restart** starts new containers; **View logs** shows what it printed. |
+| **Unhealthy** | It runs but fails its health check. |
+| **Server unreachable** | Its server stopped reporting. The service probably still runs, but launchroom can't tell. |
+| **Server down** | Its server is offline. |
+| **Stopped** | Someone stopped it in launchroom. Everything is kept; **Start** runs it again. |
+| **Paused** | An import or restore holds it until it finishes. |
+| **Failed** / **Last deploy failed** | The latest deploy failed. With "Last deploy failed" the previous version still serves. **Retry deploy** tries the same deployment again. |
+
+When the live deployment's containers don't run, its row in the Deployments tab says so instead of "Live", for example
+"Live deployment, not running: exited 2 hours ago", with **Start** and **View logs** right there.
+
+When services need you, the top bar shows it next to the environment's name, for example "2 services need attention".
+Click it to see each service, why, and its fix (Start, Restart, Retry deploy) or the place that explains it. Fixing
+needs the permission to deploy; everyone else sees the links.
 
 ## The service panel
 

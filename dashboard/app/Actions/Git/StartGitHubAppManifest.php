@@ -42,8 +42,11 @@ final readonly class StartGitHubAppManifest
     /**
      * `installation` and `installation_repositories` are delivered to every
      * app without subscribing (GitHub rejects them in `default_events`).
+     * The check events wake deployments waiting for their commit's checks
+     * (D111); apps created before them get the one-minute fallback until
+     * their owner subscribes (docs/06 §2.5).
      */
-    public const array EVENTS = ['push', 'pull_request'];
+    public const array EVENTS = ['push', 'pull_request', 'check_run', 'check_suite', 'status'];
 
     public function __construct(
         private UrlGuard $guard,

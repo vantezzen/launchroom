@@ -33,6 +33,7 @@ final class BuildSummary extends Data
      * @param  list<RequiredSecret>|null  $requiredSecrets
      * @param  list<VolumeSuggestion>|null  $volumeSuggestions
      * @param  list<PhpDependencyExtension>|null  $phpDependencyExtensions
+     * @param  list<CommandSuggestion>|null  $commands
      */
     public function __construct(
         public ChosenBuilder $builder,
@@ -84,6 +85,8 @@ final class BuildSummary extends Data
         public ?array $phpDependencyExtensions = null,
         /** The built image's user and exposed ports. */
         public ?ImageFacts $image = null,
+        /** The framework's standard one-off commands (D105). */
+        public ?array $commands = null,
     ) {}
 
     /**
@@ -106,6 +109,7 @@ final class BuildSummary extends Data
             'requiredSecrets' => ['nullable', 'array', 'max:8'],
             'volumeSuggestions' => ['nullable', 'array', 'max:8'],
             'phpDependencyExtensions' => ['nullable', 'array', 'max:32'],
+            'commands' => ['nullable', 'array', 'max:16'],
         ];
     }
 }

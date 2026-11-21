@@ -23,6 +23,23 @@ use Symfony\Component\Uid\Ulid;
  */
 final class TraceCodec
 {
+    /** The one answer for a ray that can't be shown, whatever the reason (docs/23 §6). */
+    public const string NOT_READABLE = "This ray isn't from one of your services.";
+
+    /** The answer for a ray in a newer format (`lr2.` and up): its prefix is public, so saying so leaks nothing. */
+    public const string NEWER = 'This ray was made by a newer version of launchroom. Update launchroom to read it.';
+
+    /**
+     * Why a ray that didn't decode can't be shown: NEWER for a newer format,
+     * NOT_READABLE for everything else.
+     */
+    public static function refusal(string $input): string
+    {
+        $value = self::value($input);
+
+        return $value !== null && self::newer($value) ? self::NEWER : self::NOT_READABLE;
+    }
+
     public const int VERSION = 1;
 
     /** Longest input accepted (a typical trace is about 300 characters). */

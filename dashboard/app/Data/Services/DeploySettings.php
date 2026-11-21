@@ -10,6 +10,7 @@ use App\Enums\ChangeEffect;
 use App\Enums\PromotionClass;
 use App\Enums\ServiceKind;
 use App\Enums\WorkloadCapability;
+use App\Support\Protocol\Grammar;
 use App\Support\Services\ConfigFileRules;
 use Spatie\LaravelData\Attributes\DataCollectionOf;
 use Spatie\LaravelData\Attributes\Validation\In;
@@ -32,6 +33,7 @@ final class DeploySettings extends Data
      * @param  list<string>  $capabilities  added to cap-drop ALL, within launchroomd's allow-list (docs/03 §8)
      * @param  ScheduleSettings|null  $schedule  cron services only: when the job runs; null runs the command continuously
      * @param  list<ConfigFile>  $files  written read-only into the container before it starts (D65, App\Support\Services\ConfigFileRules)
+     * @param  list<NamedCommand>  $commands  one-off commands named in launchroom.json, listed in the Commands tab (D105)
      */
     public function __construct(
         /** Port the process listens on; null for workers or to use the engine default. */
@@ -74,6 +76,9 @@ final class DeploySettings extends Data
          */
         #[ChangeAffects(ChangeEffect::None), Promotion(PromotionClass::Structural)]
         public bool $overlapOnVolumes = false,
+        /** Named one-off commands (D105): nothing runs until someone runs one, so a change needs no deployment. */
+        #[ChangeAffects(ChangeEffect::None), Promotion(PromotionClass::Structural), DataCollectionOf(NamedCommand::class)]
+        public array $commands = [],
     ) {}
 
     public const int ROLLOUT_TIMEOUT_DEFAULT = 600;
@@ -137,6 +142,12 @@ final class DeploySettings extends Data
             'files' => ['sometimes', 'array', 'max:'.ConfigFileRules::MAX_FILES],
             'files.*.path' => ['required', 'string', 'max:255'],
             'files.*.content' => ['present', 'string', 'max:'.ConfigFileRules::MAX_BYTES],
+            'commands' => ['sometimes', 'array', 'max:'.NamedCommand::MAX_PER_SERVICE],
+            'commands.*.name' => ['required', 'string', 'regex:'.Grammar::SLUG, 'distinct'],
+            'commands.*.command' => ['required', 'array', 'min:1', 'max:256'],
+            'commands.*.command.*' => ['string', 'max:4096', 'not_regex:/\x00/'],
+            'commands.*.description' => ['nullable', 'string', 'max:'.NamedCommand::MAX_DESCRIPTION],
+            'commands.*.danger' => ['sometimes', 'boolean'],
         ];
     }
 }

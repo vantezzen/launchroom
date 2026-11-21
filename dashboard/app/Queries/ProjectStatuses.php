@@ -43,7 +43,7 @@ final readonly class ProjectStatuses
     }
 
     /**
-     * @param  array<int, array{status: NodeStatusData, domain: ?string, logo: string}>  $entries  service id => ServiceStatusIndex entry
+     * @param  array<int, array{status: NodeStatusData}>  $entries  service id => ServiceStatusIndex entry
      */
     public static function aggregate(array $entries): NodeStatusData
     {

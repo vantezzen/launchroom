@@ -1,4 +1,5 @@
 import { Status } from '@/components/status';
+import { CloudflareRecordHint } from './dns-check-result';
 import { DnsRecordTable } from './dns-record-table';
 
 /**
@@ -44,13 +45,7 @@ export function PlatformDnsRecords({
                     value: address,
                 }))}
             />
-            <p className="type-small text-muted-foreground">
-                Using Cloudflare? Set the record to{' '}
-                <strong className="font-medium text-foreground">
-                    DNS only
-                </strong>{' '}
-                so every app address gets a certificate.
-            </p>
+            <CloudflareRecordHint wildcard />
         </div>
     );
 }

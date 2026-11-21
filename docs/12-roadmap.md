@@ -101,7 +101,8 @@ Not implemented. Grouped by area; order within a group is not a priority.
 - Not verified on a real amd64 ↔ arm64 pair yet: the plan (rebuild flags, the missing-builder refusal) and the prebuild marker are covered by Pest, the prebuild deployment itself not end to end.
 
 ### Backups
-- Restore into another environment (refresh staging from production) and clone into a preview.
+- Data masking for copies between environments (D110): anonymise personal data on the way from production (per-column rules or a masking command), so staging and previews never hold it. Until then a copy is a faithful copy and previews keep their sanitize command.
+- Copies between environments from the API and the CLI (`launchroom db copy`), and point-in-time positions as a copy's source point.
 - Redis/Valkey restore.
 - Self-backup: another launchroom server running an S3-compatible service as a backup target; a local backup destination in the dashboard (launchroomd already supports it).
 - Run "test destination" as a daemon task instead of in the dashboard container. Seal backup task credentials at lease time and don't store them.

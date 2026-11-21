@@ -41,11 +41,13 @@ import {
 } from '@/components/ui/popover';
 import { readRecent } from '@/features/command-palette/recent';
 import { AutoDeployPausedBanner } from '@/features/projects/auto-deploy-paused-banner';
-import { EnvironmentLiveUpdates } from '@/features/projects/environment-live-updates';
 import {
     environmentSwitchHref,
     projectSwitchHref,
 } from '@/features/projects/switch-targets';
+import { AttentionPopover } from '@/features/service-status/attention-popover';
+import { ServiceStatusSync } from '@/features/service-status/service-status-sync';
+import { useLiveStatus } from '@/features/service-status/store';
 import { StagedChangesPill } from '@/features/staged-changes/staged-changes-pill';
 import { useLocationSearch } from '@/hooks/use-observe-scope';
 import { requestJson } from '@/lib/http';
@@ -324,7 +326,7 @@ export function ProjectTopBar() {
         abilities,
         edgeOverview,
         projectStatuses,
-        environmentHealth,
+        liveStatus,
         environmentStatuses,
     } = page.props;
     const onCanvas = page.component === 'projects/canvas';
@@ -340,8 +342,15 @@ export function ProjectTopBar() {
     );
     const scope = observing ? readScope(search) : null;
     const carried = { range: scope?.range, service: scope?.service };
+    // The live-status store (D108): the same snapshot the canvas, the panel
+    // and the deployment card read, so the bar never says something else.
+    const live = useLiveStatus(environment?.id) ?? liveStatus ?? undefined;
+    const environmentHealth = live?.health ?? null;
     const status = environmentHealth?.status;
     const shownStatus = needsYou(status) ? status : null;
+    // Problems open a popover of the services and their fixes; "Not
+    // deployed" stays a word beside the environment's name.
+    const attention = shownStatus !== null && shownStatus.state !== 'idle';
 
     const tabs: Tab[] = [
         {
@@ -582,9 +591,10 @@ export function ProjectTopBar() {
             }
         >
             {environment && (
-                <EnvironmentLiveUpdates
-                    environments={[environment.id]}
-                    only={['environmentHealth']}
+                <ServiceStatusSync
+                    project={project.id}
+                    environment={environment.id}
+                    seed={liveStatus}
                 />
             )}
             <nav
@@ -609,7 +619,7 @@ export function ProjectTopBar() {
                                     {project.name}
                                 </span>
                                 <span className="flex max-w-full min-w-0 items-center gap-1 type-small text-muted-foreground">
-                                    {shownStatus && (
+                                    {shownStatus && !attention && (
                                         <StatusIcon
                                             state={shownStatus.state}
                                             className="size-3"
@@ -689,7 +699,7 @@ export function ProjectTopBar() {
                             }
                         >
                             <span className="truncate">{environmentName}</span>
-                            {shownStatus && (
+                            {shownStatus && !attention && (
                                 <span
                                     className="flex min-w-0 items-center gap-1 type-small font-normal text-muted-foreground"
                                     data-test="environment-status"
@@ -721,6 +731,15 @@ export function ProjectTopBar() {
                         {environmentGroups}
                     </SwitcherContent>
                 </Popover>
+                {attention && environment && (
+                    <AttentionPopover
+                        project={project.id}
+                        environment={environment.id}
+                        status={shownStatus}
+                        canDeploy={abilities.deploy}
+                        className="shrink-0"
+                    />
+                )}
             </nav>
 
             <span

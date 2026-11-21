@@ -76,6 +76,8 @@ describe('failedDeployment', () => {
                 since: null,
                 deploymentId: 'dep_1',
                 detail: null,
+                cause: null,
+                remedy: null,
             }),
         ).toBe('dep_1');
         expect(
@@ -86,6 +88,8 @@ describe('failedDeployment', () => {
                 since: null,
                 deploymentId: 'dep_1',
                 detail: null,
+                cause: null,
+                remedy: null,
             }),
         ).toBeNull();
     });

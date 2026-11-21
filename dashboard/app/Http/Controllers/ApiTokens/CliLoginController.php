@@ -8,6 +8,7 @@ use App\Actions\Api\ApproveCliLogin;
 use App\Actions\Api\DenyCliLogin;
 use App\Data\Api\ApproveCliLoginInput;
 use App\Data\Api\CliLoginRequestData;
+use App\Enums\ApiAbility;
 use App\Http\Controllers\Controller;
 use App\Models\ApiToken;
 use App\Models\CliLoginRequest;
@@ -54,6 +55,9 @@ final class CliLoginController extends Controller
                 expiresAt: $login->expires_at->toIso8601String(),
             ) : null,
             'teamOptions' => $options->teams($user),
+            'suggestedAbilities' => $this->suggestedAbilities($request),
+            // `launchroom login --full-access` (D113); still shown and approved by the person.
+            'suggestedFullAccess' => $request->query('access') === 'full',
             'lifetimes' => ApiTokenOptions::lifetimes(),
             'defaultLifetime' => ApiTokenOptions::defaultLifetime(),
         ]);
@@ -77,6 +81,22 @@ final class CliLoginController extends Controller
         $deny->handle($login, $user, $this->auditActor($request, $user));
 
         return to_route('cli-login.show', ['code' => $login->user_code]);
+    }
+
+    /**
+     * `launchroom login --abilities read,deploy,…` preselects these (docs/16
+     * §7.6); the person still sees and approves them, and the page offers
+     * only what their role allows.
+     *
+     * @return list<ApiAbility>
+     */
+    private function suggestedAbilities(Request $request): array
+    {
+        $raw = mb_substr($request->string('abilities')->toString(), 0, 200);
+
+        return array_values(array_unique(array_filter(
+            array_map(static fn (string $value): ?ApiAbility => ApiAbility::tryFrom(trim($value)), explode(',', $raw)),
+        ), SORT_REGULAR));
     }
 
     private function byCode(string $code): ?CliLoginRequest

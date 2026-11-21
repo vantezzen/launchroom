@@ -93,6 +93,7 @@
     "certificateRetry",
     "cleanupTask",
     "clientCertificates",
+    "commandRuns",
     "configFiles",
     "consoleSessions",
     "containerInspection",
@@ -160,6 +161,7 @@
     "Task(plan).spec.repo.ref": "gitProviders",
     "Task(plan).spec.sshKey": "gitProviders",
     "Task(run_once).spec.mounts": "releaseMounts",
+    "Task(run_once).spec.outputLimit": "commandRuns",
     "Task(run_once).spec.probe": "generatedDockerfile"
   },
   "taskFeatures": {

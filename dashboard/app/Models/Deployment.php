@@ -5,9 +5,11 @@ declare(strict_types=1);
 namespace App\Models;
 
 use App\Data\ConfigAsCode\DeploymentConfigErrorsData;
+use App\Data\Deployments\DeploymentChecksData;
 use App\Data\Deployments\DeploymentPlanData;
 use App\Data\Deployments\RuntimeFindingData;
 use App\Data\Protocol\V1\ImageFacts;
+use App\Enums\CheckGateState;
 use App\Enums\Contracts\HasTransitionTable;
 use App\Enums\DeploymentFailureClass;
 use App\Enums\DeploymentPurpose;
@@ -67,6 +69,7 @@ use LogicException;
  * @property Carbon|null $probation_until watched after going live until then; a crash loop rolls it back once (docs/04 §8, CheckProbation)
  * @property string|null $rollback_reason why launchroom rolled back by itself (on the rollback deployment it created); null: manual
  * @property ImageFacts|null $image_facts the image's user and exposed ports as the server reported them (images launchroom didn't build)
+ * @property DeploymentChecksData|null $checks a push deployment waiting for (or past) its commit's CI checks (D111, docs/06 §2.5)
  * @property RuntimeFindingData|null $runtime_finding the first known problem seen in its runtime logs while live (G12, DetectRuntimeFindings)
  * @property int|null $actor_id
  * @property Carbon|null $created_at
@@ -259,6 +262,26 @@ final class Deployment extends Model
     }
 
     /**
+     * Queued and held back until its commit's checks pass (D111): the
+     * deployment page and lists say "Waiting for checks".
+     */
+    public function waitsForChecks(): bool
+    {
+        return $this->status === DeploymentStatus::Queued && $this->checks?->isWaiting() === true;
+    }
+
+    /**
+     * Queued deployments waiting for their commit's checks (D111).
+     *
+     * @param  Builder<self>  $query
+     */
+    #[Scope]
+    protected function waitingForChecks(Builder $query): void
+    {
+        $query->where('status', DeploymentStatus::Queued->value)->where('checks->state', CheckGateState::Waiting->value);
+    }
+
+    /**
      * The oldest queued deployment of $instanceId: the one that starts next.
      */
     public static function nextQueuedId(int $instanceId): ?int
@@ -360,6 +383,7 @@ final class Deployment extends Model
             'probation_until' => 'datetime',
             'image_facts' => ImageFacts::class,
             'runtime_finding' => RuntimeFindingData::class,
+            'checks' => DeploymentChecksData::class,
         ];
     }
 }

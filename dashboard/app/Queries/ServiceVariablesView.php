@@ -33,6 +33,7 @@ use App\Services\Crypto\ProjectKeyring;
 use App\Services\Variables\SpecVariableResolver;
 use App\Support\Deployments\EffectiveDeploy;
 use App\Support\Variables\ReferencePreview;
+use App\Support\Variables\ReferenceSuggestions;
 use App\Support\Variables\SystemVariables;
 use App\Support\Variables\VariableResolver;
 use Illuminate\Database\Eloquent\ModelNotFoundException;
@@ -76,6 +77,7 @@ final readonly class ServiceVariablesView
 
         $scopes = $this->resolver->annotatedScopes($project, $spec);
         $preview = new ReferencePreview($scopes);
+        $suggestions = ReferenceSuggestions::fromScopes($scopes);
 
         // A worker or cron also gets its app's connection variables and the
         // app's own runtime variables (read-only here; docs/06 §3.2). App
@@ -113,7 +115,7 @@ final readonly class ServiceVariablesView
                 continue;
             }
 
-            $rows[] = $this->row($project, $variable, $model, $serviceSpec, $preview, $winners, $environmentNames, $environmentIds, $user, $managed);
+            $rows[] = $this->row($project, $variable, $model, $serviceSpec, $preview, $suggestions, $winners, $environmentNames, $environmentIds, $user, $managed);
         }
 
         if ($parent instanceof ServiceSpec) {
@@ -121,7 +123,7 @@ final readonly class ServiceVariablesView
                 $model = $models[$id] ?? null;
 
                 if ($model !== null) {
-                    $rows[] = $this->row($project, $variable, $model, $serviceSpec, $preview, $winners, $environmentNames, $environmentIds, $user, inheritedFrom: $parent);
+                    $rows[] = $this->row($project, $variable, $model, $serviceSpec, $preview, $suggestions, $winners, $environmentNames, $environmentIds, $user, inheritedFrom: $parent);
                 }
             }
         }
@@ -263,7 +265,7 @@ final readonly class ServiceVariablesView
      * @param  list<string>  $managed  keys launchroom.json sets
      * @param  ServiceSpec|null  $inheritedFrom  workers and crons: the app whose variable or connection it is
      */
-    private function row(Project $project, VariableSpec $variable, Variable $model, ServiceSpec $service, ReferencePreview $preview, array $winners, array $environmentNames, array $environmentIds, User $user, array $managed = [], ?ServiceSpec $inheritedFrom = null): VariableRowData
+    private function row(Project $project, VariableSpec $variable, Variable $model, ServiceSpec $service, ReferencePreview $preview, ReferenceSuggestions $suggestions, array $winners, array $environmentNames, array $environmentIds, User $user, array $managed = [], ?ServiceSpec $inheritedFrom = null): VariableRowData
     {
         $isSecret = $variable->type === VariableType::Secret;
         // Secrets are decrypted only to check their references; never returned.
@@ -304,6 +306,8 @@ final readonly class ServiceVariablesView
             canReveal: Gate::forUser($user)->allows('reveal', $model),
             managedByFile: $model->connection_id === null && in_array($variable->key, $managed, true),
             inheritedFrom: $inheritedFrom?->name,
+            // Fixes are offered where the row can be edited.
+            fixes: $raw === null || ($result['errors'] ?? []) === [] ? [] : $suggestions->fixes($scope, $variable->key, $raw),
         );
     }
 }

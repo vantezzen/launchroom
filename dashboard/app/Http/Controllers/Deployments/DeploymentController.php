@@ -8,6 +8,7 @@ use App\Actions\Deployments\ApplyFailureFix;
 use App\Actions\Deployments\CancelDeployment;
 use App\Actions\Deployments\RedeployService;
 use App\Actions\Deployments\RollbackDeployment;
+use App\Actions\Deployments\SkipDeploymentChecks;
 use App\Data\Deployments\DeploymentDetailData;
 use App\Data\Deployments\DeploymentImpactData;
 use App\Data\Deployments\FailureFixData;
@@ -103,6 +104,21 @@ final class DeploymentController extends Controller
         Toast::success('Fix staged and deploying.');
 
         return to_route('deployments.show', [$project->public_id, $environment->public_id, $created->public_id]);
+    }
+
+    /**
+     * Deploy now: a push waiting for its commit's checks starts without
+     * them (D111, docs/06 §2.5).
+     */
+    public function skipChecks(Request $request, Project $project, Environment $environment, Deployment $deployment, #[CurrentUser] User $user, SkipDeploymentChecks $skip): RedirectResponse
+    {
+        RouteScope::deployment($project, $environment, $deployment);
+        Gate::authorize('skipChecks', $deployment);
+
+        $skip->handle($deployment, $user, $this->auditActor($request, $user));
+        Toast::success('Deploying without waiting for checks.');
+
+        return back();
     }
 
     public function cancel(Request $request, Project $project, Environment $environment, Deployment $deployment, #[CurrentUser] User $user, CancelDeployment $cancel): RedirectResponse

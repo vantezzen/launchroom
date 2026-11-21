@@ -1,13 +1,17 @@
 import { Link } from '@inertiajs/react';
 import { useQuery } from '@tanstack/react-query';
-import { ChartColumnStacked, ChevronRight } from 'lucide-react';
+import { ChevronRight } from 'lucide-react';
 import { useMemo, useState } from 'react';
 import type { ReactNode } from 'react';
 import { Sparkline } from '@/components/charts/sparkline';
 import { StackedBars } from '@/components/charts/stacked-bars';
 import { StatTile } from '@/components/charts/stat-tile';
-import { TimeRangeSelect } from '@/components/charts/time-range-select';
+import {
+    RangeSelect,
+    TimeRangeSelect,
+} from '@/components/charts/time-range-select';
 import { EmptyState } from '@/components/patterns/empty-state';
+import { TrafficEmptyState } from '@/features/analytics/traffic-empty-state';
 import { MetaLine } from '@/components/patterns/meta-line';
 import { PageHeader } from '@/components/patterns/page';
 import { Section } from '@/components/patterns/section';
@@ -17,7 +21,7 @@ import { delta } from '@/features/metrics/format';
 import { requestJson } from '@/lib/http';
 import { analyticsHref } from '@/lib/links';
 import { useObserveScope } from '@/hooks/use-observe-scope';
-import { RANGE_SETS, rangeOptions, rangeWords } from '@/lib/observe-scope';
+import { bucketWords, RANGE_SETS, rangeWords } from '@/lib/observe-scope';
 import { cn } from '@/lib/utils';
 import { data as dataRoute } from '@/routes/analytics';
 import { index as securityRoute } from '@/routes/security';
@@ -26,8 +30,6 @@ import { formatCompact, formatShare } from '@/lib/format';
 type Team = App.Data.Analytics.TeamAnalyticsData;
 type Project = App.Data.Analytics.AnalyticsProjectData;
 type Range = (typeof RANGE_SETS.analytics)[number];
-
-const RANGES = rangeOptions(RANGE_SETS.analytics);
 
 const card =
     'rounded-[14px] border bg-card shadow-[0_1px_2px_rgb(0_0_0/0.04)] dark:shadow-none';
@@ -84,7 +86,14 @@ function projectHref(project: Project, range: Range): string | null {
  * Analytics tab, the top paths across projects with a bar for their share
  * and the split by server. Refetched every minute.
  */
-export function TeamAnalytics({ teamName }: { teamName: string }) {
+export function TeamAnalytics({
+    teamName,
+    readiness,
+}: {
+    teamName: string;
+    /** Why there would be no requests (D109), from the page props. */
+    readiness: App.Data.Analytics.TrafficReadinessData;
+}) {
     const { range, setRange, snapped } = useObserveScope(RANGE_SETS.analytics);
 
     const { data, isError } = useQuery({
@@ -106,7 +115,7 @@ export function TeamAnalytics({ teamName }: { teamName: string }) {
         () => (data?.timestamps ?? []).map((t) => Date.parse(t)),
         [data],
     );
-    const unit = range === '30d' ? 'day' : 'hour';
+    const unit = bucketWords(data?.bucketSeconds ?? 3600);
 
     return (
         <>
@@ -114,10 +123,10 @@ export function TeamAnalytics({ teamName }: { teamName: string }) {
                 title="Analytics"
                 description={`All projects and environments of ${teamName}, ${rangeWords(range)}.${snapped ? ` ${snapped}` : ''}`}
                 actions={
-                    <TimeRangeSelect
+                    <RangeSelect
+                        page="analytics"
                         value={range}
                         onChange={setRange}
-                        options={RANGES}
                     />
                 }
             />
@@ -139,10 +148,14 @@ export function TeamAnalytics({ teamName }: { teamName: string }) {
                     <div className={cn(card, 'h-[300px]')} />
                 </div>
             ) : data.totals.requests === 0 ? (
-                <EmptyState icon={ChartColumnStacked} variant="framed">
-                    No requests in this range yet. Requests appear here a minute
-                    after they reach one of your domains.
-                </EmptyState>
+                <TrafficEmptyState
+                    readiness={readiness}
+                    service={null}
+                    where="production"
+                    range={range}
+                    canFix={false}
+                    showProject
+                />
             ) : (
                 <Overview data={data} times={times} range={range} unit={unit} />
             )}
@@ -159,7 +172,7 @@ function Overview({
     data: Team;
     times: number[];
     range: Range;
-    unit: 'hour' | 'day';
+    unit: string;
 }) {
     const totals = data.totals;
     const [measure, setMeasure] = useState<TeamMeasure>('requests');

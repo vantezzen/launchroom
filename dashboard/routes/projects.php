@@ -5,6 +5,8 @@ declare(strict_types=1);
 use App\Enums\ProjectSettingsSection;
 use App\Enums\ServicePanelTab;
 use App\Enums\ServiceSettingsSection;
+use App\Http\Controllers\AppUpdates\AppUpdateController;
+use App\Http\Controllers\AppUpdates\AppUpdateListController;
 use App\Http\Controllers\Logs\LogDownloadController;
 use App\Http\Controllers\Projects\CanvasController;
 use App\Http\Controllers\Projects\ConfigFileController;
@@ -12,6 +14,7 @@ use App\Http\Controllers\Projects\ConnectionController;
 use App\Http\Controllers\Projects\DomainCertificateController;
 use App\Http\Controllers\Projects\DomainController;
 use App\Http\Controllers\Projects\ImportController;
+use App\Http\Controllers\Projects\LiveStatusController;
 use App\Http\Controllers\Projects\LogRetentionController;
 use App\Http\Controllers\Projects\MetricsRedirectController;
 use App\Http\Controllers\Projects\PlanPreviewController;
@@ -110,6 +113,10 @@ Route::middleware(['web', 'auth', 'verified'])
         Route::get('p/{project}/{environment}/analytics/resources', [ProjectAnalyticsController::class, 'resources'])->name('projects.resources-page');
         // The former Metrics tab: redirects to Resources with its query.
         Route::get('p/{project}/{environment}/metrics', [MetricsRedirectController::class, 'project'])->name('projects.metrics-page');
+        // Every service status of the environment (JSON, D108): the live-status store.
+        Route::get('p/{project}/{environment}/-/status', LiveStatusController::class)
+            ->middleware('throttle:240,1')
+            ->name('projects.live-status');
         // The log explorer's lines and live runtime tails (JSON).
         Route::get('p/{project}/{environment}/-/logs', [ProjectLogsController::class, 'entries'])
             ->middleware('throttle:120,1')
@@ -161,6 +168,18 @@ Route::middleware(['web', 'auth', 'verified'])
         Route::delete('p/{project}/{environment}/s/{service}/volumes/{volume}/mount', [VolumeMountController::class, 'destroy'])
             ->name('projects.services.volume-mounts.destroy');
         Route::patch('p/{project}/{environment}/s/{service}/image', [ServiceSettingsController::class, 'changeImage'])->name('projects.services.image');
+        // App updates (D106, docs/04 §14): the team's list on Projects, then one service's.
+        Route::get('-/app-updates', [AppUpdateListController::class, 'index'])
+            ->middleware('throttle:120,1')
+            ->name('app-updates.index');
+        Route::post('p/{project}/{environment}/s/{service}/update', [AppUpdateController::class, 'store'])
+            ->middleware('throttle:20,1')
+            ->name('projects.services.update.store');
+        Route::post('p/{project}/{environment}/s/{service}/update/cancel', [AppUpdateController::class, 'cancel'])->name('projects.services.update.cancel');
+        Route::post('p/{project}/{environment}/s/{service}/update/check', [AppUpdateController::class, 'check'])
+            ->middleware('throttle:10,1')
+            ->name('projects.services.update.check');
+        Route::put('p/{project}/{environment}/s/{service}/update/auto', [AppUpdateController::class, 'auto'])->name('projects.services.update.auto');
         Route::post('p/{project}/{environment}/s/{service}/plan', [ServiceSettingsController::class, 'replan'])
             ->middleware('throttle:10,1')
             ->name('projects.services.replan');

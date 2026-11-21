@@ -1,0 +1,89 @@
+---
+title: Deploy from CI
+description: Deploy a service from GitHub Actions or any other CI with the launchroom CLI, and fail the job when the deployment fails.
+---
+
+launchroom deploys pushes to your tracked branch by itself. Deploy from CI when the deployment belongs at the end of a
+pipeline: after tests, after a build of something else, or for a service that doesn't track a branch.
+
+## Get a token
+
+Create a token with only the access the job needs, usually **Deploy**, and store it as a secret named
+`LAUNCHROOM_TOKEN` in your CI.
+
+For CI, prefer a **robot token**: it belongs to the team rather than a person, so it keeps working when the person who
+set up CI leaves. Owners and admins create robot tokens in **Settings**, and can limit one to a project or a single
+service. See [Tokens](/docs/reference/api#tokens).
+
+## GitHub Actions
+
+The launchroom action installs the CLI, checks its signature and checksum, deploys and waits until the deployment is
+live. The job fails when the deployment fails.
+
+```yaml title=".github/workflows/deploy.yml"
+name: Deploy
+
+on:
+  push:
+    branches: [main]
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: npm ci && npm test
+
+      - name: Deploy to launchroom
+        id: launchroom
+        uses: vantezzen/launchroom/deploy/actions/launchroom@v0.2.0
+        with:
+          url: https://launchroom.example.com
+          token: ${{ secrets.LAUNCHROOM_TOKEN }}
+          project: shop
+          service: web
+
+      - run: echo "Live at ${{ steps.launchroom.outputs.url }}"
+```
+
+On a push, the action deploys exactly the pushed commit. Pin the action to a release tag: the tag also decides which
+CLI version it installs.
+
+| Input | |
+|---|---|
+| `url` | Your dashboard's address (required) |
+| `token` | The API token (required, from a secret) |
+| `project` | Project id or slug (required) |
+| `environment` | Environment id or slug (default: production) |
+| `service` | Service id or slug (required to deploy) |
+| `command` | `deploy` (default) or `preview-wait`, see [Wait for a preview in CI](/docs/projects/preview-in-ci) |
+| `sha` | The commit to deploy (default: the pushed commit) |
+| `ref` | A branch or tag to deploy instead |
+| `version` | CLI version (default: the action's tag) |
+
+| Output | |
+|---|---|
+| `deployment` | The deployment's id |
+| `url` | The service's address, empty when it has none |
+| `dashboard-url` | The deployment's page in the dashboard |
+
+The action runs on Linux runners. It checks the CLI's signature with Docker, which GitHub's Ubuntu runners have.
+
+When a deployment fails, the job log shows the same explanation as the dashboard, with the fix to apply. See
+[Debug a failed deploy](/docs/projects/debug-a-failed-deploy).
+
+## Any other CI
+
+The CLI reads the dashboard address and the token from two environment variables, so it needs no `launchroom login`:
+
+```sh
+export LAUNCHROOM_URL=https://launchroom.example.com
+export LAUNCHROOM_TOKEN="$CI_SECRET_LAUNCHROOM_TOKEN"
+
+curl -fsSL https://github.com/vantezzen/launchroom/releases/latest/download/cli.sh | sh
+~/.local/bin/launchroom deploy --project shop --service web --sha "$COMMIT_SHA"
+```
+
+`deploy` waits until the deployment is live and exits with code 10 when it fails. Add `--json` to get the deployment as
+JSON on stdout, or `--detach` to start it and move on. The [CLI reference](/docs/reference/cli#exit-codes) lists every
+exit code.

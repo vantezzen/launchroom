@@ -42,7 +42,9 @@ it('ships the named label of every node status reason', function (): void {
     $source = (new EnumVocabulary)->render();
 
     foreach (NodeStatusReason::cases() as $reason) {
-        expect($source)->toContain("{$reason->value}: { label: '{$reason->label()}', tone: '{$reason->tone()->value}' },");
+        $notServing = $reason->isNotServing() ? 'true' : 'false';
+
+        expect($source)->toContain("{$reason->value}: { label: '{$reason->label()}', tone: '{$reason->tone()->value}', isNotServing: {$notServing} },");
     }
 });
 

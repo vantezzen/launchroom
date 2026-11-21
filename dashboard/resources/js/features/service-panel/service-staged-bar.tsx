@@ -7,7 +7,10 @@ import {
     openStagedChanges,
 } from '@/features/staged-changes/staged-changes-sheet';
 import { EFFECTS } from '@/features/staged-changes/effects';
-import { useStagedChanges } from '@/features/staged-changes/use-staged-changes';
+import {
+    stagedCountLabel,
+    useStagedChanges,
+} from '@/features/staged-changes/use-staged-changes';
 
 /* Whether the bar is showing: the header's "Review & apply" steps aside
    while it does, so staged changes have one home in the panel. */
@@ -47,11 +50,12 @@ function useReportShown(visible: boolean): void {
 }
 
 /**
- * The panel's floating bar for this service's staged changes (flows §8):
- * "2 changes", "web will restart, 3 more elsewhere", Details, Discard
- * web’s changes, Apply all 5. Discard drops this service's changes; Apply
- * applies everything staged in the environment (the affected services
- * redeploy) and keeps you on the canvas. Both say their scope.
+ * The panel's floating bar for staged changes (flows §8, D109): "4 changes
+ * in 2 services", "web will restart", Review, Apply. Apply applies
+ * everything staged in the environment (the affected services redeploy)
+ * and keeps you on the canvas; the count says that scope. Discard sits in
+ * the bar only while every change is this service's; otherwise it lives
+ * in the review, where you see what it drops.
  */
 export function ServiceStagedBar({
     project,
@@ -75,25 +79,27 @@ export function ServiceStagedBar({
     }
 
     const name = group.slug ?? group.name;
-    const others = data.count - group.items.length;
+    const onlyThisService = data.count === group.items.length;
+    const consequence =
+        EFFECTS[group.effect].consequence ?? EFFECTS[group.effect].label;
 
     return (
         <StagedBar
             placement="inline"
-            count={Math.max(group.items.length, 1)}
-            summary={[
-                `${name} ${EFFECTS[group.effect].consequence ?? EFFECTS[group.effect].label}`,
-                ...(others > 0 ? [`${others} more elsewhere`] : []),
-            ].join(', ')}
-            onDetails={openStagedChanges}
-            onDiscard={() =>
-                void discardStaged(
-                    project,
-                    environment,
-                    group.items.map((item) => item.path),
-                )
+            count={Math.max(data.count, 1)}
+            countLabel={stagedCountLabel(data)}
+            summary={`${name} ${consequence}`}
+            onReview={openStagedChanges}
+            onDiscard={
+                onlyThisService
+                    ? () =>
+                          void discardStaged(
+                              project,
+                              environment,
+                              group.items.map((item) => item.path),
+                          )
+                    : undefined
             }
-            discardLabel={others > 0 ? `Discard ${name}’s changes` : 'Discard'}
             onDeploy={() => {
                 setDeploying(true);
                 deployStaged(project, environment, {
@@ -101,7 +107,6 @@ export function ServiceStagedBar({
                 });
             }}
             deploying={deploying}
-            deployLabel={others > 0 ? `Apply all ${data.count}` : 'Apply'}
             disabledReason={
                 data.canDeploy
                     ? data.blockers.length > 0

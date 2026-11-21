@@ -8,7 +8,6 @@ use App\Data\Attributes\PublicIdOf;
 use App\Enums\ApiAbility;
 use Illuminate\Validation\Rule;
 use Spatie\LaravelData\Attributes\Validation\In;
-use Spatie\LaravelData\Attributes\Validation\Min;
 use Spatie\LaravelData\Data;
 
 /**
@@ -18,15 +17,16 @@ use Spatie\LaravelData\Data;
 final class ApproveCliLoginInput extends Data
 {
     /**
-     * @param  list<string>  $abilities  ApiAbility values
+     * @param  list<string>  $abilities  ApiAbility values (ignored with full access)
      */
     public function __construct(
         #[PublicIdOf('team')]
         public string $team,
-        #[Min(1)]
-        public array $abilities,
+        public array $abilities = [],
         #[In([7, 30, 90, 365])]
         public int $expiresInDays = 90,
+        /** Every ability the role allows, including ones added later (D113). */
+        public bool $fullAccess = false,
     ) {}
 
     /**

@@ -458,6 +458,7 @@ export default function ProjectPreviews({
             <EnvironmentLiveUpdates
                 environments={environments}
                 only={['previews']}
+                statuses
             />
             <Page>
                 <PageHeader

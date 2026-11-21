@@ -33,6 +33,10 @@ export default defineConfig({
             ],
         },
     },
+    test: {
+        // Only our own tests: composer packages ship theirs under vendor/.
+        include: ['resources/js/**/*.test.{ts,tsx}'],
+    },
     lint: {
         ignorePatterns: [
             'vendor/**',

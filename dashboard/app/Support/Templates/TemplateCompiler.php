@@ -369,6 +369,15 @@ final class TemplateCompiler
             }
 
             $logo = is_array($service['x-launchroom'] ?? null) ? ($service['x-launchroom']['logo'] ?? null) : null;
+            $releases = is_array($service['x-launchroom'] ?? null) ? ($service['x-launchroom']['releases'] ?? null) : null;
+
+            if ($releases !== null && (! is_string($releases) || ! TemplateDefinition::isReleasesUrl($releases))) {
+                $problems[] = "{$name}: releases must be an https URL of the app's release notes.";
+            }
+
+            if ($releases !== null && ! isset($service['image'])) {
+                $problems[] = "{$name}: releases only applies to services with an image.";
+            }
 
             if ($logo !== null && (! is_string($logo) || ! in_array($logo, ServiceGlyph::KNOWN, true))) {
                 $problems[] = "{$name}: the logo isn’t a known glyph.";

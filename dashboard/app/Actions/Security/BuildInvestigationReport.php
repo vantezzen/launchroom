@@ -79,7 +79,8 @@ final readonly class BuildInvestigationReport
                 ->whereNull('notified_at')
                 ->get();
 
-            foreach ($held as $finding) {
+            // One alert per package (docs/22 §10).
+            foreach ($held->unique(static fn (SecurityFinding $f): string => $f->ecosystem."\0".$f->name) as $finding) {
                 $this->alert->handle($finding);
             }
         }

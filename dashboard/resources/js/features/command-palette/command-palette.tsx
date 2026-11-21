@@ -72,6 +72,8 @@ import {
     redeployService,
     restartService,
 } from '@/features/service-lifecycle/actions';
+import { statusOf } from '@/features/service-status/live-status';
+import { useLiveStatus } from '@/features/service-status/store';
 
 type Palette = App.Data.CommandPalette.PaletteData;
 type Item = App.Data.CommandPalette.PaletteItemData;
@@ -136,8 +138,16 @@ type Confirm = { label: string; run: () => void; icon: typeof Rocket };
 
 /** Status in the unified vocabulary (design-system §3.3), icon + word. */
 function ItemStatus({ item }: { item: Item }) {
-    const mapped = item.nodeStatus
-        ? { state: item.nodeStatus.state, label: item.nodeStatus.label }
+    // The open environment's services: the live-status store's word, the
+    // one the canvas and the top bar show right now (D108).
+    const live = useLiveStatus(
+        item.kind === 'service' ? item.environmentId : null,
+    );
+    const nodeStatus =
+        (item.kind === 'service' ? statusOf(live, item.id) : null) ??
+        item.nodeStatus;
+    const mapped = nodeStatus
+        ? { state: nodeStatus.state, label: nodeStatus.label }
         : item.kind === 'deployment'
           ? deploymentStatus[item.status as App.Enums.DeploymentStatus]
           : item.kind === 'server'

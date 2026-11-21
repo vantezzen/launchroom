@@ -42,7 +42,7 @@ export function SeverityText({
 }
 
 /** "⚠ Known exploited since 3 Oct" */
-function KnownExploited({ since }: { since: string | null }) {
+export function KnownExploited({ since }: { since: string | null }) {
     return (
         <span className="inline-flex items-center gap-1.5 font-medium text-foreground">
             <StatusIcon state="warning" />

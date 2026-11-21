@@ -18,6 +18,7 @@ use App\Models\Team;
 use App\Support\Metrics\Cast;
 use App\Support\Security\FindingFacts;
 use App\Support\Security\FindingRules;
+use App\Support\Security\FixGroup;
 use App\Support\Security\Lockfiles;
 use App\Support\Security\VersionOrder;
 use Carbon\CarbonImmutable;
@@ -39,10 +40,10 @@ use Illuminate\Support\Facades\DB;
  * withdrawn advisories and versions that left the live image do.
  *
  * Findings that newly became "Action needed" are investigated once
- * automatically; their alert is raised when the investigation finishes
- * (so the notification carries its result), or right away when no
- * investigation can run. Alerts of instances without an open "Action
- * needed" finding resolve. Idempotent; one team at a time under an
+ * automatically; the alert of their package (one per thing to fix, D107)
+ * is raised when the investigation finishes (so the notification carries
+ * its result), or right away when no investigation can run. Alerts of
+ * packages without an open "Action needed" finding resolve. Idempotent; one team at a time under an
  * advisory lock.
  */
 final readonly class EvaluateSecurityFindings
@@ -272,6 +273,7 @@ final readonly class EvaluateSecurityFindings
     private function afterEvaluation(int $teamId, array $escalated, CarbonImmutable $now): void
     {
         $byInstance = [];
+        $ready = [];
 
         foreach (SecurityFinding::query()->whereKey($escalated)->get() as $finding) {
             $byInstance[$finding->service_instance_id][] = $finding;
@@ -292,9 +294,7 @@ final readonly class EvaluateSecurityFindings
             }
 
             if ($investigation === null || $investigation->status->isTerminal()) {
-                foreach ($findings as $finding) {
-                    $this->alert->handle($finding->refresh());
-                }
+                array_push($ready, ...$findings);
             }
         }
 
@@ -306,30 +306,46 @@ final readonly class EvaluateSecurityFindings
             ->where('level_changed_at', '<=', $now->subMinutes(self::ALERT_WAIT_MINUTES))
             ->get();
 
-        foreach ($waiting as $finding) {
-            $this->alert->handle($finding);
+        // One alert per package (docs/22 §10), however many of its findings are new.
+        $packages = [];
+
+        foreach ([...$ready, ...$waiting->all()] as $finding) {
+            $packages[$finding->ecosystem."\0".$finding->name] ??= $finding;
+        }
+
+        foreach ($packages as $finding) {
+            $this->alert->handle($finding->refresh());
         }
 
         $urgent = SecurityFinding::query()
             ->where('team_id', $teamId)
             ->actionNeeded()
             ->distinct()
-            ->pluck('service_instance_id')
+            ->get(['ecosystem', 'name'])
+            ->map(static fn (SecurityFinding $f): string => 'security:'.FixGroup::key($f->ecosystem, $f->name))
             ->all();
+
+        // Alerts raised per service before D107 (`security:<instance>`) stay until their service has nothing urgent left.
+        $legacy = DB::table('security_findings as f')
+            ->join('service_instances as si', 'si.id', '=', 'f.service_instance_id')
+            ->where('f.team_id', $teamId)
+            ->where('f.status', SecurityFindingStatus::Open->value)
+            ->where('f.level', FindingLevel::ActionNeeded->value)
+            ->distinct()
+            ->pluck('si.public_id')
+            ->map(static fn (mixed $id): string => 'security:'.Cast::string($id))
+            ->all();
+        $urgent = [...$urgent, ...$legacy];
 
         $firing = DB::table('alerts')
             ->where('team_id', $teamId)
             ->where('rule', AlertRule::Vulnerability->value)
             ->where('status', 'firing')
-            ->pluck('service_instance_id')
+            ->pluck('subject_key')
             ->all();
 
-        foreach (array_diff(array_map(Cast::id(...), $firing), array_map(Cast::id(...), $urgent)) as $instanceId) {
-            $publicId = ServiceInstance::query()->whereKey($instanceId)->value('public_id');
-
-            if (is_string($publicId)) {
-                $this->resolve->handle($teamId, AlertRule::Vulnerability, 'security:'.$publicId, 'No open finding needs action anymore.');
-            }
+        foreach (array_diff(array_map(Cast::string(...), $firing), $urgent) as $subject) {
+            $this->resolve->handle($teamId, AlertRule::Vulnerability, $subject, 'No service needs this update anymore.');
         }
     }
 

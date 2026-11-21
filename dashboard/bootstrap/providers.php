@@ -6,6 +6,7 @@ use App\Providers\AlertsServiceProvider;
 use App\Providers\ApiServiceProvider;
 use App\Providers\AppServiceProvider;
 use App\Providers\BackupsServiceProvider;
+use App\Providers\CommandsServiceProvider;
 use App\Providers\DockerfileGenerationServiceProvider;
 use App\Providers\FortifyServiceProvider;
 use App\Providers\GitServiceProvider;
@@ -22,6 +23,7 @@ return [
     AppServiceProvider::class,
     ApiServiceProvider::class,
     BackupsServiceProvider::class,
+    CommandsServiceProvider::class,
     DockerfileGenerationServiceProvider::class,
     FortifyServiceProvider::class,
     GitServiceProvider::class,

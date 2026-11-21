@@ -400,6 +400,9 @@ type RunOnceResult struct {
 	DurationMs int64 `json:"durationMs" jsonschema:"minimum=0"`
 	// Probe is the outcome of the spec's start check (docs/20 §5).
 	Probe *ProbeOutcome `json:"probe,omitzero" jsonschema:"nullable"`
+	// OutputTruncated: the output passed the spec's outputLimit and the rest
+	// was not shipped (daemon feature "commandRuns").
+	OutputTruncated bool `json:"outputTruncated,omitzero"`
 }
 
 // ProbeOutcome is what a run_once start check found.

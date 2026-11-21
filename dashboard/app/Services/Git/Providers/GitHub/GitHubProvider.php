@@ -6,6 +6,7 @@ namespace App\Services\Git\Providers\GitHub;
 
 use App\Contracts\Git\GitProvider;
 use App\Contracts\Git\OpensPullRequests;
+use App\Contracts\Git\ReadsCommitChecks;
 use App\Contracts\Git\SourceRepository;
 use App\Data\Git\CommitData;
 use App\Data\Git\DeploymentStatusReport;
@@ -16,6 +17,7 @@ use App\Data\Git\PolledHead;
 use App\Data\Git\RepositoryRef;
 use App\Data\Git\RepositoryTree;
 use App\Enums\Git\GitProviderKind;
+use App\Exceptions\CommitChecksUnavailable;
 use App\Exceptions\DomainRuleViolation;
 use App\Exceptions\Git\RepositoryFileUnavailable;
 use App\Exceptions\GitHeadUnavailable;
@@ -39,7 +41,7 @@ use Throwable;
  * PR comment. Web links use the App's `web_url`, so GitHub Enterprise
  * Server repositories link to their own host.
  */
-final readonly class GitHubProvider implements GitProvider, OpensPullRequests
+final readonly class GitHubProvider implements GitProvider, OpensPullRequests, ReadsCommitChecks
 {
     private const int MAX_BRANCH_PAGES = 3;
 
@@ -47,6 +49,7 @@ final readonly class GitHubProvider implements GitProvider, OpensPullRequests
         private GitHubClientFactory $clients,
         private GitHubDeploymentReporter $reporter,
         private GitHubPreviews $previews,
+        private GitHubCommitChecks $checks,
     ) {}
 
     public function kind(): GitProviderKind
@@ -163,6 +166,17 @@ final readonly class GitHubProvider implements GitProvider, OpensPullRequests
             authorLogin: $login,
             authorAvatarUrl: GitHubAvatar::url($account?->stringOrNull('avatar_url'), $login),
         ), $newEtag === '' ? null : mb_substr($newEtag, 0, 255));
+    }
+
+    public function commitChecks(RepositoryRef $repository, string $sha): array
+    {
+        [$row, $installation] = $this->usable($repository) ?? throw new CommitChecksUnavailable("The GitHub App can't access {$repository->fullName}. Check the installation in Settings → Git.");
+
+        if (! GitRef::isSha($sha)) {
+            throw new CommitChecksUnavailable('This deployment has no commit to read checks for.');
+        }
+
+        return $this->checks->read($row, $installation, $sha);
     }
 
     public function canReadFiles(): bool

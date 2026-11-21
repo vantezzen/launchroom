@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Listeners;
 
+use App\Actions\Commands\FinishCommandRun;
 use App\Actions\RemoteAccess\FinishRemoteAccess;
 use App\Actions\Security\AdvanceInvestigation;
 use App\Actions\Security\FailInventory;
@@ -42,6 +43,7 @@ final readonly class RouteFinishedDaemonTask
         private FinishRemoteAccess $finishAccess,
         private FailInventory $failInventory,
         private AdvanceInvestigation $advanceInvestigation,
+        private FinishCommandRun $finishCommand,
     ) {}
 
     public function handle(DaemonTaskFinished $event): void
@@ -112,7 +114,9 @@ final readonly class RouteFinishedDaemonTask
 
     private function runOnce(DaemonTask $task): void
     {
-        if ($task->purpose === DaemonTaskPurpose::DockerfileCheck) {
+        if ($task->purpose === DaemonTaskPurpose::CommandRun) {
+            $this->finishCommand->handle($task);
+        } elseif ($task->purpose === DaemonTaskPurpose::DockerfileCheck) {
             $this->dockerfileGeneration($task);
         } elseif ($task->purpose === DaemonTaskPurpose::Sanitize) {
             $this->previews($task);

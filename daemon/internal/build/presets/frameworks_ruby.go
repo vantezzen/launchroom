@@ -39,6 +39,7 @@ func (rails) Propose(f Facts, i Info) Proposal {
 	if r.BinRails {
 		railsCmd = []string{"bin/rails"}
 	}
+	p.Commands = railsCommands(railsCmd)
 	p.Decisions = append(p.Decisions,
 		Decision{
 			ID: "rails-env", Title: "Run in production mode",

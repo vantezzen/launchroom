@@ -392,6 +392,10 @@ type LogQuery struct {
 	Source  string // all, build, runtime
 	Range   string // 15m, 1h, 24h, 7d
 	After   int
+	// Q is the log explorer's search (`level:error "timeout"`, LogSearchQuery).
+	Q string
+	// From and To (epoch seconds, both or neither) ask for an absolute window instead of Range.
+	From, To int64
 }
 
 func (q LogQuery) values() url.Values {
@@ -407,6 +411,13 @@ func (q LogQuery) values() url.Values {
 	}
 	if q.After > 0 {
 		v.Set("after", strconv.Itoa(q.After))
+	}
+	if q.Q != "" {
+		v.Set("q", q.Q)
+	}
+	if q.From > 0 && q.To > 0 {
+		v.Set("from", strconv.FormatInt(q.From, 10))
+		v.Set("to", strconv.FormatInt(q.To, 10))
 	}
 	return v
 }

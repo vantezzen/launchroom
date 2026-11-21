@@ -7,6 +7,7 @@ namespace App\Providers;
 use App\Http\Middleware\AuthenticateDaemon;
 use App\Http\Routing\TeamScopedBindings;
 use App\Models\ServiceInstance;
+use App\Models\Transfers\DataCopyRun;
 use App\Models\Transfers\DataExportRun;
 use App\Models\Transfers\DataImportRun;
 use App\Models\Transfers\DataTransfer;
@@ -20,7 +21,7 @@ use LogicException;
 
 /**
  * Wiring for data import and export (D55, docs/14 §12): the `{transfer}`,
- * `{import}` and `{export}` bindings, rate limiters and the web routes.
+ * `{import}`, `{export}` and `{copy}` bindings, rate limiters and the web routes.
  */
 final class TransfersServiceProvider extends ServiceProvider
 {
@@ -33,6 +34,12 @@ final class TransfersServiceProvider extends ServiceProvider
                     ->whereIn('service_instance_id', ServiceInstance::query()->select('id')->whereIn('team_id', $user->teamIdsQuery()));
             });
         }
+
+        // A copy and both of its services must belong to the user's teams (docs/14 §14).
+        TeamScopedBindings::define('copy', DataCopyRun::class, static function (Builder $query, User $user): void {
+            $query->whereIn('team_id', $user->teamIdsQuery())
+                ->whereIn('target_service_instance_id', ServiceInstance::query()->select('id')->whereIn('team_id', $user->teamIdsQuery()));
+        });
 
         // Browser and CLI chunks: 8 MiB each, per user.
         RateLimiter::for('transfer-chunks', static fn (Request $request): Limit => Limit::perMinute(600)->by('transfer-chunks:'.(is_scalar($id = $request->user()?->getAuthIdentifier()) ? (string) $id : (string) $request->ip())));

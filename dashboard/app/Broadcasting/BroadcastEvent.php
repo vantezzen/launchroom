@@ -13,6 +13,8 @@ namespace App\Broadcasting;
 enum BroadcastEvent: string
 {
     case CanvasChanged = 'canvas.changed';
+    /** The status of some services of an environment may have changed (D108): the live-status store refetches. */
+    case ServiceStatus = 'service.status';
     case DeploymentUpdated = 'deployment.updated';
     case LogsAppended = 'logs.appended';
     case ServerMetrics = 'server.metrics';

@@ -23,7 +23,17 @@ const (
 	// SecurityActionNeeded: `launchroom security --fail-on action-needed`
 	// found open "Action needed" findings (docs/22 §11).
 	SecurityActionNeeded = 12
-	Interrupted          = 130
+	// CommandFailed: `launchroom exec` couldn't run the command to its end
+	// for a reason outside it (no server, image pull, launchroomd
+	// restarted; D105). A command that ran and failed exits with its own code.
+	CommandFailed = 13
+	// WaitTimedOut: `launchroom preview wait` gave up at --timeout before
+	// the preview went live or failed (D111).
+	WaitTimedOut = 14
+	// CommandTimedOut: `launchroom exec` stopped the command at its
+	// timeout (the same code as timeout(1)).
+	CommandTimedOut = 124
+	Interrupted     = 130
 )
 
 // Err is an error with the exit code the process should end with.

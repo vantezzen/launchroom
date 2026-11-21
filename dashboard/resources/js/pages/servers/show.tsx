@@ -1,7 +1,7 @@
 import { Head, Link, usePage } from '@inertiajs/react';
 import { Ban, ShieldCheck } from 'lucide-react';
 import { useEffect, useRef } from 'react';
-import { TimeRangeSelect } from '@/components/charts/time-range-select';
+import { RangeSelect } from '@/components/charts/time-range-select';
 import { ConfirmAction } from '@/components/confirm-action';
 import { EmptyState } from '@/components/patterns/empty-state';
 import { Page } from '@/components/patterns/page';
@@ -34,7 +34,7 @@ import {
     useServerMetrics,
 } from '@/features/servers/use-server-metrics';
 import { useObserveScope } from '@/hooks/use-observe-scope';
-import { RANGE_SETS, rangeOptions } from '@/lib/observe-scope';
+import { RANGE_SETS } from '@/lib/observe-scope';
 import { edit as moveLaunchroom } from '@/routes/move';
 import {
     approve,
@@ -455,10 +455,10 @@ export default function ShowServer({
                         metrics={metrics.data}
                         range={range}
                         actions={
-                            <TimeRangeSelect
+                            <RangeSelect
+                                page="resources"
                                 value={range}
                                 onChange={setRange}
-                                options={rangeOptions(RANGE_SETS.resources)}
                             />
                         }
                     />

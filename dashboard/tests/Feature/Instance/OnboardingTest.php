@@ -3,12 +3,14 @@
 declare(strict_types=1);
 
 use App\Enums\AuditAction;
+use App\Enums\DomainKind;
 use App\Enums\ServerRole;
 use App\Enums\TeamRole;
 use App\Models\AuditEvent;
 use App\Models\InstanceSettings;
 use App\Models\Team;
 use App\Models\User;
+use Tests\Support\DeploymentUi;
 use Tests\Support\FakeDns;
 use Tests\Support\GitHubFake;
 use Tests\Support\Projects;
@@ -34,7 +36,7 @@ test('only instance owners see the checklist and its sidebar progress', function
     $this->actingAs($this->admin)->get(route('projects.index'))->assertInertia(fn ($page) => $page->where('onboardingProgress', null));
 
     $this->actingAs($this->owner)->get(route('projects.index'))
-        ->assertInertia(fn ($page) => $page->where('onboardingProgress', ['done' => 0, 'total' => 5, 'complete' => false, 'dismissed' => false]));
+        ->assertInertia(fn ($page) => $page->where('onboardingProgress', ['done' => 0, 'skipped' => 0, 'total' => 5, 'settled' => false, 'complete' => false, 'dismissed' => false]));
 });
 
 test('steps are derived from real state', function (): void {
@@ -91,7 +93,8 @@ test('steps can be skipped and the checklist dismissed', function (): void {
     expect(InstanceSettings::current()->onboarding?->skipped)->toBe(['backups']);
 
     $this->actingAs($this->owner)->get(route('onboarding.show'))
-        ->assertInertia(fn ($page) => $page->where('onboarding.steps.4.status', 'skipped')->where('onboarding.progress.done', 1));
+        // A skipped step is not done (D109).
+        ->assertInertia(fn ($page) => $page->where('onboarding.steps.4.status', 'skipped')->where('onboarding.progress.done', 0)->where('onboarding.progress.skipped', 1));
 
     $this->actingAs($this->owner)->patch(route('onboarding.update'), ['dismissed' => true])->assertRedirect(route('projects.index'));
     expect(InstanceSettings::current()->onboarding?->dismissedAt)->toBeString();
@@ -214,4 +217,38 @@ test('a user without a current team gets an empty checklist instead of an error'
     $this->actingAs($owner)->get(route('onboarding.show'))
         ->assertOk()
         ->assertInertia(fn ($page) => $page->where('onboarding.canCreateProject', false)->where('onboarding.projectCount', 0));
+});
+
+test('skipped steps stay optional: the ring counts done steps, the checklist settles, then What\'s next', function (): void {
+    [$server] = Projects::server($this->team, ip: '203.0.113.7');
+    $server->forceFill(['is_control_plane' => true])->save();
+    InstanceSettings::current()->forceFill(['onboarding' => ['skipped' => ['github', 'domain', 'backups']]])->save();
+
+    // The first app isn't live yet: not settled, owners still land here.
+    $this->actingAs($this->owner)->get(route('onboarding.show'))
+        ->assertInertia(fn ($page) => $page
+            ->where('onboarding.progress', ['done' => 1, 'skipped' => 3, 'total' => 5, 'settled' => false, 'complete' => false, 'dismissed' => false]));
+    $this->actingAs($this->owner)->get(route('dashboard'))->assertRedirect(route('onboarding.show'));
+});
+
+test('only skipped steps left: settled, not complete, and the redirect stops', function (): void {
+    $world = DeploymentUi::make();
+    $owner = $world->member(TeamRole::Owner);
+    $owner->forceFill(['is_instance_owner' => true])->save();
+    $world->server->forceFill(['is_control_plane' => true])->save();
+    InstanceSettings::current()->forceFill(['onboarding' => ['skipped' => ['github', 'domain', 'backups']]])->save();
+
+    $this->actingAs($owner)->get(route('onboarding.show'))
+        ->assertInertia(fn ($page) => $page
+            ->where('onboarding.progress', ['done' => 2, 'skipped' => 3, 'total' => 5, 'settled' => true, 'complete' => false, 'dismissed' => false])
+            // web has only its generated address, and the owner is alone in the team.
+            ->where('onboarding.whatsNext', ['customDomain' => true, 'invite' => true]));
+    $this->actingAs($owner)->get(route('dashboard'))->assertRedirect(route('projects.index'));
+
+    // A custom domain and a teammate later: nothing left to suggest.
+    $world->web->instances()->sole()->domains()->create(['team_id' => $world->team->id, 'hostname' => 'shop.example.com', 'kind' => DomainKind::Custom]);
+    $world->member(TeamRole::Developer);
+
+    $this->actingAs($owner)->get(route('onboarding.show'))
+        ->assertInertia(fn ($page) => $page->where('onboarding.whatsNext', ['customDomain' => false, 'invite' => false]));
 });

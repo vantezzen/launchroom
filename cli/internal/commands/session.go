@@ -37,12 +37,19 @@ func (a *App) currentLink() (*link.Link, string, error) {
 
 // dashboardURL: LAUNCHROOM_URL, else the link's URL, else the last login.
 func (a *App) dashboardURL() (string, error) {
+	l, _, err := a.currentLink()
+	if err != nil && a.Getenv("LAUNCHROOM_URL") == "" {
+		return "", err
+	}
+	return a.dashboardURLFor(l)
+}
+
+// dashboardURLFor is dashboardURL with the link l (nil: none).
+func (a *App) dashboardURLFor(l *link.Link) (string, error) {
 	if u := a.Getenv("LAUNCHROOM_URL"); u != "" {
 		return config.NormalizeURL(u)
 	}
-	if l, _, err := a.currentLink(); err != nil {
-		return "", err
-	} else if l != nil && l.URL != "" {
+	if l != nil && l.URL != "" {
 		return config.NormalizeURL(l.URL)
 	}
 	cfg, err := config.Load(a.ConfigDir)
@@ -62,6 +69,11 @@ func (a *App) session() (*session, error) {
 	if err != nil {
 		return nil, err
 	}
+	return a.sessionAt(u)
+}
+
+// sessionAt signs in to the dashboard at u.
+func (a *App) sessionAt(u string) (*session, error) {
 	token := a.Getenv("LAUNCHROOM_TOKEN")
 	if token == "" {
 		cfg, err := config.Load(a.ConfigDir)

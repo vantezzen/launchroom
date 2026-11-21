@@ -461,6 +461,22 @@ export function ServiceBackups({
                 serviceInstanceId={data.serviceInstanceId}
                 snapshotDownload={snapshotDownload}
                 onSnapshotDownloadHandled={clearSnapshotDownload}
+                canRestore={data.canRestoreInPlace}
+                onRestoreSnapshot={(id) => {
+                    const found = data.snapshots.find(
+                        (snapshot) => snapshot.id === id,
+                    );
+
+                    if (found === undefined) {
+                        toast.error(
+                            'The snapshot isn’t in the list yet. Refresh the page and pick it under Snapshots.',
+                        );
+
+                        return;
+                    }
+
+                    setRestoring({ snapshot: found, mode: 'in_place' });
+                }}
             />
 
             {data.trend.length >= 2 && (

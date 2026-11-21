@@ -13,6 +13,7 @@ use App\Enums\AuditAction;
 use App\Enums\ServiceKind;
 use App\Events\CanvasChanged;
 use App\Exceptions\DomainRuleViolation;
+use App\Models\Registry\RegistryCredential;
 use App\Models\Service;
 use App\Support\Compose\ComposeTranslator;
 use App\Support\Images\ImageReference;
@@ -45,7 +46,8 @@ final readonly class ChangeServiceImage
             throw DomainRuleViolation::on('image', 'The image reference is not valid (e.g. ghcr.io/org/app:1.2 or postgres@sha256:…).');
         }
 
-        if (! in_array($reference->registry, ComposeTranslator::REGISTRIES, true)) {
+        // Hosts the team has sign-in details for are copied at deploy (D91).
+        if (! in_array($reference->registry, ComposeTranslator::REGISTRIES, true) && ! RegistryCredential::forImage($service->team_id, $reference) instanceof RegistryCredential) {
             throw DomainRuleViolation::on('image', "Images from {$reference->registry} can’t be pulled yet: launchroom mirrors Docker Hub and GitHub Container Registry.");
         }
 

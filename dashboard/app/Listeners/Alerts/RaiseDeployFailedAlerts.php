@@ -9,9 +9,12 @@ use App\Actions\Alerts\ResolveAlert;
 use App\Data\Alerts\AlertSignal;
 use App\Enums\Alerts\AlertRule;
 use App\Enums\Alerts\AlertSeverity;
+use App\Enums\AppUpdates\AppUpdateStatus;
 use App\Enums\DeploymentStatus;
+use App\Enums\DeploymentTrigger;
 use App\Enums\EnvironmentKind;
 use App\Events\DeploymentStatusChanged;
+use App\Models\AppUpdates\AppUpdate;
 use App\Models\Deployment;
 use App\Support\Links;
 use Throwable;
@@ -64,11 +67,15 @@ final readonly class RaiseDeployFailedAlerts
         $sha = $deployment->commit_sha !== null ? substr($deployment->commit_sha, 0, 7) : null;
 
         if ($event->to === DeploymentStatus::Active && is_string($deployment->rollback_reason) && $deployment->rollback_reason !== '') {
+            $update = $this->updateBefore($deployment);
+
             $this->raise->handle(new AlertSignal(
                 team: $deployment->team,
                 rule: AlertRule::DeployFailed,
                 subject: $subject,
-                title: "{$instance->service->name} was rolled back in {$environment->name}",
+                title: $update instanceof AppUpdate
+                    ? "{$instance->service->name}’s update to {$update->to_version} was rolled back in {$environment->name}"
+                    : "{$instance->service->name} was rolled back in {$environment->name}",
                 summary: mb_substr(rtrim($deployment->rollback_reason).' New pushes don’t go live until you resume deploys.', 0, 1000),
                 severity: $environment->kind === EnvironmentKind::Production ? AlertSeverity::Critical : AlertSeverity::Warning,
                 href: Links::deployment($deployment),
@@ -100,12 +107,17 @@ final readonly class RaiseDeployFailedAlerts
             'Step' => $deployment->failure_class?->value,
         ], static fn (?string $v): bool => $v !== null);
 
+        // An app update (D106) says which version didn't go live and which keeps running.
+        $update = $deployment->trigger === DeploymentTrigger::Update ? AppUpdate::query()->where('deployment_id', $deployment->id)->first() : null;
+
         $this->raise->handle(new AlertSignal(
             team: $deployment->team,
             rule: AlertRule::DeployFailed,
             subject: $subject,
-            title: "{$instance->service->name} failed to deploy to {$environment->name}",
-            summary: $reason.$reassurance,
+            title: $update instanceof AppUpdate
+                ? "{$instance->service->name}’s update to {$update->to_version} didn’t go live in {$environment->name}"
+                : "{$instance->service->name} failed to deploy to {$environment->name}",
+            summary: $update instanceof AppUpdate ? "{$reason} {$update->from_version} keeps running." : $reason.$reassurance,
             severity: $environment->kind === EnvironmentKind::Production ? AlertSeverity::Critical : AlertSeverity::Warning,
             href: Links::deployment($deployment),
             project: $environment->project,
@@ -114,5 +126,20 @@ final readonly class RaiseDeployFailedAlerts
             facts: $facts,
             occurrence: $deployment->public_id,
         ));
+    }
+
+    /**
+     * The app update a probation rollback undid, if the version it replaced
+     * came from one.
+     */
+    private function updateBefore(Deployment $rollback): ?AppUpdate
+    {
+        return AppUpdate::query()
+            ->where('service_instance_id', $rollback->service_instance_id)
+            ->where('deployment_id', '<', $rollback->id)
+            ->whereIn('status', [AppUpdateStatus::Watching->value, AppUpdateStatus::RolledBack->value])
+            ->where('started_at', '>=', now()->subDay())
+            ->latest('id')
+            ->first(['id', 'to_version', 'deployment_id', 'started_at']);
     }
 }

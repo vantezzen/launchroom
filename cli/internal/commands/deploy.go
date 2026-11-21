@@ -119,29 +119,58 @@ func (a *App) finishDeployments(ctx context.Context, s *session, deployments []a
 			return err
 		}
 	}
+	return a.reportDeployments(ctx, s, final)
+}
+
+// reportDeployments prints finished deployments: a ✓ line per live one and
+// the failure block per failed one (--json: the deployments, failed ones
+// with their failureReport). Any that didn't go live exit with code 10.
+func (a *App) reportDeployments(ctx context.Context, s *session, final []api.Deployment) error {
+	p := a.Printer
 	var failed []string
+	results := make([]deploymentResult, 0, len(final))
 	for _, d := range final {
+		r := deploymentResult{Deployment: d}
 		if d.Failed() {
+			r.FailureReport = a.failureReport(ctx, s, d)
 			msg := d.ServiceName + " " + d.Status
 			if d.Failure != nil && d.Failure.Message != nil && *d.Failure.Message != "" {
 				msg += ": " + *d.Failure.Message
 			}
 			failed = append(failed, msg)
 		}
+		results = append(results, r)
 	}
-	if err := p.Result(final, func(w io.Writer) {
-		for _, d := range final {
-			if !d.Failed() {
-				_, _ = fmt.Fprintf(w, "%s %s is %s\n", p.Good("✓"), d.ServiceName, output.StatusLabel(d.Status))
+	if err := p.Result(results, func(w io.Writer) {
+		for _, r := range results {
+			if !r.Failed() {
+				_, _ = fmt.Fprintf(w, "%s %s is %s\n", p.Good("✓"), r.ServiceName, output.StatusLabel(r.Status))
 			}
 		}
 	}); err != nil {
 		return err
 	}
-	if failed != nil {
-		return exitcode.New(exitcode.DeploymentFailed, errors.New(strings.Join(failed, "\n")))
+	if !p.JSON {
+		for _, r := range results {
+			if r.FailureReport != nil {
+				a.printFailure(p.Err, r.ServiceName, *r.FailureReport)
+			}
+		}
 	}
-	return nil
+	if failed == nil {
+		return nil
+	}
+	// When every failure was explained above, the error line only names the outcome.
+	var explained []string
+	for _, r := range results {
+		if r.FailureReport != nil {
+			explained = append(explained, r.ServiceName)
+		}
+	}
+	if !p.JSON && len(explained) == len(failed) {
+		return exitcode.New(exitcode.DeploymentFailed, fmt.Errorf("%s didn't go live", strings.Join(explained, ", ")))
+	}
+	return exitcode.New(exitcode.DeploymentFailed, errors.New(strings.Join(failed, "\n")))
 }
 
 func plural(n int, one, many string) string {
@@ -172,9 +201,13 @@ func (a *App) followDeployment(ctx context.Context, s *session, d api.Deployment
 	if d.Finished {
 		return d, nil
 	}
+	d, err := a.waitForChecks(ctx, s, d)
+	if err != nil || d.Finished {
+		return d, err
+	}
 	p := a.Printer
 	last := d.Status
-	err := s.Client.Stream(ctx, "/deployments/"+url.PathEscape(d.ID)+"/logs/stream", nil, "", func(ev sse.Event) error {
+	err = s.Client.Stream(ctx, "/deployments/"+url.PathEscape(d.ID)+"/logs/stream", nil, "", func(ev sse.Event) error {
 		switch ev.Event {
 		case "lines":
 			var le api.DeploymentLinesEvent
@@ -240,6 +273,9 @@ func (a *App) waitAll(ctx context.Context, s *session, deployments []api.Deploym
 			if next.Status != d.Status && !a.Printer.JSON {
 				a.Printer.Info("%s %s", a.Printer.Status(next.Status), a.Printer.Dim(next.ServiceName))
 			}
+			if next.WaitingForChecks() && !a.Printer.JSON && (!d.WaitingForChecks() || checksLine(d.Checks) != checksLine(next.Checks)) {
+				a.Printer.Info("%s %s %s", a.Printer.Warn("◌"), checksLine(next.Checks), a.Printer.Dim(next.ServiceName))
+			}
 			current[i] = next
 			if !next.Finished {
 				done = false
@@ -252,6 +288,45 @@ func (a *App) waitAll(ctx context.Context, s *session, deployments []api.Deploym
 			return current, err
 		}
 	}
+}
+
+// waitForChecks polls a push that waits for its commit's CI checks (D111)
+// until it stops waiting, saying so once and again when the count changes.
+func (a *App) waitForChecks(ctx context.Context, s *session, d api.Deployment) (api.Deployment, error) {
+	said := ""
+	for d.WaitingForChecks() {
+		if line := checksLine(d.Checks); line != said && !a.Printer.JSON {
+			a.Printer.Info("%s %s %s", a.Printer.Warn("◌"), line, a.Printer.Dim("("+d.ServiceName+"; Deploy now in the dashboard skips them)"))
+			said = line
+		}
+		if err := s.Client.Sleep(ctx, 5*time.Second); err != nil {
+			return d, err
+		}
+		next, err := s.Client.Deployment(ctx, d.ID)
+		if err != nil {
+			return d, err
+		}
+		d = next
+	}
+	return d, nil
+}
+
+// checksLine is "Waiting for checks: 2 of 5 still running" (or the problem reading them).
+func checksLine(c *api.DeploymentChecks) string {
+	line := "Waiting for checks"
+	pending := 0
+	for _, check := range c.Checks {
+		if check.State == api.CommitCheckStatePending {
+			pending++
+		}
+	}
+	if len(c.Checks) > 0 {
+		line += fmt.Sprintf(": %d of %d still running", pending, len(c.Checks))
+	}
+	if c.Problem != nil && *c.Problem != "" {
+		line += " (" + *c.Problem + ")"
+	}
+	return line
 }
 
 func (a *App) printLogLine(l api.LogLine) {

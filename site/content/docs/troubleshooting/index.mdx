@@ -44,6 +44,16 @@ When a whole server misbehaves, open it under **Servers**. Notices at the top sa
 
 **Activity** in the sidebar lists deploys, promotions, configuration changes, team changes and alerts in order. When something worked yesterday and fails today, use Activity to find what changed in between.
 
+### Error pages in the dashboard
+
+A link to a project, environment, service or server that no longer exists opens **No project at this address** (or environment, service, server) with **Did you mean**: the projects, environments or services nearby that you can open. The page looks the same whether the item was deleted or belongs to a team you're not in. **You don't have access to this page** means your role in the team doesn't include it; a team owner or admin can change your role under Settings → Team. **Your session expired** appears when a form is sent after the session ended: **Reload** goes back to the page you were on, and you sign in again if needed.
+
+**Something went wrong** means launchroom itself ran into an error. The page shows a **reference**, and the dashboard's log entry for the error carries the same id, so an instance owner can find it (the command follows the log; stop it with Ctrl+C):
+
+```sh title="On the control-plane server"
+./launchroom logs dashboard --tail=all | grep <reference>
+```
+
 ## Collecting information for a bug report
 
 If the guides don't solve the problem, open a bug report. Include:

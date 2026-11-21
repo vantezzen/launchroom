@@ -37,6 +37,8 @@ enum AlertRule: string
     case ControlPlaneDegraded = 'control_plane_degraded';
     /** Background jobs wait longer than they should. */
     case QueueBacklog = 'queue_backlog';
+    /** Newer releases of image services (D106): one digest per team. */
+    case UpdateAvailable = 'update_available';
 
     /** Minutes a resolved alert can reopen without a new notification (flap guard). */
     public const int COOLDOWN_MINUTES = 10;
@@ -61,6 +63,7 @@ enum AlertRule: string
             self::CronFailed => 'A cron job fails or doesn’t run',
             self::ControlPlaneDegraded => 'launchroom itself has trouble',
             self::QueueBacklog => 'Background work falls behind',
+            self::UpdateAvailable => 'A newer version of an app is out',
         };
     }
 
@@ -88,6 +91,7 @@ enum AlertRule: string
             self::CronFailed => 'A run exits with an error, or a scheduled run didn’t start.',
             self::ControlPlaneDegraded => 'The dashboard stopped answering, or one of launchroom’s services was restarted or stayed down for 5 minutes. Goes to the main server’s team.',
             self::QueueBacklog => 'The oldest waiting background job is older than 5 minutes. Goes to the main server’s team.',
+            self::UpdateAvailable => 'Image services and apps from templates. One message lists them all, at most once a week.',
         };
     }
 
@@ -95,7 +99,7 @@ enum AlertRule: string
     public function group(): string
     {
         return match ($this) {
-            self::DeployFailed, self::ServiceUnhealthy, self::ErrorRateHigh, self::ServiceCrashed, self::CronFailed => 'services',
+            self::DeployFailed, self::ServiceUnhealthy, self::ErrorRateHigh, self::ServiceCrashed, self::CronFailed, self::UpdateAvailable => 'services',
             self::ServerOffline, self::CpuHigh, self::MemoryHigh, self::DiskFull, self::IngressDown,
             self::ControlPlaneDegraded, self::QueueBacklog => 'servers',
             self::CertificateExpiring, self::BackupFailed, self::CertificateFailed => 'data',
@@ -162,6 +166,8 @@ enum AlertRule: string
             self::BackupFailed => 360,
             // A second advisory for the same service notifies again (docs/22 §10).
             self::Vulnerability => 60,
+            // A digest: news about more apps notifies again after a week.
+            self::UpdateAvailable => 7 * 24 * 60,
             default => null,
         };
     }

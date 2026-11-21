@@ -1,6 +1,6 @@
 import { Link } from '@inertiajs/react';
 import { useQuery } from '@tanstack/react-query';
-import { BarChart3, ScrollText, TriangleAlert } from 'lucide-react';
+import { ScrollText, TriangleAlert } from 'lucide-react';
 import { useMemo } from 'react';
 import { StackedBars } from '@/components/charts/stacked-bars';
 import { StatTile } from '@/components/charts/stat-tile';
@@ -12,6 +12,7 @@ import {
     AnalyticsHeader,
     useAnalyticsService,
 } from '@/features/analytics/analytics-header';
+import { TrafficEmptyState } from '@/features/analytics/traffic-empty-state';
 import {
     agentRows,
     pathRows,
@@ -23,11 +24,12 @@ import type { ShareRow } from '@/features/analytics/shape';
 import { delta, deployMarkers } from '@/features/metrics/format';
 import { requestJson } from '@/lib/http';
 import { logsHref } from '@/lib/links';
+import { useLiveProps } from '@/hooks/use-live-props';
 import { useObserveScope } from '@/hooks/use-observe-scope';
 import {
+    bucketWords,
     formatWindow,
     RANGE_SETS,
-    rangeOptions,
     rangeWords,
 } from '@/lib/observe-scope';
 import { cn } from '@/lib/utils';
@@ -41,8 +43,6 @@ type Split = App.Data.Analytics.AnalyticsSplitData;
 type Service = App.Data.Metrics.MetricsServiceData;
 type Range = (typeof RANGE_SETS.analytics)[number];
 
-const RANGES = rangeOptions(RANGE_SETS.analytics);
-
 const card =
     'rounded-[14px] border bg-card shadow-[0_1px_2px_rgb(0_0_0/0.04)] dark:shadow-none';
 
@@ -55,18 +55,21 @@ const card =
  */
 export function ProjectAnalytics({
     project,
-    projectName,
     environment,
     environmentName,
     services,
     initialService,
+    readiness,
+    canDeploy,
 }: {
     project: string;
-    projectName: string;
     environment: string;
     environmentName: string;
     services: Service[];
     initialService: string | null;
+    /** Why there would be no requests (D109), from the page props. */
+    readiness: App.Data.Analytics.TrafficReadinessData;
+    canDeploy: boolean;
 }) {
     // The observe scope (lib/observe-scope.ts): range and service in the
     // URL, shared with Resources and Logs. The URL wins over the props
@@ -106,13 +109,18 @@ export function ProjectAnalytics({
         [data],
     );
     const serviceName = focus?.name;
-    const unit = range === '30d' ? 'day' : 'hour';
+    const unit = bucketWords(data?.bucketSeconds ?? 3600);
+
+    // While nothing serves, the cause can change (someone presses Start).
+    useLiveProps(['readiness'], {
+        while: data?.totals.requests === 0 && readiness.reason !== 'waiting',
+        everyMs: 15_000,
+    });
 
     return (
         <>
             <AnalyticsHeader
                 project={project}
-                projectName={projectName}
                 environment={environment}
                 environmentName={environmentName}
                 view="traffic"
@@ -120,7 +128,7 @@ export function ProjectAnalytics({
                 service={focus}
                 onService={setService}
                 range={range}
-                ranges={RANGES}
+                rangePage="analytics"
                 onRange={setRange}
                 snapped={snapped}
             />
@@ -143,11 +151,13 @@ export function ProjectAnalytics({
                     <div className={cn(card, 'h-[300px]')} />
                 </div>
             ) : data.totals.requests === 0 ? (
-                <EmptyState icon={BarChart3} variant="framed">
-                    {range === '24h'
-                        ? 'No requests in the last 24 hours. Requests appear here a minute after they reach one of your domains.'
-                        : 'No requests in this range yet. Requests appear here a minute after they reach one of your domains.'}
-                </EmptyState>
+                <TrafficEmptyState
+                    readiness={readiness}
+                    service={focus}
+                    where={environmentName}
+                    range={range}
+                    canFix={canDeploy}
+                />
             ) : (
                 <Report
                     data={data}
@@ -212,7 +222,7 @@ function Report({
     data: Analytics;
     times: number[];
     range: Range;
-    unit: 'hour' | 'day';
+    unit: string;
     showServices: boolean;
     services: Service[];
     onPickService: (id: string) => void;

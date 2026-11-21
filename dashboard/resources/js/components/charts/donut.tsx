@@ -104,14 +104,18 @@ export function Donut({
                     ))}
                 </svg>
                 {(centerValue || centerLabel) && (
-                    <div className="absolute inset-0 flex flex-col items-center justify-center text-center">
+                    // Inset past the ring so a long label wraps inside it instead of running over it.
+                    <div
+                        className="absolute inset-0 flex flex-col items-center justify-center text-center"
+                        style={{ padding: thickness + 6 }}
+                    >
                         {centerValue && (
                             <span className="text-lg leading-6 font-semibold tracking-[-0.02em] tabular-nums">
                                 {centerValue}
                             </span>
                         )}
                         {centerLabel && (
-                            <span className="type-small text-muted-foreground">
+                            <span className="type-small leading-tight text-balance text-muted-foreground">
                                 {centerLabel}
                             </span>
                         )}

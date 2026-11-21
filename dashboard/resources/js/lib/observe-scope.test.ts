@@ -1,8 +1,10 @@
 import { readFileSync } from 'node:fs';
 import { describe, expect, test } from 'vite-plus/test';
 import {
+    bucketWords,
     DEFAULT_RANGE,
     RANGE_SETS,
+    SHARED_RANGES,
     rangeOptions,
     rangeSeconds,
     rangeWords,
@@ -33,10 +35,26 @@ describe('observe scope', () => {
     });
 
     test('an unsupported range snaps to the nearest one the page has', () => {
-        expect(snapRange('1h', RANGE_SETS.analytics)).toBe('24h');
-        expect(snapRange('15m', RANGE_SETS.analytics)).toBe('24h');
-        expect(snapRange('30d', RANGE_SETS.resources)).toBe('7d');
+        expect(snapRange('15m', RANGE_SETS.analytics)).toBe('1h');
         expect(snapRange('15m', RANGE_SETS.resources)).toBe('1h');
+    });
+
+    test('every page offers the shared ranges in order, Logs adds 15 min', () => {
+        for (const set of Object.values(RANGE_SETS)) {
+            expect(set.filter((range) => range !== '15m')).toEqual([
+                ...SHARED_RANGES,
+            ]);
+        }
+        expect(RANGE_SETS.logs[0]).toBe('15m');
+        expect(RANGE_SETS.analytics).not.toContain('15m');
+    });
+
+    test('bucket widths read as words', () => {
+        expect(bucketWords(600)).toBe('10 minutes');
+        expect(bucketWords(60)).toBe('minute');
+        expect(bucketWords(3600)).toBe('hour');
+        expect(bucketWords(10_800)).toBe('3 hours');
+        expect(bucketWords(86_400)).toBe('day');
     });
 
     test('missing or unknown ranges give the default', () => {
@@ -49,6 +67,7 @@ describe('observe scope', () => {
             { value: '1h', label: 'Hour' },
             { value: '24h', label: 'Day' },
             { value: '7d', label: 'Week' },
+            { value: '30d', label: 'Month' },
         ]);
         expect(rangeWords('30d')).toBe('last 30 days');
         expect(rangeWords('nonsense')).toBe('last 24 hours');

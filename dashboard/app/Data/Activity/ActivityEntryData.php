@@ -12,7 +12,8 @@ use Spatie\LaravelData\Data;
  * sentence after the actor; `detail` the commit or revision message.
  *
  * Kinds: deploy, rollback, redeploy (deployments of one commit/revision,
- * grouped), promotion, created (environment created from another), service,
+ * grouped), update (an app update, D106), copy (data copied between
+ * environments, D110), promotion, created (environment created from another), service,
  * project, server, member, alert. `status` is the outcome of a deploy group
  * (live, failed, deploying, cancelled, ready); of an alert `firing` or
  * `resolved` (kind alert, docs/15 §3.6).

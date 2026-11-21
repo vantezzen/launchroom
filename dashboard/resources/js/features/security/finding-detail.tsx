@@ -27,16 +27,15 @@ import {
     DropdownMenuItem,
     DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
-import { Textarea } from '@/components/ui/textarea';
 import { requestJson } from '@/lib/http';
 import { cn } from '@/lib/utils';
-import { vocabulary } from '@/lib/vocabulary';
 import {
     data as findingData,
     dismiss as dismissRoute,
     investigate as investigateRoute,
     reopen as reopenRoute,
 } from '@/routes/security/findings';
+import { DismissReasonFields } from './dismiss-reason';
 import { SeverityLine } from './finding-card';
 import { ECOSYSTEM_LABEL, longDate, SCOPE_LABEL } from './format';
 import { InvestigationReport } from './investigation-report';
@@ -622,10 +621,6 @@ export function FindingMenu({
     );
 }
 
-const REASONS = Object.entries(vocabulary.Security.DismissReason).map(
-    ([value, { label }]) => ({ value, label }),
-);
-
 function DismissDialog({
     open,
     onOpenChange,
@@ -667,39 +662,12 @@ function DismissDialog({
                     {detail.finding.service.name} stops showing{' '}
                     {detail.finding.advisory} until it gets more urgent.
                 </DialogDescription>
-                <fieldset className="flex flex-col gap-2">
-                    <legend className="mb-2 type-label">Why</legend>
-                    {REASONS.map((option) => (
-                        <label
-                            key={option.value}
-                            className={cn(
-                                'flex cursor-pointer items-center gap-3 rounded-lg border px-3 py-2.5 type-body',
-                                reason === option.value
-                                    ? 'border-foreground'
-                                    : 'hover:border-border-strong',
-                            )}
-                        >
-                            <input
-                                type="radio"
-                                name="reason"
-                                value={option.value}
-                                checked={reason === option.value}
-                                onChange={() => setReason(option.value)}
-                                className="accent-foreground"
-                            />
-                            {option.label}
-                        </label>
-                    ))}
-                </fieldset>
-                <label className="flex flex-col gap-2">
-                    <span className="type-label">Note (optional)</span>
-                    <Textarea
-                        value={note}
-                        maxLength={500}
-                        rows={3}
-                        onChange={(event) => setNote(event.target.value)}
-                    />
-                </label>
+                <DismissReasonFields
+                    reason={reason}
+                    onReasonChange={setReason}
+                    note={note}
+                    onNoteChange={setNote}
+                />
                 <DialogFooter>
                     <DialogClose asChild>
                         <Button variant="ghost">Cancel</Button>

@@ -30,7 +30,7 @@ function dnsCheckLabel(check: Check): string {
  * Cloudflare, Full (strict), and certificates over HTTP-01 through the proxy
  * or DNS-01 with an API token.
  */
-function ProxyNote({ proxy }: { proxy: string }) {
+export function ProxyNote({ proxy }: { proxy: string }) {
     const docsUrl = useDocsUrl();
     const cloudflare = proxy === 'Cloudflare';
 
@@ -76,6 +76,36 @@ function ProxyNote({ proxy }: { proxy: string }) {
                 </li>
             </ul>
         </Callout>
+    );
+}
+
+/**
+ * The one line for people whose DNS is at Cloudflare, under the records to
+ * create (docs/05 §5). A wildcard needs the grey cloud (Cloudflare's free
+ * certificate stops one level down); one app domain works either way.
+ */
+export function CloudflareRecordHint({ wildcard }: { wildcard: boolean }) {
+    return (
+        <p className="type-small text-muted-foreground">
+            Using Cloudflare?{' '}
+            {wildcard ? (
+                <>
+                    Set the record to{' '}
+                    <strong className="font-medium text-foreground">
+                        DNS only
+                    </strong>{' '}
+                    so every app address gets a certificate.
+                </>
+            ) : (
+                <>
+                    Both proxy settings work. With the proxy on, set SSL/TLS to{' '}
+                    <strong className="font-medium text-foreground">
+                        Full (strict)
+                    </strong>
+                    .
+                </>
+            )}
+        </p>
     );
 }
 

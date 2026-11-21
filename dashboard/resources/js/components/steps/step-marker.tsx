@@ -44,7 +44,9 @@ export function StepMarker({
             );
         case 'skipped':
             return (
-                <span className={`${circle} border text-muted-foreground`}>
+                <span
+                    className={`${circle} border border-dashed border-border-strong text-muted-foreground`}
+                >
                     <Minus aria-hidden="true" className="size-4" />
                     <span className="sr-only">Skipped</span>
                 </span>

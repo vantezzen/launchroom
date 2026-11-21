@@ -40,6 +40,7 @@ services:
                     cpus: '2'
                     memory: 2g
         x-launchroom:
+            releases: https://github.com/metabase/metabase/releases
             name: Metabase
             logo: metabase
             domain: ${input.domain}

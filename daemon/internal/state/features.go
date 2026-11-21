@@ -147,10 +147,14 @@ const (
 	FeatureCertificateRetry DaemonFeature = "certificateRetry"
 )
 
+// FeatureCommandRuns announces one-off commands (D105):
+// RunOnceSpec.outputLimit, RunOnceResult.outputTruncated.
+const FeatureCommandRuns DaemonFeature = "commandRuns"
+
 // SupportedFeatures is what this launchroomd announces in every report;
 // conditional features (sessions, access, data transfer, waf) are added by
 // the components that check their local policy or capability.
-var SupportedFeatures = []DaemonFeature{FeatureDNSProviders, FeatureLinkProbe, FeatureShipLogs, FeaturePointInTime, FeatureVerifyRestore, FeatureStopSpec, FeatureGitProviders, FeatureControlPlaneURL, FeatureCronSchedule, FeatureGeneratedDockerfile, FeatureClientCertificates, FeatureMongoClickHouse, FeaturePreparedVolumes, FeatureRequestAnalytics, FeatureContainerInspection, FeatureInventory, FeatureConfigFiles, FeatureServiceStop, FeaturePhpExtensions, FeatureSharedVolumes, FeatureProbeHost, FeatureLivenessRestart, FeatureVolumeInitOwner, FeatureReleaseMounts, FeatureCleanupTask, FeatureCertificateRetry, FeatureWatchdog}
+var SupportedFeatures = []DaemonFeature{FeatureDNSProviders, FeatureLinkProbe, FeatureShipLogs, FeaturePointInTime, FeatureVerifyRestore, FeatureStopSpec, FeatureGitProviders, FeatureControlPlaneURL, FeatureCronSchedule, FeatureGeneratedDockerfile, FeatureClientCertificates, FeatureMongoClickHouse, FeaturePreparedVolumes, FeatureRequestAnalytics, FeatureContainerInspection, FeatureInventory, FeatureConfigFiles, FeatureServiceStop, FeaturePhpExtensions, FeatureSharedVolumes, FeatureProbeHost, FeatureLivenessRestart, FeatureVolumeInitOwner, FeatureReleaseMounts, FeatureCleanupTask, FeatureCertificateRetry, FeatureWatchdog, FeatureCommandRuns}
 
 const maxFeatures = 64
 

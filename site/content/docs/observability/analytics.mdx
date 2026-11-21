@@ -20,7 +20,7 @@ Select a project to open its analytics. The project page shows one environment a
 
 From a service, **Analytics** in the service panel's tab row (also in the node menu and ⌘K) opens this page filtered to it: Traffic when it has a domain, Resources otherwise.
 
-Choose **Day**, **Week** or **Month** at the top right of either page. Resources offers Hour, Day and Week.
+Choose **Hour**, **Day**, **Week** or **Month** at the top right of either page. The Hour view counts requests in 10-minute steps.
 
 Each project card on the projects page also shows production's requests of the last 24 hours as a small chart.
 
@@ -85,7 +85,7 @@ curl -H "Authorization: Bearer $LAUNCHROOM_TOKEN" \
   "https://launchroom.example.com/api/v1/analytics?range=7d"
 ```
 
-`/api/v1/analytics` returns the overview of every project of the token's team. `/api/v1/environments/{environment}/analytics` returns one environment, and `/api/v1/environments/{environment}/services/{service}/analytics` one service. `range` is `24h`, `7d` (default) or `30d`. See the [API reference](/docs/reference/api).
+`/api/v1/analytics` returns the overview of every project of the token's team. `/api/v1/environments/{environment}/analytics` returns one environment, and `/api/v1/environments/{environment}/services/{service}/analytics` one service. `range` is `1h`, `24h`, `7d` (default) or `30d`. See the [API reference](/docs/reference/api).
 
 <Cards>
   <Card title="Resources" href="/docs/observability/metrics" description="CPU and memory, latency and bandwidth per service and server." />

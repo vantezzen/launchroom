@@ -13,8 +13,8 @@ use App\Enums\DaemonTaskType;
 /**
  * A one-off container in an environment network (protocol RunOnceSpec,
  * docs/03 §7): release and seed commands, the sanitize command of a preview
- * clone, the start check of a generated Dockerfile. `env` is sealed at lease
- * time.
+ * clone, the start check of a generated Dockerfile, one-off commands (D105).
+ * `env` is sealed at lease time.
  */
 final class RunOnceSpec extends TaskSpec
 {
@@ -23,6 +23,7 @@ final class RunOnceSpec extends TaskSpec
      * @param  list<string>|null  $args
      * @param  list<string>|null  $maskEnv
      * @param  list<RunOnceMount>|null  $mounts  the service's volumes (release commands of a service with volumes; feature `releaseMounts`)
+     * @param  int|null  $outputLimit  bytes of output shipped at most (one-off commands; feature `commandRuns`)
      */
     public function __construct(
         public string $service,
@@ -38,6 +39,7 @@ final class RunOnceSpec extends TaskSpec
         public ?RunOnceProbe $probe = null,
         public ?Sealed $env = null,
         public ?array $mounts = null,
+        public ?int $outputLimit = null,
     ) {}
 
     public function type(): DaemonTaskType
@@ -50,6 +52,7 @@ final class RunOnceSpec extends TaskSpec
         return array_values(array_filter([
             $this->probe instanceof RunOnceProbe ? DaemonFeature::GeneratedDockerfile : null,
             $this->mounts !== null ? DaemonFeature::ReleaseMounts : null,
+            $this->outputLimit !== null ? DaemonFeature::CommandRuns : null,
         ]));
     }
 }

@@ -88,3 +88,16 @@ export function effectSummary(changes: StagedChanges): string {
         ? `Applying ${last}.`
         : `Applying ${parts.join(', ')}, and ${last}.`;
 }
+
+/**
+ * The staged bar's count: "2 changes", or "4 changes in 2 services" when
+ * more than one service has some, so Apply's scope is in the sentence.
+ */
+export function stagedCountLabel(changes: StagedChanges): string {
+    const count = `${changes.count} ${changes.count === 1 ? 'change' : 'changes'}`;
+    const services = changes.groups.filter(
+        (group) => group.serviceId !== null,
+    ).length;
+
+    return services > 1 ? `${count} in ${services} services` : count;
+}

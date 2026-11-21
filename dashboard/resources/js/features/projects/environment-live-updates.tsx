@@ -10,16 +10,21 @@ const RELOAD_DEBOUNCE_MS = 400;
 /**
  * Reloads the given props when anything on these environments' canvases
  * changes (private channel per environment, authorized by policy), or on a
- * polling interval while the socket is down.
+ * polling interval while the socket is down. With `statuses`, also when a
+ * service's status changes without the canvas changing (`service.status`,
+ * D108): pages that show statuses in their own props, like the project
+ * cards. The canvas reads statuses from the live-status store instead.
  */
 export function EnvironmentLiveUpdates({
     environments,
     only,
     pollMs = 30_000,
+    statuses = false,
 }: {
     environments: string[];
     only: string[];
     pollMs?: number;
+    statuses?: boolean;
 }) {
     const timer = useRef<number | null>(null);
     const mounted = useRef(true);
@@ -67,6 +72,16 @@ export function EnvironmentLiveUpdates({
                     onEvent={reload}
                 />
             ))}
+            {statuses &&
+                environments.map((environment) => (
+                    <ChannelEvents
+                        key={`status-${environment}`}
+                        channel={channelName('environments', environment)}
+                        event="service.status"
+                        pollMs={3_600_000}
+                        onEvent={(event) => event !== null && reload()}
+                    />
+                ))}
         </>
     );
 }

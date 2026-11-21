@@ -1,6 +1,7 @@
 package state
 
 import (
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -51,6 +52,30 @@ func TestRuntimeContractRules(t *testing.T) {
 		"process stop timeout": {func(s *BuildSummary) {
 			s.Processes = []ProcessSuggestion{{Name: "worker", Args: []string{"run"}, StopTimeout: "10m"}}
 		}, "s.processes[0].stopTimeout"},
+		"command without args": {func(s *BuildSummary) {
+			s.Commands = []CommandSuggestion{{Name: "migrate", Label: "Run migrations"}}
+		}, "s.commands[0].args"},
+		"command without label": {func(s *BuildSummary) {
+			s.Commands = []CommandSuggestion{{Name: "migrate", Args: []string{"migrate"}}}
+		}, "s.commands[0].label"},
+		"command label too long": {func(s *BuildSummary) {
+			s.Commands = []CommandSuggestion{{Name: "migrate", Label: strings.Repeat("x", 65), Args: []string{"migrate"}}}
+		}, "s.commands[0].label"},
+		"command description too long": {func(s *BuildSummary) {
+			s.Commands = []CommandSuggestion{{Name: "migrate", Label: "x", Description: strings.Repeat("x", 201), Args: []string{"migrate"}}}
+		}, "s.commands[0].description"},
+		"duplicate command": {func(s *BuildSummary) {
+			c := CommandSuggestion{Name: "migrate", Label: "Run migrations", Args: []string{"migrate"}}
+			s.Commands = []CommandSuggestion{c, c}
+		}, "s.commands.name[1]"},
+		"command name grammar": {func(s *BuildSummary) {
+			s.Commands = []CommandSuggestion{{Name: "Migrate DB", Label: "x", Args: []string{"migrate"}}}
+		}, "s.commands[0].name"},
+		"too many commands": {func(s *BuildSummary) {
+			for i := range 17 {
+				s.Commands = append(s.Commands, CommandSuggestion{Name: Slug("c" + strconv.Itoa(i)), Label: "x", Args: []string{"x"}})
+			}
+		}, "s.commands"},
 	}
 	for name, c := range cases {
 		s := base()

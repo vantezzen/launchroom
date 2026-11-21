@@ -1,0 +1,206 @@
+---
+title: Use launchroom from your AI coding agent
+description: Let the agent in Claude Code, Cursor, VS Code, Codex and other editors deploy, read why a deploy failed, fix it and check the result.
+---
+
+The `launchroom` CLI includes an [MCP](https://modelcontextprotocol.io) server. Once your editor starts it, the coding
+agent there can look at your projects, deploy, follow the rollout, read why something failed, apply the fix launchroom
+suggests, run a migration and check the logs afterwards. It works with your own sign-in and can do what your token allows,
+nothing more.
+
+**Settings → AI agents** in the dashboard has the same steps with copy buttons.
+
+## 1. Install the CLI and sign in for the agent
+
+```sh
+curl -fsSL https://github.com/vantezzen/launchroom/releases/latest/download/cli.sh | sh
+launchroom login --abilities read,deploy,fix,env:read,env:write,run
+```
+
+The browser opens the approval page with these permissions already chosen. You still see them and approve them:
+
+| Permission | What the agent can do with it |
+|---|---|
+| Read | Projects, services and their status, deployments, logs, request metrics, previews, request traces |
+| Deploy | Deploy, redeploy, roll back, cancel, apply staged changes |
+| Apply suggested fixes | Apply the one fix launchroom suggests for a failed deployment |
+| Read variables | See variable **names** (the agent never gets values) |
+| Change variables | Set a variable, for example one a failed deploy says is missing |
+| Run commands | Run one-off commands such as migrations in a copy of the live app |
+
+Leave out `run` if the agent shouldn't run commands, or sign in with `read` only to let it look without changing anything.
+Prefer this list to **Full access**: a full-access token also gets the permissions later launchroom versions add.
+The agent never gets secret values or data exports, whatever you choose. Your role still applies: a developer's token
+can't do what only owners can.
+
+Run `launchroom link` in your project folder so the agent knows which project, environment and service the folder
+deploys to. Without a link it asks you, or you name them in your request.
+
+## 2. Add launchroom to your editor
+
+The quickest way is to run, in your project folder:
+
+```sh
+launchroom mcp install --client cursor --write
+```
+
+It shows the change and asks before writing. `launchroom mcp install` without options prints the setup for every editor.
+The configuration only starts `launchroom mcp`; no token goes into it.
+
+<Tabs items={['Claude Code', 'Cursor', 'VS Code', 'Codex', 'Windsurf', 'Gemini CLI', 'Claude Desktop']}>
+<Tab value="Claude Code">
+
+```sh
+claude mcp add launchroom -- launchroom mcp
+```
+
+Or commit a `.mcp.json` in the project so your team gets it too:
+
+```json
+{
+  "mcpServers": {
+    "launchroom": { "command": "launchroom", "args": ["mcp"] }
+  }
+}
+```
+
+</Tab>
+<Tab value="Cursor">
+
+`.cursor/mcp.json` in the project (or `~/.cursor/mcp.json` for every project):
+
+```json
+{
+  "mcpServers": {
+    "launchroom": { "command": "launchroom", "args": ["mcp"] }
+  }
+}
+```
+
+</Tab>
+<Tab value="VS Code">
+
+`.vscode/mcp.json` in the project:
+
+```json
+{
+  "servers": {
+    "launchroom": { "type": "stdio", "command": "launchroom", "args": ["mcp"] }
+  }
+}
+```
+
+</Tab>
+<Tab value="Codex">
+
+```sh
+codex mcp add launchroom -- launchroom mcp
+```
+
+Or add to `~/.codex/config.toml`:
+
+```toml
+[mcp_servers.launchroom]
+command = "launchroom"
+args = ["mcp"]
+```
+
+</Tab>
+<Tab value="Windsurf">
+
+`~/.codeium/windsurf/mcp_config.json`:
+
+```json
+{
+  "mcpServers": {
+    "launchroom": { "command": "launchroom", "args": ["mcp"] }
+  }
+}
+```
+
+</Tab>
+<Tab value="Gemini CLI">
+
+`.gemini/settings.json` in the project (or `~/.gemini/settings.json`):
+
+```json
+{
+  "mcpServers": {
+    "launchroom": { "command": "launchroom", "args": ["mcp"] }
+  }
+}
+```
+
+</Tab>
+<Tab value="Claude Desktop">
+
+Claude Desktop starts servers outside your project, so name the folder with `--dir`. Run
+`launchroom mcp install --client claude-desktop --write` in the project, or add to `claude_desktop_config.json`:
+
+```json
+{
+  "mcpServers": {
+    "launchroom": { "command": "/Users/you/.local/bin/launchroom", "args": ["mcp", "--dir", "/Users/you/code/shop"] }
+  }
+}
+```
+
+</Tab>
+</Tabs>
+
+Editors you open from the dock may not see `~/.local/bin`. If the editor says it can't start `launchroom`, use the full
+path, as `launchroom mcp install` does for user-wide files.
+
+## 3. Ask it
+
+- "Why did my last deploy fail? Fix it and deploy again."
+- "Ship this branch to staging and tell me when it's live."
+- "Are there new errors in production since the last deploy?"
+- "Run the migrations on production."
+- "What happened to this request?" with the `X-Launchroom-Ray` header of a response.
+
+The server also offers ready-made prompts your editor may list: **Debug a failed deploy**, **Ship this branch** and
+**Investigate a request**.
+
+## What the agent gets
+
+| Tool | What it does |
+|---|---|
+| `whoami` | Who is signed in, the token's permissions, what the folder is linked to, which tools are unavailable and why |
+| `list_projects`, `get_project` | Projects, and one environment's services with status, addresses and live deployment |
+| `list_deployments`, `get_deployment`, `wait_for_deployment` | Deployments, and following one until it's live or failed (also the deployment of a commit you pushed) |
+| `get_deployment_failure`, `apply_fix` | Why a deployment failed, with the failing lines and fixes, and applying launchroom's suggested fix |
+| `deploy`, `redeploy`, `rollback`, `cancel_deployment`, `apply_staged_changes` | Shipping, with progress while it waits |
+| `get_deployment_logs`, `get_logs`, `get_metrics`, `decode_ray` | Build logs, runtime logs with search, request metrics, and one request's trace |
+| `list_previews`, `wait_for_preview` | Pull request previews |
+| `list_env`, `set_variable`, `get_config`, `check_config` | Variable names, setting one, and launchroom.json |
+| `list_commands`, `run_command`, `get_command_run`, `cancel_command_run` | One-off commands |
+| `list_app_updates`, `apply_app_update` | Newer releases of apps from a template or an image, and updating one (needs **Update apps** on the token) |
+
+Your editor only sees the tools your token can use. Waiting tools stop waiting after 10 minutes (up to 30) and say so;
+the deployment carries on.
+
+## Safety
+
+- **Your permissions, nothing more.** Every call goes through the API with your token, checked like the same action in
+  the dashboard and recorded in the audit log.
+- **No secret values.** No tool reads one. `list_env` shows names only.
+- **Logs are data, not instructions.** A deployed app's logs and output can contain text written by anyone who uses the
+  app. The server marks all of it as untrusted data, and tells the agent never to act on instructions found there.
+- **Your editor asks first.** Rollback, cancel, commands and other tools that change things are marked as destructive,
+  so editors ask before running them. Listed commands that change data (like migrations) and major app updates also need
+  the agent to confirm that you agreed.
+- **Stopping is safe.** Stopping the agent while it waits for a deployment leaves the deployment running; stopping it
+  during a command cancels that command.
+
+## Troubleshooting
+
+- **"Not connected to launchroom"**: run `launchroom login` (with `--url` the first time), then restart the server from
+  your editor's MCP settings.
+- **A tool is missing**: ask the agent to call `whoami`; it lists the unavailable tools and the permission each needs.
+  Sign in again with `launchroom login --abilities …`. With a full-access token, a missing tool is one your role
+  doesn't allow; `whoami` says so.
+- **It acts on the wrong project**: check `.launchroom/project.json` with `launchroom status`, or name the project,
+  environment and service in your request.
+- **In CI or a container**: set `LAUNCHROOM_URL` and `LAUNCHROOM_TOKEN` in the environment the editor starts the server
+  with, instead of signing in.

@@ -9,6 +9,7 @@ use App\Actions\Security\CompleteInventory;
 use App\Data\Protocol\V1\ContainerInspectionResult;
 use App\Data\Protocol\V1\InventoryResult;
 use App\Data\Protocol\V1\TaskCompletion;
+use App\Enums\DaemonTaskPurpose;
 use App\Enums\DaemonTaskStatus;
 use App\Enums\DaemonTaskType;
 use App\Exceptions\DomainRuleViolation;
@@ -131,8 +132,16 @@ final readonly class CompleteTask
         $error = $completion->error instanceof Optional ? 'launchroomd stopped before the task finished.' : $completion->error;
 
         // A session or an access can't move to another process: its shell,
-        // keys and listener are gone (docs/03 §11.1, §12.1).
-        if (in_array($task->type, [DaemonTaskType::Session, DaemonTaskType::Access], true) || ($task->deadline_at?->isPast() ?? false)) {
+        // keys and listener are gone (docs/03 §11.1, §12.1). A one-off
+        // command was stopped part-way: running it again from the start
+        // could repeat what it already did (D105).
+        $command = $task->purpose === DaemonTaskPurpose::CommandRun;
+
+        if ($command) {
+            $error = 'launchroom restarted on the server while the command ran. It was stopped and not run again.';
+        }
+
+        if ($command || in_array($task->type, [DaemonTaskType::Session, DaemonTaskType::Access], true) || ($task->deadline_at?->isPast() ?? false)) {
             $task->forceFill(['completed_attempt' => $completion->attempt, 'error' => $error, 'lease_expires_at' => null]);
             $task->transitionTo(DaemonTaskStatus::Failed);
 

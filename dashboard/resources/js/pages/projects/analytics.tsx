@@ -8,6 +8,7 @@ type Props = App.Data.Canvas.ProjectShellPropsData & {
     view: App.Enums.AnalyticsView;
     services: App.Data.Metrics.MetricsServiceData[];
     initialService: string | null;
+    readiness: App.Data.Analytics.TrafficReadinessData;
 };
 
 /**
@@ -20,24 +21,35 @@ export default function ProjectAnalyticsPage({
     view,
     services,
     initialService,
+    readiness,
+    abilities,
 }: Props) {
-    const View = view === 'resources' ? ProjectResources : ProjectAnalytics;
-
     return (
         <>
             <Head title={`Analytics - ${project.name}`} />
             <Page size="wide">
-                {environment && (
-                    <View
-                        key={`${environment.id}-${view}`}
-                        project={project.id}
-                        projectName={project.name}
-                        environment={environment.id}
-                        environmentName={environment.name}
-                        services={services}
-                        initialService={initialService}
-                    />
-                )}
+                {environment &&
+                    (view === 'resources' ? (
+                        <ProjectResources
+                            key={`${environment.id}-resources`}
+                            project={project.id}
+                            environment={environment.id}
+                            environmentName={environment.name}
+                            services={services}
+                            initialService={initialService}
+                        />
+                    ) : (
+                        <ProjectAnalytics
+                            key={`${environment.id}-traffic`}
+                            project={project.id}
+                            environment={environment.id}
+                            environmentName={environment.name}
+                            services={services}
+                            initialService={initialService}
+                            readiness={readiness}
+                            canDeploy={abilities.deploy}
+                        />
+                    ))}
             </Page>
         </>
     );

@@ -14,7 +14,7 @@ final class SecurityPageData extends Data
 {
     /**
      * @param  list<FeedStateData>  $feeds
-     * @param  list<FindingCardData>  $actionNeeded
+     * @param  list<FixGroupData>  $fixGroups  "Action needed", one per package, in priority order
      * @param  list<WorthKnowingGroupData>  $worthKnowing
      * @param  list<RuntimeCardData>  $runtimes
      * @param  list<RuntimeCardData>  $baseImages
@@ -33,7 +33,7 @@ final class SecurityPageData extends Data
         /** Change firewalls, dismiss and investigate (`projects.manage`). */
         public bool $canManage,
         public SecuritySummaryData $summary,
-        public array $actionNeeded,
+        public array $fixGroups,
         public WafOverviewData $firewall,
         public array $worthKnowing,
         public array $runtimes,

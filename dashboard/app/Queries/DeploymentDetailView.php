@@ -14,10 +14,8 @@ use App\Data\Deployments\DeploymentReplicaData;
 use App\Data\Deployments\DeploymentServerData;
 use App\Data\Deployments\DeploymentStepData;
 use App\Data\Deployments\EnvSnapshotEntryData;
-use App\Data\Deployments\FailureExplanationData;
 use App\Data\Deployments\ResolvedConfigEntryData;
 use App\Data\Git\RepositoryRef;
-use App\Data\Protocol\V1\BuildWarning;
 use App\Data\Servers\DeviceData;
 use App\Data\Services\GitSource;
 use App\Data\Specs\ServiceSpec;
@@ -26,25 +24,20 @@ use App\Enums\DaemonTaskType;
 use App\Enums\DeploymentStatus;
 use App\Enums\DeploymentStepName;
 use App\Enums\DeploymentStepStatus;
-use App\Enums\FailureFixAction;
 use App\Enums\WorkloadPhase;
 use App\Models\DaemonTask;
 use App\Models\Deployment;
 use App\Models\DeploymentStep;
-use App\Models\LogChunk;
 use App\Models\Placement;
 use App\Models\Server;
 use App\Models\Service;
 use App\Queries\ConfigAsCode\ConfigFileLinks;
 use App\Services\Crypto\ProjectKeyring;
-use App\Services\Deployments\DeploymentLogMasker;
 use App\Services\Deployments\ReleaseStep;
 use App\Services\Deployments\RolloutStatus;
 use App\Services\Git\GitProviders;
 use App\Support\Canvas\ServiceGlyph;
 use App\Support\Deployments\EffectiveDeploy;
-use App\Support\Deployments\Failures\FailureCatalogue;
-use App\Support\Deployments\Failures\FailureContext;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\Gate;
 
@@ -61,7 +54,7 @@ final readonly class DeploymentDetailView
         private DeploymentStats $stats,
         private GitProviders $providers,
         private ConfigFileLinks $configLinks,
-        private DeploymentLogMasker $masker,
+        private FailureExplanations $explanations,
     ) {}
 
     public function get(Deployment $deployment): DeploymentDetailData
@@ -101,7 +94,7 @@ final readonly class DeploymentDetailView
             canRedeploy: $deployment->serviceInstance->stopped_at === null && Gate::allows('redeploy', $deployment),
             canCancel: Gate::allows('cancel', $deployment),
             canPromote: Gate::allows('promote', $deployment),
-            failureExplanation: $failed ? $this->explain($deployment, array_values($stepRows->all()), $service instanceof ServiceSpec ? $service : null) : null,
+            failureExplanation: $failed ? $this->explanations->explain($deployment, $service instanceof ServiceSpec ? $service : null, array_values($stepRows->all())) : null,
             buildHistory: $this->stats->buildHistory($deployment->serviceInstance),
             logo: $related['logo'],
             builtOn: $related['builtOn'],
@@ -115,6 +108,8 @@ final readonly class DeploymentDetailView
             expectsRelease: ReleaseStep::expected($deployment),
             newer: $this->neighbour($deployment, newer: true),
             older: $this->neighbour($deployment, newer: false),
+            checks: $deployment->checks,
+            canSkipChecks: Gate::allows('skipChecks', $deployment),
         );
     }
 
@@ -180,114 +175,6 @@ final readonly class DeploymentDetailView
         }
 
         return $out;
-    }
-
-    /**
-     * A known failure in plain words (FailureCatalogue): the failure message,
-     * failed step messages and the known-error codes of the build task.
-     *
-     * @param  list<DeploymentStep>  $steps
-     */
-    private function explain(Deployment $deployment, array $steps, ?ServiceSpec $service): ?FailureExplanationData
-    {
-        if ($deployment->failure_class === null) {
-            return null;
-        }
-
-        $build = DaemonTask::query()
-            ->where('deployment_id', $deployment->id)
-            ->where('type', DaemonTaskType::Build->value)
-            ->latest('id')
-            ->first(['id', 'result', 'server_id']);
-        $hints = $build?->result?->failure->hints ?? [];
-        $codes = array_map(static fn (BuildWarning $hint): string => $hint->code, $hints);
-
-        // launchroomd's hint messages carry facts the log doesn't ("freed 3.1 GB").
-        $stepMessages = array_map(static fn (BuildWarning $hint): string => $hint->message, $hints);
-        $listening = [];
-        $hintPort = null;
-        // The failed replica's facts (RolloutStatus::failureMeta, A3a).
-        $facts = [];
-        $adopted = false;
-
-        foreach ($steps as $step) {
-            if ($step->status !== DeploymentStepStatus::Failed) {
-                continue;
-            }
-
-            // launchroom already set the port it found (AdoptDetectedPort).
-            $adopted = $adopted || isset($step->meta['adoptedAt']);
-
-            if (is_string($step->meta['message'] ?? null)) {
-                $stepMessages[] = $step->meta['message'];
-            }
-
-            if (is_string($step->meta['portHint'] ?? null)) {
-                $codes[] = $step->meta['portHint'];
-                $listening = array_values(array_filter((array) ($step->meta['listening'] ?? []), is_int(...)));
-                $hintPort = is_int($step->meta['port'] ?? null) ? $step->meta['port'] : null;
-            }
-
-            foreach (['failureCode', 'probeHint'] as $key) {
-                if (is_string($step->meta[$key] ?? null)) {
-                    $codes[] = $step->meta[$key];
-                }
-            }
-
-            $facts = [...$facts, ...array_intersect_key($step->meta, array_flip(['exitCode', 'oomKilled', 'signal', 'byLaunchroom', 'server', 'probeBody']))];
-        }
-
-        if ($build !== null) {
-            $tail = LogChunk::query()->where('team_id', $deployment->team_id)
-                ->where('daemon_task_id', $build->id)->latest('id')->limit(8)->get(['lines'])
-                ->reverse()->flatMap(static fn (LogChunk $chunk): array => array_column($chunk->lines, 'text'))->implode("\n");
-            $stepMessages[] = mb_substr($tail, -16000);
-        }
-
-        // Where it failed: the replica's server, else the build server (a full disk during the build).
-        $serverId = is_string($facts['server'] ?? null) ? $facts['server'] : null;
-        $server = $serverId !== null
-            ? Server::query()->where('team_id', $deployment->team_id)->where('public_id', $serverId)->first(['id', 'public_id', 'name'])
-            : ($build?->server_id !== null ? Server::query()->where('team_id', $deployment->team_id)->whereKey($build->server_id)->first(['id', 'public_id', 'name']) : null);
-
-        // The probe's answer is the app's output: masked like a log line.
-        $body = is_string($facts['probeBody'] ?? null) && $facts['probeBody'] !== '' ? $this->masker->mask($deployment->id, $facts['probeBody']) : null;
-
-        $explanation = FailureCatalogue::explain(new FailureContext(
-            class: $deployment->failure_class,
-            message: $deployment->failure_message,
-            hintCodes: array_values(array_unique($codes)),
-            logExcerpt: $stepMessages === [] ? null : implode("\n", $stepMessages),
-            currentPort: $service?->deploy->port,
-            healthStartPeriodSeconds: $service?->deploy->healthcheck->startPeriodSeconds,
-            listening: $listening,
-            hintPort: $hintPort,
-            exitCode: is_int($facts['exitCode'] ?? null) ? $facts['exitCode'] : null,
-            oomKilled: ($facts['oomKilled'] ?? false) === true,
-            signal: is_int($facts['signal'] ?? null) ? $facts['signal'] : null,
-            byLaunchroom: ($facts['byLaunchroom'] ?? false) === true,
-            server: $server?->name,
-            serverId: $server?->public_id,
-            imageUser: $deployment->imageFacts()?->user,
-            probeBody: $body,
-        ));
-
-        if (! $explanation instanceof FailureExplanationData) {
-            return null;
-        }
-
-        $action = $adopted && $explanation->action === FailureFixAction::SetPort ? null : $explanation->action;
-        $answer = $body !== null && in_array($explanation->key, ['host_not_allowed', 'health_status', 'django_disallowed_host', 'rails_blocked_host'], true) ? $body : null;
-
-        return new FailureExplanationData(
-            key: $explanation->key,
-            title: $explanation->title,
-            cause: $explanation->cause,
-            fix: $explanation->fix,
-            action: $action,
-            params: $action instanceof FailureFixAction ? $explanation->params : [],
-            answer: $answer,
-        );
     }
 
     /**

@@ -33,7 +33,7 @@ launchroom is a self-hosted PaaS (Vercel/Railway UX on your own servers). **The 
 
 ## Generated files and owners (edit the owner, then regenerate)
 - `make gen-types`: `resources/js/types/generated.d.ts`, `types/vocabulary.generated.ts` (enum labels/tones), `types/grammar.generated.ts` and `App\Support\Protocol\Grammar`/`Limits` (from `protocol/schema/v1/vocabulary.json`).
-- `make gen-protocol`: `protocol/schema/v1/*.json` from the Go types, then copies them into `site/public/schema` (the site's `sync-public.mjs`; CI fails on stale copies, so commit both). `make gen-openapi`: the API document. `make gen-cli`: `cli/internal/api/enums_gen.go` from the OpenAPI document.
+- `make gen-protocol`: `protocol/schema/v1/*.json` from the Go types, then copies them into `site/public/schema` (the site's `sync-public.mjs`; CI fails on stale copies, so commit both). `make gen-openapi`: the API document. `make gen-cli`: `cli/internal/api/enums_gen.go` from the OpenAPI document, and `protocol/fixtures/cli/mcp-clients.json` from `cli/internal/mcpclients` (the AI agents page's editor table is tested against it).
 - `make gen-installers`: the installers' shared regions from `deploy/install/lib`.
 - Pins: runtime images in `deploy/control-plane/images.env`, build/test/dev tools in `deploy/pins.env`; `make lint-deploy` (check-pins) fails on a copy that differs.
 

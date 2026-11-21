@@ -125,7 +125,7 @@ New project's first field takes any public HTTPS repository URL, so a public rep
 
 | | Route | Authentication (fail closed, docs/09 R17) | Dedupe | Events |
 |---|---|---|---|---|
-| GitHub | `POST /webhooks/github` | `X-Hub-Signature-256` with the app's secret | `X-GitHub-Delivery` | push, pull_request, installation* |
+| GitHub | `POST /webhooks/github` | `X-Hub-Signature-256` with the app's secret | `X-GitHub-Delivery` | push, pull_request, check_run, check_suite, status (deploy after checks pass, [06](06-variables-environments.md) §2.5), installation* |
 | GitLab | `POST /webhooks/gitlab/{gic}` | `X-Gitlab-Token` = the connection's secret (`hash_equals`) | `X-Gitlab-Event-UUID` | Push Hook, Tag Push Hook, Merge Request Hook |
 | Gitea/Forgejo | `POST /webhooks/gitea/{gic}` | `X-Forgejo-Signature` or `X-Gitea-Signature` = HMAC-SHA256 hex of the raw body | `X-Forgejo-Delivery` / `X-Gitea-Delivery` | push, pull_request |
 | Any git | `POST /webhooks/git/{gic}` | `X-Launchroom-Signature` / `X-Hub-Signature-256` | none (idempotent "poll now") | any |

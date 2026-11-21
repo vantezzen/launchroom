@@ -31,6 +31,7 @@ services:
         healthcheck:
             test: ['CMD', 'curl', '-f', 'http://localhost:7700/health']
         x-launchroom:
+            releases: https://github.com/meilisearch/meilisearch/releases
             name: Meilisearch
             logo: meilisearch
             domain: ${input.domain}

@@ -15,6 +15,7 @@ import {
 } from '@/features/service-panel/panel-signals';
 import { DeploymentsTab } from '@/features/deployments/deployments-tab';
 import { ServiceLogs } from '@/features/log-explorer/service-logs';
+import { UpdateStrip } from '@/features/app-updates/update-strip';
 import { CronRuns } from './cron-runs';
 import { RuntimeFacts } from './runtime-facts';
 import { ServiceStagedBar } from './service-staged-bar';
@@ -28,9 +29,9 @@ import { show as deploymentShow } from '@/routes/deployments';
 import services from '@/routes/projects/services';
 import { index as securityRoute } from '@/routes/security';
 import { show as findingRoute } from '@/routes/security/findings';
-import { compactAge } from '@/lib/format';
 import { ServiceGlyph } from '@/components/service-glyph';
 import { StagedChip } from '@/features/staged-changes/effects';
+import { statusDetail } from '@/features/service-status/live-status';
 
 const EXPANDED_KEY = 'launchroom.panel.expanded';
 
@@ -46,6 +47,11 @@ const SettingsTab = lazy(loadSettingsTab);
 const ConsoleTab = lazy(() =>
     import('@/features/sessions/console-tab').then((module) => ({
         default: module.ConsoleTab,
+    })),
+);
+const CommandsTab = lazy(() =>
+    import('@/features/commands/commands-tab').then((module) => ({
+        default: module.CommandsTab,
     })),
 );
 const DataTab = lazy(() =>
@@ -66,7 +72,7 @@ type Tab = {
  * §9.5): a floating sheet 12 px in from the canvas edges so the
  * canvas visibly continues behind it. Header with the logo (it morphs from
  * the node, shared element `svc-<id>`), name, status and one meta line;
- * tabs Deployments, Logs and Settings (+ Console and Data with their
+ * tabs Deployments, Logs and Settings (+ Commands, Console and Data with their
  * permission; Variables and Backups are settings pages), then Analytics,
  * a link to the project's Analytics page filtered to the service (D75).
  * Every tab has a URL (`/p/{project}/{env}/s/{service}/{tab}`); expanded it
@@ -121,6 +127,9 @@ export function ServicePanel({
     const tabs: Tab[] = [
         { id: 'deployments', label: 'Deployments' },
         { id: 'logs', label: 'Logs' },
+        ...(panel.canCommands
+            ? [{ id: 'commands', label: 'Commands' } satisfies Tab]
+            : []),
         ...(panel.canConsole
             ? [{ id: 'console', label: 'Console' } satisfies Tab]
             : []),
@@ -286,6 +295,7 @@ export function ServicePanel({
                 )}
 
                 {panel.runtime && <RuntimeFacts facts={panel.runtime} />}
+                {panel.update && <UpdateStrip service={panel.update} />}
                 <CronRuns runs={panel.cronRuns} />
 
                 <nav
@@ -398,6 +408,17 @@ export function ServicePanel({
                                     logo={node.logo}
                                 />
                             )}
+                            {panel.tab === 'commands' &&
+                                panel.canCommands &&
+                                !pending && (
+                                    <CommandsTab
+                                        key={`${node.id}-${environment}`}
+                                        project={project}
+                                        environment={environment}
+                                        service={node.id}
+                                        logo={node.logo}
+                                    />
+                                )}
                             {panel.tab === 'console' &&
                                 panel.canConsole &&
                                 !pending && (
@@ -442,6 +463,7 @@ export function ServicePanel({
                                         settings: panel.settings,
                                         canUpdate: panel.canUpdate,
                                         canDelete: panel.canDelete,
+                                        update: panel.update,
                                     }}
                                 />
                             )}
@@ -484,7 +506,7 @@ function PanelStatus({
         <StatusPill
             state={status.state}
             label={status.label}
-            detail={status.since ? compactAge(status.since) : undefined}
+            detail={statusDetail(status) ?? undefined}
         />
     );
     const deployment = failedDeployment(status);

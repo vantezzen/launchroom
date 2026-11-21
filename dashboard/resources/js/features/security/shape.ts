@@ -1,94 +1,70 @@
-import { vocabulary } from '@/lib/vocabulary';
 import type { StatusState } from '@/components/status';
 
-type Finding = App.Data.Security.FindingCardData;
+type Investigation = App.Data.Security.FindingInvestigationData | null;
+type FixGroup = App.Data.Security.FixGroupData;
+type FixService = App.Data.Security.FixGroupServiceData;
 
-/** One vulnerability with every service it affects (docs/22 §9.2 part 2). */
-export type ActionGroup = {
-    key: string;
-    advisory: string;
-    title: string;
-    severity: string;
-    cvss: number | null;
-    knownExploited: boolean;
-    knownExploitedSince: string | null;
-    ecosystem: string;
-    package: string;
-    /** Installed versions, in the order first seen. */
-    versions: string[];
-    fixedVersion: string | null;
-    public: boolean;
-    findings: Finding[];
-};
-
-function severityRank(severity: string): number {
-    const severities = vocabulary.Security.Severity;
-
-    return severity in severities
-        ? -severities[severity as App.Enums.Security.Severity].rank
-        : 1;
+/**
+ * The card's title, the fix as an instruction (docs/22 §9.2 part 2):
+ * "Update next to 15.5.24", or "No fixed version of next yet".
+ */
+export function fixTitle(group: FixGroup): string {
+    return group.fixedVersion
+        ? `Update ${group.package} to ${group.fixedVersion}`
+        : `No fixed version of ${group.package} yet`;
 }
 
 /**
- * "Action needed" grouped by advisory: one item per vulnerability with its
- * services, known exploited first, then severity, then the number of
- * services, then the advisory id (stable order across refetches).
+ * Groups in the order the server ranked them, split into the ones that
+ * touch production and the ones only in other environments (staging and
+ * the like), which the page shows quieter and later.
  */
-export function groupActionNeeded(findings: Finding[]): ActionGroup[] {
-    const groups = new Map<string, ActionGroup>();
+export function splitByProduction(groups: FixGroup[]): {
+    production: FixGroup[];
+    other: FixGroup[];
+} {
+    return {
+        production: groups.filter((g) => g.production),
+        other: groups.filter((g) => !g.production),
+    };
+}
 
-    for (const finding of findings) {
-        const existing = groups.get(finding.advisory);
+/**
+ * The one investigation result worth putting on the card: concerning
+ * findings first, then things worth a look, naming the service ("2
+ * concerning findings in node-hello"). Null when every check came back
+ * clean, couldn't run or hasn't run: those stay in the service rows.
+ */
+export function worstVerdict(
+    services: FixService[],
+): { state: StatusState; text: string; more: number } | null {
+    for (const state of ['failed', 'warning'] as const) {
+        const hits = services.filter((s) => {
+            const verdict = verdictOf(s.investigation);
 
-        if (!existing) {
-            groups.set(finding.advisory, {
-                key: finding.advisory,
-                advisory: finding.advisory,
-                title: finding.title ?? finding.advisory,
-                severity: finding.severity,
-                cvss: finding.cvss,
-                knownExploited: finding.knownExploited,
-                knownExploitedSince: finding.knownExploitedSince,
-                ecosystem: finding.ecosystem,
-                package: finding.package,
-                versions: [finding.version],
-                fixedVersion: finding.fixedVersion,
-                public: finding.public,
-                findings: [finding],
-            });
-            continue;
+            return (
+                verdict.state === state &&
+                !/couldn.t be checked/i.test(verdict.title)
+            );
+        });
+
+        if (hits.length > 0) {
+            const first = hits[0];
+            const verdict = verdictOf(first.investigation);
+            const title =
+                state === 'failed'
+                    ? verdict.title.replace(/ in the container$/, '')
+                    : verdict.title;
+
+            return {
+                state,
+                text: `${title} in ${first.service.name}`,
+                more: hits.length - 1,
+            };
         }
-
-        existing.findings.push(finding);
-
-        if (!existing.versions.includes(finding.version)) {
-            existing.versions.push(finding.version);
-        }
-
-        if (severityRank(finding.severity) < severityRank(existing.severity)) {
-            existing.severity = finding.severity;
-        }
-
-        if (
-            finding.cvss !== null &&
-            (existing.cvss === null || finding.cvss > existing.cvss)
-        ) {
-            existing.cvss = finding.cvss;
-        }
-
-        existing.knownExploited ||= finding.knownExploited;
-        existing.knownExploitedSince ??= finding.knownExploitedSince;
-        existing.fixedVersion ??= finding.fixedVersion;
-        existing.public ||= finding.public;
     }
 
-    return [...groups.values()].sort(
-        (a, b) =>
-            Number(b.knownExploited) - Number(a.knownExploited) ||
-            severityRank(a.severity) - severityRank(b.severity) ||
-            b.findings.length - a.findings.length ||
-            a.advisory.localeCompare(b.advisory),
-    );
+    return null;
 }
 
 type Verdict = {
@@ -105,7 +81,7 @@ type Verdict = {
  * The sentences come from `InvestigationReport::summary()`; the first one
  * says what the container check found.
  */
-export function verdictOf(investigation: Finding['investigation']): Verdict {
+export function verdictOf(investigation: Investigation): Verdict {
     if (!investigation) {
         return {
             state: 'idle',
@@ -172,5 +148,41 @@ export function verdictOf(investigation: Finding['investigation']): Verdict {
         title: 'Checked',
         detail: others(investigation.summary),
         at,
+    };
+}
+
+/**
+ * The investigation result most of a group's services share ("The
+ * container couldn't be checked" in 12 of 13), said once above the rows
+ * instead of on each one. Null under three services or without a majority.
+ */
+export function commonVerdict(
+    services: FixService[],
+): { state: StatusState; title: string; count: number } | null {
+    if (services.length < 3) {
+        return null;
+    }
+
+    const counts = new Map<string, number>();
+
+    for (const s of services) {
+        const { title } = verdictOf(s.investigation);
+        counts.set(title, (counts.get(title) ?? 0) + 1);
+    }
+
+    const [title, count] = [...counts.entries()].sort((a, b) => b[1] - a[1])[0];
+
+    if (count * 2 <= services.length) {
+        return null;
+    }
+
+    const sample = services.find(
+        (s) => verdictOf(s.investigation).title === title,
+    );
+
+    return {
+        state: verdictOf(sample?.investigation ?? null).state,
+        title,
+        count,
     };
 }

@@ -15,6 +15,7 @@ final class SecuritySummaryData extends Data
      * @param  list<int>  $blockedSeries  per bucket of the range
      */
     public function __construct(
+        /** Things to fix: open "Action needed" packages (FixGroups). */
         public int $actionNeeded,
         public int $actionNeededServices,
         public int $packages,

@@ -14,6 +14,7 @@ use App\Enums\DeploymentStatus;
 use App\Enums\PlacementIssueKind;
 use App\Enums\ServerStatus;
 use App\Enums\WorkloadRole;
+use App\Events\Broadcasts\ServiceStatusChanged;
 use App\Jobs\AdvanceDeploymentJob;
 use App\Models\Placement;
 use App\Models\Server;
@@ -187,5 +188,7 @@ final readonly class EvacuateDeadServer
             serverId: $server->public_id,
             since: $current->since ?? now()->toIso8601String(),
         )])->save();
+        // The service says "Degraded" or "Server down" (D108).
+        ServiceStatusChanged::forInstances([$instance->id]);
     }
 }

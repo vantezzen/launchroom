@@ -116,6 +116,7 @@ export function ServerCharts({
             now: now === null ? null : `${Math.round(now)}% now`,
             node: (
                 <TimeSeriesChart
+                    markGaps
                     title="CPU in use"
                     series={one('cpu', 'CPU', host.cpuPct)}
                     yMax={100}
@@ -135,6 +136,7 @@ export function ServerCharts({
             now: now === null ? null : `${formatBytes(now * 1024 * 1024)} now`,
             node: (
                 <TimeSeriesChart
+                    markGaps
                     title="Memory in use"
                     series={one('mem', 'Memory', host.memPct)}
                     yMax={100}
@@ -154,6 +156,7 @@ export function ServerCharts({
             now: now === null ? null : `${Math.round(now)}% used`,
             node: (
                 <TimeSeriesChart
+                    markGaps
                     title="Disk used"
                     series={one('disk', 'Disk', host.diskPct)}
                     yMax={100}
@@ -177,6 +180,7 @@ export function ServerCharts({
                     : `↓ ${formatBandwidth(rx ?? 0)}  ↑ ${formatBandwidth(tx ?? 0)}`,
             node: (
                 <TimeSeriesChart
+                    markGaps
                     title="Network traffic"
                     series={[
                         {
@@ -207,6 +211,7 @@ export function ServerCharts({
             now: `${formatRate(metrics.traffic.totals.requestsPerSecond)} req/s avg`,
             node: (
                 <TimeSeriesChart
+                    markGaps
                     title="Requests per second through this server"
                     series={one(
                         'rps',

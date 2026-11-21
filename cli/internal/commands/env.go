@@ -89,10 +89,11 @@ type setResult struct {
 }
 
 func (a *App) envSetCmd() *cobra.Command {
-	var secret bool
+	var secret, apply, detach bool
 	cmd := &cobra.Command{
 		Use:   "set KEY=VALUE...",
-		Short: "Add or change variables in this environment (staged)",
+		Short: "Add or change variables in this environment (staged; --apply deploys them)",
+		Long:  "Adds or changes variables of the linked service in this environment. They are staged until deployed: --apply deploys the environment's staged changes right after and follows the rollout (--json then prints the deployments).",
 		Args:  cobra.MinimumNArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			ctx := cmd.Context()
@@ -142,15 +143,20 @@ func (a *App) envSetCmd() *cobra.Command {
 				}
 				results = append(results, setResult{v.Key, v.ID, v.Type, "created"})
 			}
+			if apply {
+				return a.applyStaged(ctx, s, t, results, detach)
+			}
 			return a.Printer.Result(results, func(w io.Writer) {
 				for _, r := range results {
 					_, _ = fmt.Fprintf(w, "%s %s %s\n", a.Printer.Good("✓"), r.Key, a.Printer.Dim(r.Action+" ("+r.Type+")"))
 				}
-				_, _ = fmt.Fprintln(w, a.Printer.Dim("Staged. Run `launchroom deploy --staged` to apply."))
+				_, _ = fmt.Fprintln(w, a.Printer.Dim("Staged. Run `launchroom deploy --staged` (or `env set --apply`) to apply."))
 			})
 		},
 	}
 	cmd.Flags().BoolVar(&secret, "secret", false, "store the values as secrets")
+	cmd.Flags().BoolVar(&apply, "apply", false, "deploy the environment's staged changes right after")
+	cmd.Flags().BoolVar(&detach, "detach", false, "with --apply: don't wait for the deployments to finish")
 	return cmd
 }
 
@@ -271,4 +277,23 @@ func (a *App) envPullCmd() *cobra.Command {
 	cmd.Flags().BoolVarP(&yes, "yes", "y", false, "overwrite FILE without asking")
 	cmd.Flags().BoolVar(&noSecrets, "no-secrets", false, "leave secret values out")
 	return cmd
+}
+
+// applyStaged deploys the staged changes after `env set --apply` and
+// follows them like `deploy --staged`.
+func (a *App) applyStaged(ctx context.Context, s *session, t *target, results []setResult, detach bool) error {
+	p := a.Printer
+	if !p.JSON {
+		for _, r := range results {
+			p.Info("%s %s %s", p.Good("✓"), r.Key, p.Dim(r.Action+" ("+r.Type+")"))
+		}
+	}
+	res, err := s.Client.DeployStaged(ctx, t.Environment.ID, "")
+	if err != nil {
+		return err
+	}
+	if !p.JSON {
+		p.Info("Revision %d of %s: deploying %d %s.", res.Revision, t.Environment.Name, len(res.Deployments), plural(len(res.Deployments), "service", "services"))
+	}
+	return a.finishDeployments(ctx, s, res.Deployments, detach)
 }

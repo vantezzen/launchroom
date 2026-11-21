@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 use App\Exceptions\DomainRuleViolation;
 use App\Http\Api\ApiExceptionRenderer;
+use App\Http\Errors\ErrorPageRenderer;
 use App\Http\Middleware\HandleAppearance;
 use App\Http\Middleware\HandleInertiaRequests;
 use App\Http\Middleware\RespectInstanceFreeze;
@@ -148,4 +149,7 @@ return Application::configure(basePath: dirname(__DIR__))
 
             return back()->withErrors([$e->field => $e->getMessage()])->withInput(SensitiveInput::except(is_array($input) ? $input : []));
         });
+
+        // Page errors (403, 404, 419, 429, 5xx) as the errors/show page, in the shell when signed in (docs/08 §24).
+        ErrorPageRenderer::register($exceptions);
     })->create();

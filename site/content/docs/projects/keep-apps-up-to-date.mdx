@@ -1,0 +1,83 @@
+---
+title: Keep apps up to date
+description: launchroom checks your image services and template apps for newer releases, shows what changed and updates them with a backup first and an automatic rollback.
+---
+
+Apps you run from a published image, such as Listmonk, Ghost or Uptime Kuma, keep the version you deployed until someone changes it. launchroom looks for newer releases twice a day and tells you when one is out. An update backs up the app's data, deploys the new version and watches it for ten minutes.
+
+## What launchroom checks
+
+Every image service that runs in production or another lasting environment is checked, including every app you created from a template. Previews aren't checked.
+
+launchroom compares versions within the same line as your tag:
+
+- `listmonk/listmonk:v6.2.0` is offered `v6.2.4` (a patch update), `v6.3.0` (a minor update) and `v7.0.1` (a major update).
+- `ghost:6.71.0-alpine` is offered only other `-alpine` versions. Variants such as `-alpine`, `-rootless` or `-slim` never mix.
+- Pre-releases (`-rc.1`, `-beta2`) are offered only when you already run one.
+- A tag that moves, such as `latest` or `6`, is offered the newer image it points at now, and launchroom names the version when it can tell.
+
+When launchroom's own template for the app was tested with a newer version, that version is offered too and marked "Tested in launchroom's template", even when the registry can't be reached.
+
+An image pinned only by a digest (`@sha256:…` without a tag) has no version to compare and isn't checked.
+
+## Where you see it
+
+- **On the service**: under the service's name, for example "v6.3.0 is available" with the kind of update, the version you run and when it was published, and a link to the release notes. A version more than a year old is marked.
+- **In Settings → Source → Updates**: the same, plus **Check now** and the automatic updates.
+- **On the Projects page**: **App updates** under your projects lists every app with a newer version. Major updates and versions more than a year old come first. Apps more than a year behind also show up in **Needs you**.
+- **In your notifications**: the alert "A newer version of an app is out" sends one message for all your apps, at most once a week. Turn it off in Settings → Notifications.
+
+## Update an app
+
+<Steps>
+<Step>
+### Click Update
+
+On the service or the Projects page. If several versions are out, pick one. For a major update, read the release notes first and confirm that you did: major updates can change settings or migrate data in a way the old version can't read.
+</Step>
+<Step>
+### launchroom backs up first
+
+The databases the app is connected to and the app's own volumes are backed up to your backup storage. Without backup storage, the update runs without a backup and the dialog says so. If the backup fails, nothing changes.
+</Step>
+<Step>
+### The new version deploys
+
+The service runs the exact image launchroom checked. Apps with volumes stop briefly while the new version starts. Other environments of the project get the new image staged for their next deploy.
+</Step>
+<Step>
+### launchroom watches it for ten minutes
+
+If the new version keeps crashing or stops answering its health check, launchroom rolls back to the version before, once. Database changes the new version made are not undone: the backup from step 2 is there if you need it.
+</Step>
+</Steps>
+
+An update starts only when nothing else is staged in the environment, so it goes live alone. Deploy or discard your other changes first.
+
+## Automatic updates
+
+In Settings → Source → Updates, **Update automatically** installs updates by itself:
+
+- **Patch updates**: bug fixes, such as `v6.2.0` to `v6.2.4`.
+- **Patch and minor updates**: also new features, such as `v6.2.0` to `v6.3.0`.
+
+Major updates are never installed automatically.
+
+Automatic updates run inside the service's **maintenance window**: the days, start time and length you choose, in your time zone. launchroom waits until a release is two days old, backs up first and rolls back if the new version keeps crashing. A version that failed once isn't tried again automatically. Apps with data need backup storage before you can turn this on.
+
+When an automatic update fails, you get the usual alerts: "A deploy fails" for an update that didn't go live or was rolled back, and "A backup fails" for the backup before it.
+
+## From the CLI, the API or an AI agent
+
+```sh
+launchroom updates                     # what has a newer release
+launchroom updates apply listmonk      # update to the recommended release
+```
+
+The same rules apply everywhere: only a release launchroom found, a major only after you read its release notes (`--release-notes-read`), and nothing while other changes are staged. A token needs **Update apps** next to Deploy to update. The API has `GET /api/v1/app-updates` and `POST /api/v1/environments/{environment}/services/{service}/update`; AI agents get `list_app_updates` and `apply_app_update`. See the [CLI reference](/docs/reference/cli#update-apps) and [Use launchroom from your AI coding agent](/docs/projects/ai-agents).
+
+## Registries and limits
+
+- launchroom reads versions from Docker Hub, GitHub Container Registry and every registry you added under [Private registries](/docs/projects/private-images), with those sign-in details.
+- Version lists don't count against Docker Hub's download limit. When a registry asks launchroom to slow down, checks for it wait an hour.
+- Release notes come from the template, or from the image's source label when it points at a GitHub repository.

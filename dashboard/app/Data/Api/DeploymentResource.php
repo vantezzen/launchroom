@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Data\Api;
 
+use App\Data\Deployments\DeploymentChecksData;
 use App\Enums\DeploymentStatus;
 use App\Enums\DeploymentTrigger;
 use Spatie\LaravelData\Data;
@@ -29,5 +30,7 @@ final class DeploymentResource extends Data
         public ?string $startedAt,
         public ?string $finishedAt,
         public string $dashboardUrl,
+        /** A push that waits (or waited) for its commit's CI checks (D111, docs/06 §2.5); null when it didn't wait. While `checks.state` is `waiting` the deployment stays `queued`. */
+        public ?DeploymentChecksData $checks = null,
     ) {}
 }

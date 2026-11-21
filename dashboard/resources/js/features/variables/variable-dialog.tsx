@@ -72,7 +72,11 @@ export function VariableDialog({
     const editing = variable !== null;
     const isSecret = variable?.type === 'secret';
     const [key, setKey] = useState(variable?.key ?? preset?.key ?? '');
-    const [value, setValue] = useState(variable?.value ?? preset?.value ?? '');
+    // A preset value (a suggested fix, a missing-variable link) wins over
+    // the stored one; an empty preset keeps it.
+    const [value, setValue] = useState(
+        preset?.value || (variable?.value ?? preset?.value ?? ''),
+    );
     const [type, setType] = useState<App.Enums.VariableType>(
         variable?.type ?? preset?.type ?? 'config',
     );

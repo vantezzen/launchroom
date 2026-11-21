@@ -68,6 +68,8 @@ enum AuditAction: string
     case DeploymentRolledBack = 'deployment.rolled_back';
     case DeploymentRedeployed = 'deployment.redeployed';
     case DeploymentCancelled = 'deployment.cancelled';
+    // Deploy now on a deployment waiting for its commit's checks (D111).
+    case DeploymentChecksSkipped = 'deployment.checks_skipped';
     case VariablesRawEdited = 'variable.raw_edited';
     case GitHubAppCreated = 'github.app_created';
     case GitHubAppDisconnected = 'github.app_disconnected';
@@ -97,6 +99,10 @@ enum AuditAction: string
     case DataImportPrepared = 'data.import_prepared';
     case DataExportStarted = 'data.export_started';
     case DataExportDownloaded = 'data.export_downloaded';
+    // Copies between environments (D110, docs/14 §14.4).
+    case DataCopyStarted = 'data.copy_started';
+    case DataCopyFinished = 'data.copy_finished';
+    case DataCopyCancelled = 'data.copy_cancelled';
     case RestoreSwapped = 'backup.restore_swapped';
     case BackupVolumeUpdated = 'backup.volume_updated';
     case FinalBackupSkipped = 'backup.final_backup_skipped';
@@ -155,6 +161,10 @@ enum AuditAction: string
     case ApiTokenRevoked = 'api_token.revoked';
     case CliLoginApproved = 'api_token.cli_login_approved';
     case CliLoginDenied = 'api_token.cli_login_denied';
+    // Robot tokens (D111, docs/16 §1.4).
+    case RobotTokenCreated = 'robot_token.created';
+    case RobotTokenRotated = 'robot_token.rotated';
+    case RobotTokenRevoked = 'robot_token.revoked';
     case EnvExported = 'variable.env_exported';
     case DeploymentRequested = 'deployment.requested';
     // Alerts and notifications (docs/15 §3).
@@ -227,4 +237,14 @@ enum AuditAction: string
     case RegistryCredentialCreated = 'registry.credential_created';
     case RegistryCredentialUpdated = 'registry.credential_updated';
     case RegistryCredentialDeleted = 'registry.credential_deleted';
+
+    // One-off commands (D105): the argv and outcome, never env values.
+    case CommandStarted = 'command.started';
+    case CommandFinished = 'command.finished';
+    case CommandCancelled = 'command.cancelled';
+
+    // App updates (D106): updates of image services to newer releases.
+    case AppUpdateStarted = 'app_update.started';
+    case AppUpdateCancelled = 'app_update.cancelled';
+    case AutoUpdateChanged = 'app_update.auto_changed';
 }

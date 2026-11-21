@@ -61,7 +61,7 @@ test('connecting GitHub reaches github.com with the manifest after a real sessio
             return $manifest['redirect_url'] === 'https://launchroom.example.com/settings/git/github/callback'
                 && $manifest['setup_url'] === 'https://launchroom.example.com/settings/git/github/setup'
                 && $manifest['hook_attributes'] === ['url' => 'https://launchroom.example.com/webhooks/github', 'active' => true]
-                && $manifest['default_events'] === ['push', 'pull_request']
+                && $manifest['default_events'] === ['push', 'pull_request', 'check_run', 'check_suite', 'status']
                 && $manifest['url'] === 'https://launchroom.example.com'
                 && $manifest['public'] === false;
         }));

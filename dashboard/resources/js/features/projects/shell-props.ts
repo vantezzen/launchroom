@@ -9,7 +9,7 @@ const keys: Record<ShellKey, true> = {
     abilities: true,
     edgeOverview: true,
     projectStatuses: true,
-    environmentHealth: true,
+    liveStatus: true,
     environmentStatuses: true,
 };
 

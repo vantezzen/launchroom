@@ -55,8 +55,11 @@ export function teamNavItems(signals: Signals): TeamNavItem[] {
 
     return [
         // The first-run checklist stays reachable until every step is
-        // done or skipped (docs/08 §3.1).
-        ...(progress && !progress.complete
+        // done, or the owner removed it once only skipped steps were left
+        // (docs/08 §3, D109).
+        ...(progress &&
+        !progress.complete &&
+        !(progress.settled && progress.dismissed)
             ? [
                   {
                       title: 'Get started',
@@ -105,7 +108,7 @@ export function teamNavItems(signals: Signals): TeamNavItem[] {
             title: 'Security',
             href: security(),
             icon: signals.securityActionNeeded ? ShieldAlert : ShieldCheck,
-            // Vulnerabilities that need action (docs/22 §9.1).
+            // Things to fix: packages that need action (docs/22 §9.1).
             meta: badge(signals.securityActionNeeded),
             keywords: 'vulnerabilities findings firewall waf cve',
         },

@@ -20,7 +20,21 @@ final class ImportInspections
 {
     public function remember(DaemonTask $task, ServiceInstance $instance, User $user): void
     {
-        Cache::put($this->key($task->public_id), ['instance' => $instance->id, 'user' => $user->id, 'task' => $task->id], config()->integer('launchroom.transfers.inspection_ttl_seconds'));
+        $ttl = config()->integer('launchroom.transfers.inspection_ttl_seconds');
+        Cache::put($this->key($task->public_id), ['instance' => $instance->id, 'user' => $user->id, 'task' => $task->id], $ttl);
+        Cache::put($this->latestKey($instance, $user), $task->public_id, $ttl);
+    }
+
+    /**
+     * The newest inspection of $instance this user started, or null: a copy
+     * asks for the typed confirmation unless it said the target is empty
+     * (docs/14 §14.4, fail closed).
+     */
+    public function latest(ServiceInstance $instance, User $user): ?ImportInspectionData
+    {
+        $task = Cache::get($this->latestKey($instance, $user));
+
+        return is_string($task) ? $this->read($task, $instance, $user) : null;
     }
 
     public function read(string $taskPublicId, ServiceInstance $instance, User $user): ?ImportInspectionData
@@ -63,6 +77,11 @@ final class ImportInspections
             is_int($owner['gid'] ?? null) ? $owner['gid'] : null,
             is_string($result?->sourceVersion) ? $result->sourceVersion : null,
         );
+    }
+
+    private function latestKey(ServiceInstance $instance, User $user): string
+    {
+        return 'transfers:inspection:latest:'.$instance->id.':'.$user->id;
     }
 
     private function key(string $taskPublicId): string

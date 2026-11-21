@@ -9,13 +9,15 @@ use App\Enums\DeploymentStatus;
 use App\Enums\Git\DeploymentReportState;
 use App\Events\DeploymentQueued;
 use App\Jobs\AdvanceDeploymentJob;
+use App\Jobs\Deployments\EvaluateDeploymentChecksJob;
 use App\Jobs\Git\ReportDeploymentStatusJob;
 use App\Models\Deployment;
 use App\Services\Git\Feedback\DeploymentFeedback;
 
 /**
- * A new deployment starts (docs/04 §6), and the git provider learns it is
- * queued (docs/06 §2.4) before any later status reaches it.
+ * A new deployment starts (docs/04 §6), or reads its commit's checks first
+ * when it waits for them (D111), and the git provider learns it is queued
+ * (docs/06 §2.4) before any later status reaches it.
  */
 final readonly class StartQueuedDeployment
 {
@@ -35,6 +37,13 @@ final readonly class StartQueuedDeployment
 
         if ($report instanceof DeploymentStatusReport) {
             dispatch(new ReportDeploymentStatusJob($report));
+        }
+
+        // A push waiting for its commit's checks starts once they pass (D111).
+        if ($deployment->waitsForChecks()) {
+            dispatch(new EvaluateDeploymentChecksJob($deployment->id));
+
+            return;
         }
 
         dispatch(new AdvanceDeploymentJob($deployment->id));

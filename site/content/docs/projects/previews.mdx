@@ -63,6 +63,8 @@ list of arguments.
 Copies have a size limit. The source's latest backup must be under the team's limit (1 GB by default, shown on the page).
 A database without a backup can't be the source. Copying or sharing **production** data needs **Allow production data**
 under **Access**, which only owners and admins can switch on. Caches and other volumes always start empty.
+The clone is refused when the source runs a newer major version than the preview's database. To fill a preview that already
+exists, [copy data into it](/docs/databases/copy-between-environments).
 
 ## URLs
 

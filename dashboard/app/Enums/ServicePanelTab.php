@@ -13,6 +13,7 @@ enum ServicePanelTab: string
 {
     case Deployments = 'deployments';
     case Logs = 'logs';
+    case Commands = 'commands';
     case Console = 'console';
     case Data = 'data';
     case Settings = 'settings';

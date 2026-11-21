@@ -35,7 +35,15 @@ const stay: Partial<VisitOptions> = {
 export function restartService(
     ref: ServiceRef,
     name: string,
-    { processes = true, onSuccess, onFinish }: Options = {},
+    {
+        processes = true,
+        onSuccess,
+        onFinish,
+        label = 'Restarting',
+    }: Options & {
+        /** "Starting" when nothing runs (a remedy for exited containers, D108). */
+        label?: 'Restarting' | 'Starting';
+    } = {},
 ): void {
     router.post(
         lifecycle.restart(ref).url,
@@ -46,10 +54,10 @@ export function restartService(
                 ref.service,
                 'deploying',
                 { deploying: true },
-                'Restarting',
+                label,
             ),
             onSuccess: () => {
-                toast.success(`Restarting ${name}`);
+                toast.success(`${label} ${name}`);
                 onSuccess?.();
             },
             onFinish,

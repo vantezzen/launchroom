@@ -19,7 +19,11 @@ const ROW_TWO_LINE = 58;
 // the service panel), not the viewport: the day from 672 px, the
 // milliseconds from 448 px, the source from 512 px.
 const TIME_COLUMN = 'w-16 shrink-0 @md/table:w-24 @2xl/table:w-40';
-const SOURCE_COLUMN = 'shrink-0 @max-lg/table:hidden';
+// The message takes the rest. In wide searches the source names the
+// service, and the environment (or project / environment) joins it only
+// where the table has room for it (from 896 px); the tooltip has it always.
+const SOURCE_COLUMN = 'w-28 shrink-0 @max-lg/table:hidden';
+const SOURCE_WITH_CONTEXT = '@4xl/table:w-48';
 
 const dayFormat = new Intl.DateTimeFormat('en-GB', {
     month: 'short',
@@ -57,20 +61,31 @@ const RULE: Record<LogEntry['level'], string | undefined> = {
 function SourceText({
     entry,
     context,
+    responsive = false,
 }: {
     entry: LogEntry;
     context: LogContext;
+    /** One-line rows: the context only where the column is wide. */
+    responsive?: boolean;
 }) {
+    // The service leads: it is what tells lines apart; where it runs
+    // follows in grey and is the part that gets cut.
     return (
         <>
-            {context && (
-                <span className="text-muted-foreground">
-                    {contextOf(entry, context)} /{' '}
-                </span>
-            )}
             {entry.service}
             {entry.replica && (
                 <span className="text-muted-foreground"> #{entry.replica}</span>
+            )}
+            {context && (
+                <span
+                    className={cn(
+                        'text-muted-foreground',
+                        responsive && 'hidden @4xl/table:inline',
+                    )}
+                >
+                    {' '}
+                    {contextOf(entry, context)}
+                </span>
             )}
         </>
     );
@@ -182,7 +197,7 @@ const LogRow = memo(function LogRow({
                             className={cn(
                                 SOURCE_COLUMN,
                                 'truncate',
-                                context ? 'w-48' : 'w-28',
+                                context && SOURCE_WITH_CONTEXT,
                             )}
                             title={
                                 context
@@ -190,7 +205,11 @@ const LogRow = memo(function LogRow({
                                     : undefined
                             }
                         >
-                            <SourceText entry={entry} context={context} />
+                            <SourceText
+                                entry={entry}
+                                context={context}
+                                responsive
+                            />
                         </span>
                     )}
                     <span
@@ -376,7 +395,10 @@ export function LogTable({
                 <span className={TIME_COLUMN}>Time</span>
                 {!hideService && (
                     <span
-                        className={cn(SOURCE_COLUMN, context ? 'w-48' : 'w-28')}
+                        className={cn(
+                            SOURCE_COLUMN,
+                            context && SOURCE_WITH_CONTEXT,
+                        )}
                     >
                         {context ? 'Where' : 'Source'}
                     </span>

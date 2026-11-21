@@ -11,6 +11,7 @@ import {
     Plug,
     Plus,
     Search,
+    Wrench,
     X,
 } from 'lucide-react';
 import type { ReactNode } from 'react';
@@ -61,6 +62,11 @@ import { ImportDialog } from '@/features/variables/import-dialog';
 import { RawEditor } from '@/features/variables/raw-editor';
 import { MASK, RevealValue } from '@/features/variables/reveal-value';
 import { VariableDialog } from '@/features/variables/variable-dialog';
+import {
+    applyFix,
+    brokenSummary,
+    fixFor,
+} from '@/features/variables/reference-fix';
 import { SettingsCard } from '@/components/settings/settings-card';
 import { grammar } from '@/types/grammar.generated';
 
@@ -227,6 +233,17 @@ export function VariablesSection({
     const [deleting, setDeleting] = useState<Row | null>(null);
     const [rawMode, setRawMode] = useState(false);
     const [search, setSearch] = useState('');
+    const [fixing, setFixing] = useState<string | null>(null);
+
+    useEffect(() => {
+        if (fixing === null) {
+            return;
+        }
+
+        const timer = window.setTimeout(() => setFixing(null), 2400);
+
+        return () => window.clearTimeout(timer);
+    }, [fixing]);
 
     const changed = (message: string) => {
         toast.success(message);
@@ -385,7 +402,43 @@ export function VariablesSection({
         }
     };
 
-    const broken = data.variables.filter((row) => row.errors.length > 0).length;
+    const brokenText = brokenSummary(data.variables);
+    const firstBroken = data.variables.find(
+        (row) => row.errors.length > 0 && row.canEdit,
+    );
+
+    // Fix: brings the first broken row into view (search cleared so it's
+    // there), marks it for a moment and focuses its first suggestion.
+    const showFix = (row: Row) => {
+        setSearch('');
+        setFixing(row.id);
+        window.requestAnimationFrame(() => {
+            const element = document.getElementById(`variable-${row.id}`);
+            const reduce = window.matchMedia(
+                '(prefers-reduced-motion: reduce)',
+            ).matches;
+            element?.scrollIntoView({
+                behavior: reduce ? 'auto' : 'smooth',
+                block: 'center',
+            });
+            element
+                ?.querySelector<HTMLElement>('[data-fix-action]')
+                ?.focus({ preventScroll: true });
+        });
+    };
+
+    const applySuggestion = (
+        row: Row,
+        expression: string,
+        suggestion: string,
+    ) =>
+        setDialog({
+            variable: row,
+            preset: {
+                key: row.key,
+                value: applyFix(row.value ?? '', expression, suggestion),
+            },
+        });
     const usedShared = data.shared.filter((row) => row.used).length;
     // The Environments column only when some row reaches past this one.
     const showTargets = data.variables.some(
@@ -451,17 +504,29 @@ export function VariablesSection({
                     className="flex flex-col gap-3"
                     data-setting="variables-list"
                 >
-                    {broken > 0 && (
-                        <p
+                    {brokenText !== null && (
+                        <div
                             role="alert"
-                            className="flex items-center gap-1.5 type-body text-status-error"
+                            className="flex flex-wrap items-center gap-x-3 gap-y-2"
                         >
-                            <X aria-hidden="true" className="size-4" />
-                            {broken === 1
-                                ? '1 variable has a broken reference.'
-                                : `${broken} variables have broken references.`}{' '}
-                            Deploys are blocked until it’s fixed.
-                        </p>
+                            <p className="flex min-w-0 items-start gap-1.5 type-body text-status-error">
+                                <X
+                                    aria-hidden="true"
+                                    className="mt-0.5 size-4 shrink-0"
+                                />
+                                {brokenText}
+                            </p>
+                            {firstBroken && !rawMode && (
+                                <Button
+                                    variant="outline"
+                                    size="sm"
+                                    onClick={() => showFix(firstBroken)}
+                                >
+                                    <Wrench aria-hidden="true" />
+                                    Fix
+                                </Button>
+                            )}
+                        </div>
                     )}
 
                     {rawMode ? (
@@ -551,6 +616,17 @@ export function VariablesSection({
                                                 row={row}
                                                 showTargets={showTargets}
                                                 staged={stagedKinds.get(row.id)}
+                                                highlighted={fixing === row.id}
+                                                onSuggestion={(
+                                                    expression,
+                                                    suggestion,
+                                                ) =>
+                                                    applySuggestion(
+                                                        row,
+                                                        expression,
+                                                        suggestion,
+                                                    )
+                                                }
                                                 project={project}
                                                 environment={environment}
                                                 onEdit={() =>
@@ -791,6 +867,68 @@ export function VariablesSection({
     );
 }
 
+/**
+ * A broken reference under its value, then what to do about it: the valid
+ * references it most likely meant as one-click chips (each opens the
+ * editor with the value rewritten), or Edit when there is nothing close.
+ */
+export function ReferenceError({
+    message,
+    fix,
+    canRewrite,
+    onSuggestion,
+    onEdit,
+}: {
+    message: string;
+    fix: App.Data.Variables.ReferenceFixData | null;
+    canRewrite: boolean;
+    onSuggestion: (expression: string, suggestion: string) => void;
+    onEdit: () => void;
+}) {
+    const suggestions = canRewrite ? (fix?.suggestions ?? []) : [];
+
+    return (
+        <span className="flex flex-col gap-1.5">
+            <span className="flex items-start gap-1 type-small text-status-error">
+                <X aria-hidden="true" className="mt-0.5 size-3.5 shrink-0" />
+                <span className="[overflow-wrap:anywhere]">{message}</span>
+            </span>
+            {fix !== null &&
+                (suggestions.length > 0 ? (
+                    <span className="flex flex-wrap items-center gap-1.5 pl-4.5">
+                        <span className="type-small text-muted-foreground">
+                            Did you mean
+                        </span>
+                        {suggestions.map((suggestion, index) => (
+                            <button
+                                key={suggestion}
+                                type="button"
+                                data-fix-action={index === 0 ? '' : undefined}
+                                onClick={() =>
+                                    onSuggestion(fix.expression, suggestion)
+                                }
+                                className="inline-flex h-6 items-center rounded-md border bg-card px-1.5 type-mono-small transition-colors duration-fast hover:border-border-strong hover:bg-hover focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none"
+                            >
+                                {suggestion}
+                            </button>
+                        ))}
+                    </span>
+                ) : (
+                    <span className="pl-4.5">
+                        <button
+                            type="button"
+                            data-fix-action=""
+                            onClick={onEdit}
+                            className="type-small text-signal underline-offset-4 hover:underline focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none"
+                        >
+                            Edit the value
+                        </button>
+                    </span>
+                ))}
+        </span>
+    );
+}
+
 /** Above this many variables the list gets a search field. */
 const SEARCH_FROM = 8;
 
@@ -804,15 +942,21 @@ function VariableRow({
     row,
     showTargets,
     staged,
+    highlighted,
     project,
     environment,
     onEdit,
+    onSuggestion,
     onOverride,
     onRemove,
 }: {
     row: Row;
     showTargets: boolean;
     staged: App.Enums.ChangeKind | undefined;
+    /** Fix brought this row into view: a brief signal ring. */
+    highlighted: boolean;
+    /** Edit the row with a suggested reference in place of a broken one. */
+    onSuggestion: (expression: string, suggestion: string) => void;
     project: string;
     environment: string;
     onEdit: () => void;
@@ -828,8 +972,10 @@ function VariableRow({
 
     return (
         <tr
+            id={`variable-${row.id}`}
             className={cn(
-                'align-top',
+                'scroll-mt-24 align-top transition-shadow duration-base',
+                highlighted && 'shadow-[inset_0_0_0_2px_var(--signal)]',
                 row.overridden && 'text-muted-foreground',
                 staged !== undefined &&
                     'bg-signal-soft/40 [&>td:first-child]:shadow-[inset_2px_0_0_var(--signal)]',
@@ -887,18 +1033,16 @@ function VariableRow({
                         </span>
                     )}
                     {row.errors.map((message) => (
-                        <span
+                        <ReferenceError
                             key={message}
-                            className="flex items-start gap-1 type-small text-status-error"
-                        >
-                            <X
-                                aria-hidden="true"
-                                className="mt-0.5 size-3.5 shrink-0"
-                            />
-                            <span className="[overflow-wrap:anywhere]">
-                                {message}
-                            </span>
-                        </span>
+                            message={message}
+                            fix={row.canEdit ? fixFor(row, message) : null}
+                            // Secrets are write-only: their value can't be
+                            // rewritten here, so they get Edit instead.
+                            canRewrite={row.value !== null}
+                            onSuggestion={onSuggestion}
+                            onEdit={onEdit}
+                        />
                     ))}
                 </div>
             </td>

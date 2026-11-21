@@ -1,0 +1,77 @@
+---
+title: Debug a failed deploy
+description: Read why a deployment failed, apply the suggested fix, and search the logs and the request path, in the dashboard or from the CLI.
+---
+
+A failed deployment never replaces the live version. The previous one keeps serving while you look.
+
+## Read the explanation
+
+Open the deployment. When launchroom recognises the failure, the card at the top says what failed, why, and what to
+do, in plain words: a missing variable, the app listening on another port, a lockfile out of date, a full disk. Under
+it are the failed step's last log lines with the error line marked, and **Jump to line** opens the full log there.
+
+The CLI prints the same explanation when `launchroom deploy` ends with a failure:
+
+```text
+✗ Health check failed: your app doesn't answer HTTP on its port
+  Something accepts connections on the port, but it doesn't answer like a web server.
+  Switch the health check to TCP, which only checks that the port accepts connections.
+
+  Last lines of the health step
+    41  probe attempt 3
+  › 42  error: connection reset by peer
+    43  probe attempt 4
+
+  Fix: Check over TCP and redeploy
+    launchroom fix use_tcp_healthcheck --deployment dpl_2xk9w4mq8r
+```
+
+Secret values are masked in every log line before it's stored, so the excerpt is safe to paste into an issue.
+
+## Apply the suggested fix
+
+Many explanations come with a fix launchroom can apply for you: use the port the app listens on, give it longer to
+start, check over TCP, accept 4xx answers on the health path, or free disk space on the server. In the dashboard it's
+the button on the card. From the CLI, run the command the explanation printed:
+
+```sh
+launchroom fix use_tcp_healthcheck
+```
+
+The fix changes the service's setting and deploys it right away. If other changes are already staged in the
+environment, it only stages the fix, so nobody's unfinished work ships unreviewed; deploy them together from
+**Staged changes**. `launchroom fix` without a code shows the explanation of the service's latest failed deployment
+again.
+
+Fixes that need your input, like a missing variable, print the command to run instead, for example
+`launchroom env set STRIPE_KEY=... --secret --apply`.
+
+Applying a fix needs the permission to change service settings and to deploy. A token needs both the `deploy` and the
+`fix` abilities; tokens with the **Deploy** access have them.
+
+## Search the logs
+
+```sh
+launchroom logs --grep "connection refused"
+launchroom logs --level error --from 30m
+launchroom logs --service web --from 2026-11-20T09:00:00Z --to 2026-11-20T09:15:00Z
+```
+
+`--grep` (or `-q`) takes the same search as the log explorer, `--level` keeps only lines of that level or more severe
+ones, and `--from`/`--to` take a time, a clock time like `09:30`, or how long ago (`30m`, `2h`).
+
+## Follow one request
+
+When the deploy went live but a request misbehaves, take the `X-Launchroom-Ray` header from the response and hand it
+to `launchroom ray`. A whole `curl -i` output works:
+
+```sh
+curl -si https://shop.example.com/checkout | launchroom ray -
+```
+
+It prints the status, where the time went (edge and app), what the web firewall decided, which servers the request
+passed, where it ended, and the service's log lines around the request's id. See [Rays](/docs/observability/request-trace)
+for what a ray records.
+
+More on specific failures: [Builds](/docs/troubleshooting/builds) and [Health checks](/docs/troubleshooting/health-checks).

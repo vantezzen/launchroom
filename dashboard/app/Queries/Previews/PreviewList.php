@@ -11,7 +11,6 @@ use App\Data\Previews\PreviewRuleData;
 use App\Data\Previews\PreviewUrlData;
 use App\Data\Previews\ShareLinkData;
 use App\Enums\DeploymentStatus;
-use App\Enums\Git\GitProviderKind;
 use App\Enums\PreviewStrategy;
 use App\Models\Deployment;
 use App\Models\Previews\Preview;
@@ -132,13 +131,7 @@ final readonly class PreviewList
                 title: $preview->title,
                 author: $preview->author_login,
                 repository: $preview->repository_name,
-                pullRequestUrl: match (true) {
-                    $preview->provider === GitProviderKind::GitHub && $preview->installation !== null => rtrim($preview->installation->app->web_url, '/').'/'.$preview->repository_name.'/pull/'.$preview->pr_number,
-                    // GitLab merge requests and Gitea/Forgejo pull requests (docs/19).
-                    $preview->provider === GitProviderKind::GitLab && $preview->gitConnection !== null => $preview->gitConnection->origin().'/'.$preview->repository_name.'/-/merge_requests/'.$preview->pr_number,
-                    $preview->provider === GitProviderKind::Gitea && $preview->gitConnection !== null => $preview->gitConnection->origin().'/'.$preview->repository_name.'/pulls/'.$preview->pr_number,
-                    default => null,
-                },
+                pullRequestUrl: $preview->pullRequestUrl(),
                 headRef: $preview->head_ref,
                 baseRef: $preview->base_ref,
                 headSha: substr($preview->head_sha, 0, 7),

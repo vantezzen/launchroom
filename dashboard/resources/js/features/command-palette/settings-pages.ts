@@ -1,3 +1,4 @@
+import { aiAgents as editAiAgents } from '@/routes';
 import { index as editApiTokens } from '@/routes/api-tokens';
 import { edit as editAppearance } from '@/routes/appearance';
 import { edit as editDashboardDomain } from '@/routes/dashboard-domain';
@@ -9,6 +10,7 @@ import { edit as editNetwork } from '@/routes/network-settings';
 import { edit as editNotifications } from '@/routes/notifications';
 import { edit as editProfile } from '@/routes/profile';
 import { edit as editRegistry } from '@/routes/registry-settings';
+import { index as editRobotTokens } from '@/routes/robot-tokens';
 import { edit as editSecurity } from '@/routes/security';
 import { edit as editTeam } from '@/routes/team';
 import { edit as editUpdates } from '@/routes/updates';
@@ -49,6 +51,12 @@ export const SETTINGS_PAGES: SettingsPageEntry[] = [
         keywords: 'cli token api access',
     },
     {
+        label: 'AI agents',
+        group: 'Account',
+        url: () => editAiAgents().url,
+        keywords: 'mcp ai agent editor cursor claude connect',
+    },
+    {
         label: 'Appearance',
         group: 'Account',
         url: () => editAppearance().url,
@@ -59,6 +67,12 @@ export const SETTINGS_PAGES: SettingsPageEntry[] = [
         group: 'Team',
         url: () => editTeam().url,
         keywords: 'team invite people roles',
+    },
+    {
+        label: 'Robot tokens',
+        group: 'Team',
+        url: () => editRobotTokens().url,
+        keywords: 'robot ci token github actions bot automation',
     },
     {
         label: 'Git',

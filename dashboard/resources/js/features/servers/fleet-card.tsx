@@ -5,6 +5,7 @@ import type { ReactNode } from 'react';
 import { AlertsChip } from '@/components/attention-chip';
 import { CardChip, ObjectCard } from '@/components/cards/object-card';
 import { colorForSlot } from '@/components/charts/palette';
+import { findGaps } from '@/components/charts/gaps';
 import { Sparkline } from '@/components/charts/sparkline';
 import { DeviceImage } from '@/components/devices/device-image';
 import { Status } from '@/components/status';
@@ -93,6 +94,10 @@ function Usage({
                 min={0}
                 max={100}
                 height={22}
+                gaps={findGaps(
+                    series.map((_, index) => index),
+                    [series],
+                )}
                 label={`${label}, last hour`}
             />
         </div>

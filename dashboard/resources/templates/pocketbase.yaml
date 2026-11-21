@@ -27,6 +27,7 @@ services:
         healthcheck:
             test: ['CMD', 'wget', '-qO-', 'http://localhost:8090/api/health']
         x-launchroom:
+            releases: https://github.com/pocketbase/pocketbase/releases
             name: PocketBase
             logo: pocketbase
             domain: ${input.domain}

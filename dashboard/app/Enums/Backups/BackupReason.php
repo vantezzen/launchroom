@@ -18,6 +18,8 @@ enum BackupReason: string
     case PreDeploy = 'pre_deploy';
     // The optional fresh backup before a server move (docs/14 §13.2).
     case PreMove = 'pre_move';
+    // Before an image service is updated to a newer release (docs/04 §14.2).
+    case PreUpdate = 'pre_update';
 
     public function label(): string
     {
@@ -29,11 +31,12 @@ enum BackupReason: string
             self::PreDelete => 'Before delete',
             self::PreDeploy => 'Before deploy',
             self::PreMove => 'Before move',
+            self::PreUpdate => 'Before update',
         };
     }
 
     public function isSafetySnapshot(): bool
     {
-        return in_array($this, [self::PreUpgrade, self::PreRestore, self::PreDelete, self::PreDeploy, self::PreMove], true);
+        return in_array($this, [self::PreUpgrade, self::PreRestore, self::PreDelete, self::PreDeploy, self::PreMove, self::PreUpdate], true);
     }
 }

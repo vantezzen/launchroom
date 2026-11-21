@@ -5,18 +5,22 @@ declare(strict_types=1);
 namespace App\Http\Controllers\Security;
 
 use App\Actions\Security\DismissFinding;
+use App\Actions\Security\DismissFindings;
 use App\Actions\Security\ReopenFinding;
 use App\Actions\Security\StartInvestigation;
 use App\Data\Security\DismissFindingData;
+use App\Data\Security\DismissFindingsData;
 use App\Data\Security\FindingDetailData;
-use App\Enums\Security\FindingLevel;
-use App\Enums\Security\SecurityFindingStatus;
+use App\Data\Security\FixGroupData;
 use App\Http\Controllers\Controller;
+use App\Http\Routing\CurrentTeam;
 use App\Models\Security\SecurityFinding;
 use App\Models\Security\SecurityInvestigation;
+use App\Models\Team;
 use App\Models\User;
 use App\Queries\Security\FindingDetail;
-use App\Support\Links;
+use App\Queries\Security\FixGroups;
+use App\Queries\Security\SecurityServiceRefs;
 use Illuminate\Container\Attributes\CurrentUser;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -26,11 +30,16 @@ use Inertia\Response;
 
 /**
  * A finding (docs/22 §9.3): its page (also opened as a sheet from the
- * Security page, from `…/-/data`), "Not affected…", "Reopen" and
- * "Investigate again". `{finding}` is bound through the user's teams.
+ * Security page, from `…/-/data`), "Not affected…" (one finding or a fix
+ * group's), "Reopen" and "Investigate again". `{finding}` is bound through
+ * the user's teams.
  */
 final class FindingController extends Controller
 {
+    public function __construct(
+        private readonly FixGroups $fixGroups,
+    ) {}
+
     public function show(SecurityFinding $finding, #[CurrentUser] User $user, FindingDetail $detail): Response
     {
         Gate::authorize('view', $finding);
@@ -42,58 +51,31 @@ final class FindingController extends Controller
     }
 
     /**
-     * Previous and next vulnerability in the Security page's "Action needed"
-     * order (docs/22 §9.2): open findings grouped by advisory, groups by
-     * known exploited, severity, number of services, then advisory id, as
-     * `groupActionNeeded` does; a group links to its first finding (known
-     * exploited, severity, oldest first). Within the team.
+     * Previous and next thing to fix in the Security page's "Action needed"
+     * order (docs/22 §9.2, FixGroups): one step per package, linking to the
+     * group's lead finding. Within the team.
      *
      * @return array{previous: string|null, next: string|null, position: int|null, total: int}
      */
     private function siblings(SecurityFinding $finding): array
     {
-        $open = SecurityFinding::query()
-            ->where('team_id', $finding->team_id)
-            ->where('status', SecurityFindingStatus::Open->value)
-            ->where('level', FindingLevel::ActionNeeded->value)
-            ->get(['id', 'public_id', 'group_key', 'known_exploited', 'severity', 'first_seen_at'])
-            ->sort(static fn (SecurityFinding $a, SecurityFinding $b): int => [$b->known_exploited, $b->severity->rank(), $a->first_seen_at->getTimestamp()]
-                <=> [$a->known_exploited, $a->severity->rank(), $b->first_seen_at->getTimestamp()]);
-
-        /** @var array<string, array{key: string, exploited: bool, severity: int, count: int, lead: SecurityFinding, ids: list<int>}> $groups */
-        $groups = [];
-
-        // `$open` is already in lead order: the first of each advisory leads.
-        foreach ($open as $item) {
-            $group = $groups[$item->group_key] ?? ['key' => $item->group_key, 'exploited' => false, 'severity' => 0, 'count' => 0, 'lead' => $item, 'ids' => []];
-            $group['exploited'] = $group['exploited'] || $item->known_exploited;
-            $group['severity'] = max($group['severity'], $item->severity->rank());
-            $group['count']++;
-            $group['ids'][] = $item->id;
-            $groups[$item->group_key] = $group;
-        }
-
-        $groups = array_values($groups);
-        usort($groups, static fn (array $a, array $b): int => [$b['exploited'], $b['severity'], $b['count'], $a['key']] <=> [$a['exploited'], $a['severity'], $a['count'], $b['key']]);
+        $groups = $this->fixGroups->handle($finding->team_id, new SecurityServiceRefs);
         $index = null;
 
         foreach ($groups as $i => $group) {
-            if (in_array($finding->id, $group['ids'], true)) {
-                $index = $i;
+            foreach ($group->services as $service) {
+                if (in_array($finding->public_id, $service->findings, true)) {
+                    $index = $i;
+                }
             }
         }
 
-        if ($index === null) {
-            return ['previous' => null, 'next' => null, 'position' => null, 'total' => count($groups)];
-        }
-
-        $previous = $groups[$index - 1] ?? null;
-        $next = $groups[$index + 1] ?? null;
+        $link = static fn (?FixGroupData $group): ?string => $group instanceof FixGroupData ? route('security.findings.show', ['finding' => $group->lead], false) : null;
 
         return [
-            'previous' => $previous === null ? null : Links::finding($previous['lead']),
-            'next' => $next === null ? null : Links::finding($next['lead']),
-            'position' => $index + 1,
+            'previous' => $index === null ? null : $link($groups[$index - 1] ?? null),
+            'next' => $index === null ? null : $link($groups[$index + 1] ?? null),
+            'position' => $index === null ? null : $index + 1,
             'total' => count($groups),
         ];
     }
@@ -111,6 +93,18 @@ final class FindingController extends Controller
         $dismiss->handle($finding, $data, $user, $this->auditActor($request, $user));
 
         return new JsonResponse(['status' => 'dismissed']);
+    }
+
+    /**
+     * "Not affected…" for a fix group (docs/22 §5.5): the findings of the
+     * services it applies to, resolved inside the current team.
+     */
+    public function dismissMany(Request $request, DismissFindingsData $data, #[CurrentUser] User $user, #[CurrentTeam] Team $team, DismissFindings $dismiss): JsonResponse
+    {
+        Gate::authorize('manage', [SecurityFinding::class, $team]);
+        $count = $dismiss->handle($team, $data, $user, $this->auditActor($request, $user));
+
+        return new JsonResponse(['status' => 'dismissed', 'count' => $count]);
     }
 
     public function reopen(Request $request, SecurityFinding $finding, #[CurrentUser] User $user, ReopenFinding $reopen): JsonResponse

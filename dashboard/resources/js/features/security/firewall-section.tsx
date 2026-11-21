@@ -14,7 +14,7 @@ import { TimeAgo } from '@/components/time-ago';
 import { Button } from '@/components/ui/button';
 import { deployMarkers } from '@/features/metrics/format';
 import { requestJson } from '@/lib/http';
-import { rangeWords } from '@/lib/observe-scope';
+import { bucketWords, rangeWords } from '@/lib/observe-scope';
 import { cn } from '@/lib/utils';
 import { labelOf, vocabulary } from '@/lib/vocabulary';
 import {
@@ -145,7 +145,10 @@ export function FirewallSection({
     );
 }
 
-/** No attacks in the range: the protection that is running, calmly. */
+/**
+ * No attacks in the range: the protection that is running, calmly. How many
+ * services block is the hero's "Protected services" (not repeated here).
+ */
 function QuietFirewall({
     firewall,
     summary,
@@ -174,22 +177,6 @@ function QuietFirewall({
                         : `Requests to ${plural(summary.protectedServices, 'public service')} pass the firewall first.`}
                 </p>
             </div>
-            {summary.routedServices > 0 && (
-                <div className="flex w-full shrink-0 flex-col gap-1.5 sm:w-56">
-                    <span className="flex items-baseline justify-between type-small text-muted-foreground">
-                        <span>Blocking attacks</span>
-                        <span className="tabular-nums">
-                            {summary.protectedServices} of{' '}
-                            {summary.routedServices}
-                        </span>
-                    </span>
-                    <Meter
-                        value={summary.protectedServices}
-                        max={summary.routedServices}
-                        label="Public services that block attacks"
-                    />
-                </div>
-            )}
         </div>
     );
 }
@@ -201,7 +188,7 @@ function QuietFirewall({
  */
 function ChartCard({ firewall }: { firewall: Firewall }) {
     const times = firewall.timestamps.map((t) => Date.parse(t));
-    const unit = firewall.range === '30d' ? 'day' : 'hour';
+    const unit = bucketWords(firewall.bucketSeconds);
     const blocked = times.map((_, i) =>
         firewall.series
             .filter((s) => s.key !== 'detected')

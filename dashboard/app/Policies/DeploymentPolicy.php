@@ -40,6 +40,16 @@ final class DeploymentPolicy
             && $user->hasTeamPermission($deployment->team_id, Permission::Deploy);
     }
 
+    /**
+     * "Deploy now" on a push deployment waiting for its commit's checks
+     * (D111): the "Deploy" permission.
+     */
+    public function skipChecks(User $user, Deployment $deployment): bool
+    {
+        return $deployment->waitsForChecks()
+            && $user->hasTeamPermission($deployment->team_id, Permission::Deploy);
+    }
+
     public function cancel(User $user, Deployment $deployment): bool
     {
         return $deployment->status->isCancellable()

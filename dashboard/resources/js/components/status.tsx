@@ -114,7 +114,8 @@ export function Status({
             )}
         >
             <StatusIcon state={state} />
-            <span className="truncate">
+            {/* With a detail, the word stays whole and the detail is cut. */}
+            <span className={detail ? 'shrink-0' : 'truncate'}>
                 {label}
                 {since && (
                     <span className="text-muted-foreground"> for {since}</span>
@@ -152,7 +153,7 @@ export function StatusPill({
             )}
         >
             <StatusIcon state={state} className="size-3" />
-            <span className="truncate">
+            <span className={detail ? 'shrink-0' : 'truncate'}>
                 {label}
                 {since && <span className="font-normal"> for {since}</span>}
             </span>

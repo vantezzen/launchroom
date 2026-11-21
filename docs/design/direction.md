@@ -160,13 +160,13 @@ All live in `resources/js/components/` (primitives) or `components/patterns/` (c
 - `Sparkline` (inline, 16–30 px, no axes), `MiniBars` (deploy frequency: 14 bars, failures in red, today in signal blue).
 - `UsageMeter`: segmented bar with 2 px gaps, categorical colours, legend with values; "free" as the empty remainder.
 - `Donut`: total in the centre, legend beside with values; max 4 segments + "other".
-- `TimeRangeSelect`: Hour / Day / Week segmented (consistent everywhere).
+- `RangeSelect`: Hour / Day / Week / Month segmented, the same on every page; a page adds its own range only where its job needs one (Logs: 15 min). See design-system §9.
 
 ### 5.4 Steps and timelines
 - `StepList` (Vercel deployment): collapsible rows with chevron, status icon (✓ filled green, ✕ filled red, spinner amber, dashed hollow for skipped/pending), name, summary text, chips (error count), duration right-aligned tabular. The failing step auto-expands to an **ErrorExcerpt** (±5 lines, line numbers, highlighted line with a red left rule) and "Show all N lines".
 - `StepPills`: the compact horizontal version for cards and canvas nodes.
 - `RunStrip`: one bar per day/run (backups, health history), green/red/grey with tooltips.
-- `ActivityItem`: avatar, sentence ("**mara** deployed **api** to production"), age; grouped by day. Bursts collapse (`features/activity/bursts.ts`): identical events within 10 minutes become one row with "3 times" that expands to the earlier ones (newest outcome shown), and a person's run of different events in one project shares a "**mara** in shop" heading with the rows indented under it.
+- `ActivityItem`: avatar, sentence ("**mara** deployed **api** to production"), age; grouped by day. Bursts collapse (`features/activity/bursts.ts`): identical events within 10 minutes become one row with "3 times" that expands to the earlier ones (newest outcome shown), and a person's run of different events in one project shares a "**mara** in shop" heading with the rows indented under it. Security alerts of one check arrive as one row from the server, "Security updates needed for node and lodash" linking to the Security page (D107, [22](../22-security-center.md) §10).
 
 ### 5.5 Log explorer
 `LogExplorer` with: query bar (`service:api level:error "timeout"` with chips for parsed filters), time range, Live toggle; **histogram** (one bar per bucket, errors stacked in red, deploy markers as signal-blue ticks with labels); **filter rail** with counts (level, service, deployment, server, stream); virtualized monospace table (time with the seconds emphasised, service + replica, message, ANSI toned down; the level is a 2 px left rule plus the word "Error" or "Warning" before the message, info and debug stay silent; errors keep a faint red wash); **detail drawer** (message wrapped, facts box with **Only this** / **Hide this** beside each value (`key:value` / `-key:value`), "similar lines", **Surrounding lines** (the ±2 minutes around the line with text and level filters dropped, the line marked with a signal rule, "Back to results" restores the search) and a **Copy** menu: message, line as JSON, link to the line (`?line=`)). The rail's groups collapse (Level and Service open, the others with their selected count), long groups get a search field, and **Reset** clears every facet. A download button after Live saves the lines on screen or all matching lines (up to 10,000) as text or NDJSON; dragging across the histogram picks a time window. Phones: **Filters (n)** opens the rail in a sheet, and rows have two lines (time and source, then the message). Build logs on the deployment page reuse the table and search in a contained card, with **All / Errors / Warnings** counts that narrow the lines.
@@ -181,7 +181,7 @@ All live in `resources/js/components/` (primitives) or `components/patterns/` (c
 ### 5.7 Sheets, panels and the floating bar
 - `Sheet` (right, 480/560/720 px, float level, 16 px radius, 12 px inset on desktop, full screen on phones): header (logo, title, status, close), sections with headings and dividers, toggles right-aligned (Laravel Cloud).
 - `ServicePanel`: a `Sheet` over the canvas with tabs **Deployments · Logs · Settings** (+ Console and Data where they apply) and an **Analytics ↗** link to the project's Analytics filtered to the service ([../08-dashboard-ux.md](../08-dashboard-ux.md) §1, D75).
-- `UnsavedBar` / `StagedBar`: floating, centred at the bottom of the sheet or page, inverse colours (black in light, white in dark): "⚠ Unsaved changes · Reset · Save" for instant settings, "2 changes · api will restart · Discard · Deploy" for staged ones. It replaces per-section Save buttons.
+- `UnsavedBar` / `StagedBar`: floating, centred at the bottom of the sheet or page, inverse colours (black in light, white in dark): "⚠ Unsaved changes · Reset · Save" for instant settings, "4 changes in 2 services, api will restart, Review, Apply" for staged ones. It replaces per-section Save buttons.
 
 ### 5.8 Canvas
 See §9.4 for the full spec: `ServiceNode`, `GroupFrame`, `ConnectionEdge` with a label pill, `CanvasToolbar` (floating bottom-centre: Add, Fit, Tidy, zoom, ⌘K), `Minimap` (floating bottom-right, real node rectangles, viewport in signal blue).
@@ -297,7 +297,7 @@ Metric samples are stored per minute for 48 h, as 10-minute rollups for 30 days 
 
 ### 8.2 Endpoints
 
-JSON, authorized through team relations: `GET /servers/-/metrics?range=1h|24h|7d` (all servers, downsampled), `GET /servers/{server}/-/metrics?range=…` (host + per-workload), `GET /p/{project}/-/metrics?environment=&service=&range=…` (per service, with requests). The report broadcast (`server.metrics`) nudges clients to refetch; without Reverb they poll every minute. Details in [../15-observability.md](../15-observability.md) §2.1.
+JSON, authorized through team relations: `GET /servers/-/metrics?range=1h|24h|7d|30d` (all servers, downsampled), `GET /servers/{server}/-/metrics?range=…` (host + per-workload), `GET /p/{project}/-/metrics?environment=&service=&range=…` (per service, with requests). The report broadcast (`server.metrics`) nudges clients to refetch; without Reverb they poll every minute. Details in [../15-observability.md](../15-observability.md) §2.1.
 
 ### 8.3 Charts per page
 
@@ -406,7 +406,7 @@ Header with the two environment cards and an arrow (swap on click), a summary wi
 The rule as one sentence under the title ("Pull requests into main get a copy of staging. Removed when closed or after 7 days without activity."). "Waiting for you" group for fork approvals at the top, then **Open** pull requests as a `PreviewCard` grid (2 columns; no media area without a URL; Open preview, Pull request ↗ and, when a deployment failed, See why), then **Closed** and expired ones as one-line rows, five until "Show all". Counts sit in the section headings. Settings stay in project Settings → Previews, laid out as option cards for the database strategy ("New empty database" / "Clone from staging" / "Share staging's database") with the consequence on each card.
 
 ### 9.12 Get started
-`narrow`. Hero + ring; five step cards, one open; done steps one line each with their result; the deploy step embeds the import flow. Dismiss as "Hide for now" in the top bar.
+`narrow`. Hero + ring; five step cards, one open; done steps one line each with their result; the deploy step embeds the import flow. Dismiss as "Hide for now" in the top bar. The ring counts done steps only: a skipped step is a dash marker with a muted title and a **Skipped** chip, so "3 of 5 done, 2 optional left" reads true at a glance. Once nothing but skipped steps is left, a quiet **What's next** card (own domain, invite a teammate, ⌘K) closes the page; "You're all set." only when every step is done (docs/08 §3, D109).
 
 ### 9.13 Add server
 `narrow` wizard; flows §10.
@@ -437,6 +437,7 @@ Shared settings layout (§5.12). Specific pages:
 | Backups (no storage) | provider logos over a dashed card | "Keep a copy off your servers" and what would be protected ("Connect any S3-compatible bucket and your 2 databases are backed up every day.") | Connect storage |
 | Variables | lucide `key-round` | "No variables yet. Paste a .env anywhere on this tab." | Add variable |
 | Activity | lucide `history` | "Deploys, promotions and changes will show up here." | |
+| Analytics (no requests) | lucide `bar-chart-3` | The cause, from the services' real state: "Nothing is running in production, so no requests reach it." with the services that should serve as status rows; "No service in production has an address yet."; or, when something serves, "No requests in the last 24 hours" with the address to visit | The status's own fix (Start, Restart, Retry deploy) for people who may deploy, else Open the service |
 
 ### 9.17 Backups
 `wide`, a top-level page in the sidebar (D95; flows §14). Anatomy, top to bottom:

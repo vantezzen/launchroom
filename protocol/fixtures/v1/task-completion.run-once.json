@@ -3,5 +3,5 @@
   "kind": "TaskCompletion",
   "attempt": 1,
   "outcome": "succeeded",
-  "runOnce": { "exitCode": 1, "durationMs": 5321 }
+  "runOnce": { "exitCode": 1, "durationMs": 5321, "outputTruncated": true }
 }

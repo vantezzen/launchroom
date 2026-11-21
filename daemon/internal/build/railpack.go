@@ -140,6 +140,12 @@ func planWithRailpack(dir string, env map[string]string, logf func(level, msg st
 			p.info.Packages[name] = *pkg.ResolvedVersion
 		}
 	}
+	// Railpack's node provider fills its prune step only with RAILPACK_PRUNE_DEPS.
+	for _, step := range res.Plan.Steps {
+		if step.Name == "prune" && len(step.Commands) > 0 {
+			p.info.PruneDeps = true
+		}
+	}
 	return p, nil
 }
 

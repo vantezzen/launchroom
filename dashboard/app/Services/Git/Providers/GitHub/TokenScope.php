@@ -37,6 +37,15 @@ final readonly class TokenScope
     }
 
     /**
+     * Read the CI checks of a commit: check runs and commit statuses
+     * (deploy after checks pass, docs/06 §2.5).
+     */
+    public static function checks(int $repositoryId): self
+    {
+        return new self([$repositoryId], ['checks' => 'read', 'metadata' => 'read', 'statuses' => 'read']);
+    }
+
+    /**
      * Report deployment status: Deployments API, check runs, the PR comment,
      * collaborator permission checks.
      */

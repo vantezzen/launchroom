@@ -22,6 +22,8 @@ enum DaemonTaskPurpose: string
     case Sanitize = 'sanitize';
     /** run_once: the start check of a generated Dockerfile (docs/20 §5). */
     case DockerfileCheck = 'dockerfile_check';
+    /** run_once: a one-off command someone ran (D105, docs/03 §7.5). */
+    case CommandRun = 'command';
     /** self_update of the control plane (docs/11 §4). */
     case ControlPlaneUpdate = 'cp_update';
     /** self_update of one server of a fleet rollout. */

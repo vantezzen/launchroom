@@ -476,7 +476,8 @@ final readonly class NodeStateContent
         $tasks = DaemonTask::query()
             ->where('server_id', $server->id)
             ->where('type', DaemonTaskType::RunOnce->value)
-            ->where('purpose', DaemonTaskPurpose::Release->value)
+            // Release commands and one-off commands (D105) mount the service's volumes.
+            ->whereIn('purpose', [DaemonTaskPurpose::Release->value, DaemonTaskPurpose::CommandRun->value])
             ->open()
             ->get(['id', 'spec']);
 

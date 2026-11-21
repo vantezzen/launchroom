@@ -2,7 +2,7 @@
 
 declare(strict_types=1);
 
-use App\Data\Canvas\EnvironmentHealthData;
+use App\Data\Canvas\EnvironmentLiveStatusData;
 use App\Enums\Alerts\AlertRule;
 use App\Enums\Alerts\AlertSeverity;
 use App\Enums\DeploymentStatus;
@@ -73,17 +73,18 @@ test('the Activity count is the team’s firing alerts', function (): void {
         ->and(resolve(ShellSignals::class)->openAlerts(null, null))->toBe(0);
 });
 
-test('the Security badge counts advisory groups, not findings', function (): void {
+test('the Security badge counts packages to fix, not findings or advisories', function (): void {
     $world = DeploymentUi::make(deploy: false);
     $web = ServiceInstance::query()->where('service_id', $world->web->id)->sole();
     $postgres = ServiceInstance::query()->where('service_id', $world->postgres->id)->sole();
     shellFinding($web, 'GHSA-one', 'lodash');
     shellFinding($postgres, 'GHSA-one', 'lodash');
+    shellFinding($web, 'GHSA-four', 'lodash');
     shellFinding($web, 'GHSA-one', 'lodash-es');
     shellFinding($web, 'GHSA-two', 'express');
     shellFinding($web, 'GHSA-three', 'qs', 'worth_knowing');
 
-    expect(resolve(ShellSignals::class)->securityActionNeeded($world->member(TeamRole::Viewer), $world->team))->toBe(2);
+    expect(resolve(ShellSignals::class)->securityActionNeeded($world->member(TeamRole::Viewer), $world->team))->toBe(3);
 });
 
 test('the team line says how the servers are', function (): void {
@@ -145,7 +146,7 @@ test('the top bar knows when a deploy runs or failed in the open environment', f
     $this->actingAs($world->member(TeamRole::Viewer));
     $props = ProjectShell::props($world->project, $world->production);
 
-    expect($props['environmentHealth'])->toBeInstanceOf(DeferProp::class)
-        ->and($props['environmentHealth']())->toBeInstanceOf(EnvironmentHealthData::class)
+    expect($props['liveStatus'])->toBeInstanceOf(DeferProp::class)
+        ->and($props['liveStatus']())->toBeInstanceOf(EnvironmentLiveStatusData::class)
         ->and($props['environmentStatuses'])->toBeInstanceOf(OptionalProp::class);
 });

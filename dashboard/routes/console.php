@@ -28,6 +28,8 @@ Schedule::job(new PollTrackedRefsJob)->everyMinute()->name('github:poll-tracked-
 
 // Drained workloads and deployment timeouts (docs/04 §6, §8).
 Schedule::command('launchroom:deployments:sweep')->everyMinute()->withoutOverlapping(10);
+// Push deployments waiting for their commit's checks (D111): the webhook fallback.
+Schedule::command('launchroom:deployments:check-gates')->everyMinute()->withoutOverlapping(10);
 
 // Interactive sessions no server picked up (docs/03 §11.3).
 Schedule::command('launchroom:sessions:sweep')->everyMinute()->withoutOverlapping(10);
@@ -61,6 +63,11 @@ Schedule::command('launchroom:updates:advance')->everyMinute()->withoutOverlappi
 // Automatic updates (opt-in): at night on the control-plane server (docs/11 §4).
 Schedule::command('launchroom:updates:auto')->hourlyAt(7)->withoutOverlapping(60);
 
+// App updates of image services (D106, docs/04 §14): due version checks,
+// then open updates and automatic ones in their window.
+Schedule::command('launchroom:app-updates:check')->everyFifteenMinutes()->withoutOverlapping(30);
+Schedule::command('launchroom:app-updates:tick')->everyMinute()->withoutOverlapping(10);
+
 // Volumes of deleted environments/projects/previews whose retention passed (docs/05 §1.1).
 Schedule::command('launchroom:volumes:retire')->everyFifteenMinutes()->withoutOverlapping(30);
 
@@ -87,6 +94,9 @@ Schedule::command('launchroom:links:prune')->dailyAt('04:23')->withoutOverlappin
 // Alerts (docs/15 §3): condition rules every minute, history retention daily.
 Schedule::command('launchroom:alerts:evaluate')->everyMinute()->withoutOverlapping(10);
 Schedule::command('launchroom:alerts:prune')->dailyAt('04:41')->withoutOverlapping(120);
+
+// One-off commands (D105): ended runs and their output after 30 days, at most 100 per service.
+Schedule::command('launchroom:commands:prune')->dailyAt('04:47')->withoutOverlapping(120);
 
 // Public API (docs/16): expired CLI sign-ins, old idempotency keys, long-expired tokens.
 Schedule::command('launchroom:api:prune')->dailyAt('04:53')->withoutOverlapping(120);

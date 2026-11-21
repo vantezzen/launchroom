@@ -4,7 +4,6 @@ declare(strict_types=1);
 
 namespace App\Models;
 
-use App\Enums\ApiAbility;
 use App\Enums\Permission;
 use App\Enums\TeamRole;
 use Database\Factories\UserFactory;
@@ -36,6 +35,8 @@ use Laravel\Sanctum\HasApiTokens;
  * @property string|null $remember_token
  * @property int|null $current_team_id
  * @property bool $is_instance_owner
+ * @property int|null $robot_team_id
+ * @property int|null $robot_created_by_id
  * @property Carbon|null $created_at
  * @property Carbon|null $updated_at
  * @property-read Team|null $currentTeam
@@ -50,6 +51,8 @@ final class User extends Authenticatable implements MustVerifyEmail, PasskeyUser
     /** @var array<string, mixed> */
     protected $attributes = [
         'is_instance_owner' => false,
+        // A person, unless a robot token created it (docs/16 §1.4).
+        'robot_team_id' => null,
     ];
 
     /**
@@ -103,13 +106,47 @@ final class User extends Authenticatable implements MustVerifyEmail, PasskeyUser
     }
 
     /**
-     * Subquery of the ids of every team the user belongs to, for scoping
-     * lookups of team-owned resources (docs/09 R7).
+     * A robot's team (docs/16 §1.4); null for people.
      *
-     * @return Builder<Membership>
+     * @return BelongsTo<Team, $this>
+     */
+    public function robotTeam(): BelongsTo
+    {
+        return $this->belongsTo(Team::class, 'robot_team_id');
+    }
+
+    /**
+     * Who created the robot; null for people and once that account is gone.
+     *
+     * @return BelongsTo<self, $this>
+     */
+    public function robotCreator(): BelongsTo
+    {
+        return $this->belongsTo(self::class, 'robot_created_by_id');
+    }
+
+    /**
+     * A team-owned robot identity behind a robot token (docs/16 §1.4,
+     * docs/09 R45): no membership, never signs in.
+     */
+    public function isRobot(): bool
+    {
+        return $this->robot_team_id !== null;
+    }
+
+    /**
+     * Subquery of the ids of every team the user belongs to, for scoping
+     * lookups of team-owned resources (docs/09 R7). A robot belongs to its
+     * team only.
+     *
+     * @return Builder<Membership>|Builder<Team>
      */
     public function teamIdsQuery(): Builder
     {
+        if ($this->robot_team_id !== null) {
+            return Team::query()->select('id')->whereKey($this->robot_team_id);
+        }
+
         $query = Membership::query()->select('team_id')->where('user_id', $this->id);
         $token = $this->currentApiToken();
 
@@ -140,6 +177,12 @@ final class User extends Authenticatable implements MustVerifyEmail, PasskeyUser
 
         if ($this->teamRolesVersion !== self::$membershipVersion) {
             $this->forgetTeamRoles();
+        }
+
+        // A robot has no membership: the admin role in its own team is only
+        // a ceiling, its token's abilities decide (docs/16 §1.4).
+        if ($this->robot_team_id !== null) {
+            return $teamId === $this->robot_team_id ? TeamRole::Admin : null;
         }
 
         if (! array_key_exists($teamId, $this->teamRoles)) {
@@ -179,13 +222,30 @@ final class User extends Authenticatable implements MustVerifyEmail, PasskeyUser
     {
         $teamId = $team instanceof Team ? $team->id : $team;
 
-        if (! ($this->roleIn($teamId)?->can($permission) ?? false) && ! $this->hasGrant($teamId, $permission)) {
+        if (! $this->roleAllows($teamId, $permission)) {
             return false;
         }
 
         $token = $this->currentApiToken();
 
-        return ! $token instanceof ApiToken || ApiAbility::allows($token->abilities, $permission);
+        // A robot outside a request (a job finishing what its token started)
+        // is still narrowed by its token, and can do nothing once it is revoked.
+        if (! $token instanceof ApiToken && $this->robot_team_id !== null) {
+            $token = ApiToken::query()->ownedBy($this)->latest('id')->first() ?? new ApiToken(['abilities' => []]);
+        }
+
+        return ! $token instanceof ApiToken || $token->reaches($permission);
+    }
+
+    /**
+     * The role's permission in $team plus individual grants, without any
+     * token narrowing: the ceiling of every token this user holds there.
+     */
+    public function roleAllows(Team|int $team, Permission $permission): bool
+    {
+        $teamId = $team instanceof Team ? $team->id : $team;
+
+        return ($this->roleIn($teamId)?->can($permission) ?? false) || $this->hasGrant($teamId, $permission);
     }
 
     public static function membershipsChanged(): void

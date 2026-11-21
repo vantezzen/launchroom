@@ -4,12 +4,16 @@ import "encoding/json"
 
 // Token is the API token of the current request (GET /me).
 type Token struct {
-	ID         string   `json:"id"`
-	Name       string   `json:"name"`
-	Abilities  []string `json:"abilities"`
-	ExpiresAt  *string  `json:"expiresAt"`
-	LastUsedAt *string  `json:"lastUsedAt"`
-	Client     string   `json:"client"`
+	ID        string   `json:"id"`
+	Name      string   `json:"name"`
+	Abilities []string `json:"abilities"`
+	// FullAccess: the token has every ability its role allows, including
+	// ones added after it was created (D113). Abilities is that list now,
+	// as the API computes it.
+	FullAccess bool    `json:"fullAccess"`
+	ExpiresAt  *string `json:"expiresAt"`
+	LastUsedAt *string `json:"lastUsedAt"`
+	Client     string  `json:"client"`
 }
 
 // User is the token's owner.
@@ -30,6 +34,9 @@ type Me struct {
 	Token Token `json:"token"`
 	User  User  `json:"user"`
 	Team  Team  `json:"team"`
+	// Scope is the project or service a scoped token is limited to (nil:
+	// every project of the team, or a dashboard older than D112).
+	Scope *TokenScope `json:"scope"`
 }
 
 // EnvironmentRef is an environment inside a project listing.
@@ -74,6 +81,10 @@ type Commit struct {
 type Failure struct {
 	Class   *string `json:"class"`
 	Message *string `json:"message"`
+	// Title is the outcome in a few words ("Build failed").
+	Title *string `json:"title"`
+	// Hint is what to do next for any failure of this class.
+	Hint *string `json:"hint"`
 }
 
 // Deployment is one deployment of a service in an environment.
@@ -91,6 +102,31 @@ type Deployment struct {
 	StartedAt     *string  `json:"startedAt"`
 	FinishedAt    *string  `json:"finishedAt"`
 	DashboardURL  string   `json:"dashboardUrl"`
+	// Checks is the CI checks wait of a push (D111); nil when it didn't wait.
+	Checks *DeploymentChecks `json:"checks,omitempty"`
+}
+
+// DeploymentChecks is a push waiting (or that waited) for its commit's checks.
+type DeploymentChecks struct {
+	State     string        `json:"state"`
+	Since     string        `json:"since"`
+	Deadline  string        `json:"deadline"`
+	Checks    []CommitCheck `json:"checks,omitempty"`
+	SkippedBy *string       `json:"skippedBy,omitempty"`
+	Problem   *string       `json:"problem,omitempty"`
+	CheckedAt *string       `json:"checkedAt,omitempty"`
+}
+
+// CommitCheck is one CI check of the commit.
+type CommitCheck struct {
+	Name  string  `json:"name"`
+	State string  `json:"state"`
+	URL   *string `json:"url"`
+}
+
+// WaitingForChecks reports whether the deployment waits for CI checks.
+func (d Deployment) WaitingForChecks() bool {
+	return d.Checks != nil && d.Checks.State == CheckGateStateWaiting
 }
 
 // Failed reports whether a finished deployment did not go live.
@@ -229,7 +265,9 @@ type LoginToken struct {
 	ExpiresAt string   `json:"expiresAt"`
 	Team      Team     `json:"team"`
 	Abilities []string `json:"abilities"`
-	User      User     `json:"user"`
+	// FullAccess: see Token.FullAccess.
+	FullAccess bool `json:"fullAccess"`
+	User       User `json:"user"`
 }
 
 // envelope is {"data": …, "meta": …}.

@@ -4,6 +4,7 @@ import type { KeyboardEvent, PointerEvent, ReactNode } from 'react';
 import { cn } from '@/lib/utils';
 import { ChartDrillPopover } from './chart-drill';
 import { formatTick, formatTooltipTime, niceMax } from './format';
+import { findGaps, gapAt, gapLabel } from './gaps';
 import { groupMarkers, LABEL_OFFSET } from './marker-groups';
 import { MarkerLayer } from './marker-layer';
 import { colorForSlot, MAX_SERIES, OTHER, SIGNAL } from './palette';
@@ -51,6 +52,11 @@ type TimeSeriesChartProps = {
     table?: boolean;
     /** Shown instead of the chart when there's nothing to plot. */
     empty?: ReactNode;
+    /**
+     * Metrics a server reports: a stretch without any report is drawn as an
+     * "Offline" band, and reading it says "No reports 18:30 to 09:00".
+     */
+    markGaps?: boolean;
     className?: string;
 };
 
@@ -76,6 +82,7 @@ export function TimeSeriesChart({
     drill,
     table = true,
     empty = null,
+    markGaps = false,
     className,
 }: TimeSeriesChartProps) {
     const id = useId();
@@ -87,6 +94,16 @@ export function TimeSeriesChart({
 
     const series = useMemo(() => foldSeries(input), [input]);
     const times = series[0]?.points.map((point) => point.t) ?? [];
+    const gaps = useMemo(
+        () =>
+            markGaps
+                ? findGaps(
+                      series[0]?.points.map((point) => point.t) ?? [],
+                      series.map((s) => s.points.map((point) => point.v)),
+                  )
+                : [],
+        [markGaps, series],
+    );
     const hasData = series.some(
         (s) => s.points.filter((point) => point.v !== null).length > 1,
     );
@@ -164,6 +181,7 @@ export function TimeSeriesChart({
             ? Math.min(Math.max(x(activeT) + 12, 0), width - 168)
             : 0;
     const flip = activeT !== null && x(activeT) + 180 > width;
+    const activeGap = active !== null ? gapAt(gaps, active) : null;
 
     return (
         <figure className={cn('flex flex-col gap-3', className)}>
@@ -199,7 +217,9 @@ export function TimeSeriesChart({
                         })}
                     </ul>
                 )}
-                <figcaption className="sr-only">{title}</figcaption>
+                <figcaption className="sr-only">
+                    {[title, ...gaps.map(gapLabel)].join('. ')}
+                </figcaption>
                 {table && (
                     <button
                         type="button"
@@ -271,6 +291,38 @@ export function TimeSeriesChart({
                                     />
                                 </linearGradient>
                             </defs>
+
+                            {gaps.map((gap) => {
+                                const from = x(gap.from);
+                                const to = Math.min(x(gap.to), x(t1));
+                                const bandW = Math.max(0, to - from);
+
+                                return (
+                                    <g key={gap.from}>
+                                        <rect
+                                            x={from}
+                                            y={PAD.top}
+                                            width={bandW}
+                                            height={plotH}
+                                            rx={4}
+                                            style={{ fill: 'var(--hover)' }}
+                                        >
+                                            <title>{gapLabel(gap)}</title>
+                                        </rect>
+                                        {bandW >= 56 && (
+                                            <text
+                                                x={from + bandW / 2}
+                                                y={PAD.top + plotH / 2}
+                                                dy="0.32em"
+                                                textAnchor="middle"
+                                                className="fill-muted-foreground text-[11px]"
+                                            >
+                                                Offline
+                                            </text>
+                                        )}
+                                    </g>
+                                );
+                            })}
 
                             {ticks.map((tick, index) => (
                                 <g key={tick}>
@@ -456,24 +508,34 @@ export function TimeSeriesChart({
                             <p className="type-small text-muted-foreground tabular-nums">
                                 {formatTooltipTime(activeT, span)}
                             </p>
-                            {series.map((s) => (
-                                <p
-                                    key={s.key}
-                                    className="flex items-center gap-1.5 type-small"
-                                >
-                                    <span
-                                        aria-hidden="true"
-                                        className="size-2 rounded-[2px]"
-                                        style={{ backgroundColor: s.color }}
-                                    />
-                                    <span className="truncate">{s.label}</span>
-                                    <span className="ml-auto font-medium tabular-nums">
-                                        {s.points[active!]?.v != null
-                                            ? formatValue(s.points[active!].v!)
-                                            : '–'}
-                                    </span>
+                            {activeGap && (
+                                <p className="type-small text-pretty">
+                                    {gapLabel(activeGap)}
                                 </p>
-                            ))}
+                            )}
+                            {!activeGap &&
+                                series.map((s) => (
+                                    <p
+                                        key={s.key}
+                                        className="flex items-center gap-1.5 type-small"
+                                    >
+                                        <span
+                                            aria-hidden="true"
+                                            className="size-2 rounded-[2px]"
+                                            style={{ backgroundColor: s.color }}
+                                        />
+                                        <span className="truncate">
+                                            {s.label}
+                                        </span>
+                                        <span className="ml-auto font-medium tabular-nums">
+                                            {s.points[active!]?.v != null
+                                                ? formatValue(
+                                                      s.points[active!].v!,
+                                                  )
+                                                : '–'}
+                                        </span>
+                                    </p>
+                                ))}
                         </div>
                     )}
                 </div>

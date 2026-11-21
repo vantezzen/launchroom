@@ -7,7 +7,7 @@ import { DEVICE_LABEL, DeviceImage } from '@/components/devices';
 import type { DeviceKind, DeviceStatus } from '@/components/devices';
 import { ServerMap } from '@/components/map';
 import type { MapLink, MapLocation } from '@/components/map';
-import { formatWindow, RANGE_SETS, rangeOptions } from '@/lib/observe-scope';
+import { formatWindow, RANGE_SETS } from '@/lib/observe-scope';
 import { RunStrip } from '@/components/steps/run-strip';
 import type { Run } from '@/components/steps/run-strip';
 import { StepChip, StepList } from '@/components/steps/step-list';
@@ -19,7 +19,7 @@ import { MiniBars } from '@/components/charts/mini-bars';
 import { Sparkline } from '@/components/charts/sparkline';
 import { StackedBars } from '@/components/charts/stacked-bars';
 import { StatTile } from '@/components/charts/stat-tile';
-import { TimeRangeSelect } from '@/components/charts/time-range-select';
+import { RangeSelect } from '@/components/charts/time-range-select';
 import { TimeSeriesChart } from '@/components/charts/time-series-chart';
 import type { MiniBar } from '@/components/charts/mini-bars';
 import type { TimeSeries } from '@/components/charts/time-series-chart';
@@ -37,6 +37,9 @@ import type { LogEntry, LogLevel } from '@/features/log-explorer/types';
 import type { QueryKey } from '@/features/log-explorer/query';
 import { TraceGallery } from '@/features/request-trace/trace-gallery';
 import { MoveStatesGallery } from '@/features/design-gallery/move-states';
+import { AppUpdateStatesGallery } from '@/features/design-gallery/app-update-states';
+import { CopyStatesGallery } from '@/features/design-gallery/copy-states';
+import { ObserveStatesGallery } from '@/features/design-gallery/observe-states';
 
 /*
  * Showcase of the visual primitives with fixed sample data
@@ -262,12 +265,12 @@ function MetricsSection() {
         >
             <div className="flex items-center justify-between">
                 <span className="type-small text-muted-foreground">
-                    TimeRangeSelect
+                    RangeSelect
                 </span>
-                <TimeRangeSelect
+                <RangeSelect
+                    page="resources"
                     value={range}
                     onChange={setRange}
-                    options={rangeOptions(RANGE_SETS.resources)}
                 />
             </div>
             <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
@@ -469,6 +472,38 @@ function BreakdownSection() {
                             centerLabel="Used"
                             size={104}
                             thickness={10}
+                        />
+                    </div>
+                    <div id="donut-newest-copies">
+                        <Label>Donut: Backups page storage (long label)</Label>
+                        <Donut
+                            items={[
+                                {
+                                    key: 'vol',
+                                    label: 'Volumes',
+                                    value: 12e9,
+                                    slot: 2,
+                                },
+                                {
+                                    key: 'db',
+                                    label: 'Databases',
+                                    value: 1.4e9,
+                                    slot: 1,
+                                },
+                                {
+                                    key: 'cp',
+                                    label: 'launchroom',
+                                    value: 48e6,
+                                    slot: 3,
+                                },
+                            ]}
+                            label="Newest copies by kind"
+                            format={formatBytes}
+                            centerValue="13 GB"
+                            centerLabel="newest copies"
+                            size={104}
+                            thickness={8}
+                            legend
                         />
                     </div>
                 </Panel>
@@ -972,6 +1007,7 @@ export const VISUAL_SECTIONS = [
     'charts',
     'steps',
     'logs',
+    'observe',
     'map',
     'trace',
     'moves',
@@ -986,6 +1022,13 @@ export default function VisualPrimitives() {
             <ChartsSection />
             <StepsSection />
             <LogsSection />
+            <Section
+                id="observe"
+                title="Ranges, gaps and zoom"
+                description="One range control on every observe page, offline stretches in server charts, the log histogram zoomed to its lines and merged network issues."
+            >
+                <ObserveStatesGallery />
+            </Section>
             <MapSection />
             <TraceSection />
             <Section
@@ -994,6 +1037,20 @@ export default function VisualPrimitives() {
                 description="Every step of moving launchroom to a new server, a server move and the old dashboard afterwards."
             >
                 <MoveStatesGallery />
+            </Section>
+            <Section
+                id="app-updates"
+                title="App updates"
+                description="Newer releases of image services: the panel row in every state, the update dialog, Settings → Source and the Projects list."
+            >
+                <AppUpdateStatesGallery />
+            </Section>
+            <Section
+                id="data-copies"
+                title="Copies between environments"
+                description="Copying a database or a volume from another environment: every step, done, failed with the snapshot from before, and cancelled."
+            >
+                <CopyStatesGallery />
             </Section>
         </div>
     );

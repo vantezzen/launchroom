@@ -4,12 +4,15 @@ declare(strict_types=1);
 
 namespace App\Support\Canvas;
 
+use App\Data\Canvas\DetectedPlanData;
 use App\Data\Services\DatabaseSource;
 use App\Data\Services\GitSource;
 use App\Data\Services\ImageSource;
 use App\Enums\Git\GitProviderKind;
 use App\Enums\ServiceKind;
+use App\Models\Deployment;
 use App\Models\Service;
+use App\Models\ServiceInstance;
 use App\Support\Images\ImageReference;
 
 /**
@@ -22,6 +25,7 @@ final class ServiceGlyph
     public const array KNOWN = [
         'postgres', 'mysql', 'redis', 'valkey', 'mongodb', 'nginx', 'docker', 'github', 'gitlab', 'git',
         'nextjs', 'laravel', 'node', 'python', 'django', 'fastapi', 'flask', 'vite', 'static',
+        'nuxt', 'remix', 'astro', 'svelte', 'bun', 'deno', 'go', 'rust',
         'worker', 'cron', 'app',
         // One-click apps and stacks (templates and Compose imports, docs/17 §3.2).
         'umami', 'plausible', 'uptimekuma', 'n8n', 'ghost', 'gitea', 'forgejo', 'meilisearch', 'pocketbase',
@@ -62,6 +66,41 @@ final class ServiceGlyph
         'php' => 'php',
         'ruby' => 'ruby',
     ];
+
+    /**
+     * A service's logo where it runs: the framework its build detected
+     * (D108), else the source's mark.
+     */
+    public static function forInstance(ServiceInstance $instance, ?Deployment $latest = null): string
+    {
+        $logo = self::logo($instance->service, self::framework($instance, $latest));
+
+        // No framework mark: the language its build detected beats the git host's.
+        if ($instance->service->kind === ServiceKind::App && $instance->service->icon === null && in_array($logo, ['github', 'gitlab', 'gitea', 'git'], true)) {
+            return self::frameworkGlyph(self::provider($instance, $latest)) ?? $logo;
+        }
+
+        return $logo;
+    }
+
+    /**
+     * The detected framework ("Next.js"): from the live deployment's build,
+     * else the latest one's, else the instance's plan preview.
+     */
+    public static function framework(ServiceInstance $instance, ?Deployment $latest = null): ?string
+    {
+        $framework = $instance->activeDeployment?->plan?->framework() ?? $latest?->plan?->framework() ?? $instance->plan?->summary?->framework;
+
+        return $framework !== null && $framework !== '' ? DetectedPlanData::frameworkLabel($framework) : null;
+    }
+
+    /**
+     * The build's language ("node", "go"), the same way as framework().
+     */
+    private static function provider(ServiceInstance $instance, ?Deployment $latest): ?string
+    {
+        return $instance->activeDeployment?->plan?->summary->provider ?? $latest?->plan?->summary->provider ?? $instance->plan?->summary?->provider;
+    }
 
     public static function logo(Service $service, ?string $framework = null): string
     {
@@ -157,6 +196,10 @@ final class ServiceGlyph
         };
     }
 
+    /**
+     * The glyph of a detected framework or language: its label ("Next.js",
+     * DetectedPlanData::frameworkLabel) or key ("next", a provider).
+     */
     private static function frameworkGlyph(?string $framework): ?string
     {
         if ($framework === null) {
@@ -167,14 +210,25 @@ final class ServiceGlyph
 
         return match (true) {
             str_contains($key, 'next') => 'nextjs',
+            str_contains($key, 'nuxt') => 'nuxt',
+            str_contains($key, 'remix'), str_contains($key, 'react router'), str_contains($key, 'react-router') => 'remix',
+            str_contains($key, 'astro') => 'astro',
+            str_contains($key, 'svelte') => 'svelte',
             str_contains($key, 'laravel') => 'laravel',
+            str_contains($key, 'symfony'), $key === 'php' => 'php',
             str_contains($key, 'django') => 'django',
             str_contains($key, 'fastapi') => 'fastapi',
             str_contains($key, 'flask') => 'flask',
+            str_contains($key, 'rails') => 'rails',
+            $key === 'ruby' => 'ruby',
             str_contains($key, 'vite') => 'vite',
             str_contains($key, 'static') => 'static',
-            str_contains($key, 'python') => 'python',
-            str_contains($key, 'node') || str_contains($key, 'express') => 'node',
+            str_contains($key, 'python'), $key === 'litestar' => 'python',
+            $key === 'bun' => 'bun',
+            $key === 'deno' => 'deno',
+            $key === 'go', $key === 'golang' => 'go',
+            $key === 'rust', $key === 'rocket' => 'rust',
+            str_contains($key, 'node'), in_array($key, ['express', 'fastify', 'nestjs', 'hono'], true) => 'node',
             default => null,
         };
     }

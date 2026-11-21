@@ -329,7 +329,7 @@ lint-daemon: dev/.env ## launchroomd: golangci-lint run $(PKG) (PKG=./internal/f
 SHELLCHECK_IMAGE ?= $(LR_SHELLCHECK_IMAGE)
 BUSYBOX_IMAGE ?= $(LR_BUSYBOX_IMAGE)
 
-SHELL_SCRIPTS = deploy/install/install.sh deploy/install/server.sh deploy/install/cli.sh deploy/install/splice.sh \
+SHELL_SCRIPTS = deploy/install/install.sh deploy/install/server.sh deploy/install/cli.sh deploy/install/splice.sh deploy/actions/launchroom/run.sh \
 	deploy/install/lib/host.sh deploy/install/lib/release.sh deploy/control-plane/launchroom \
 	deploy/test/lib.sh deploy/test/e2e-install.sh deploy/test/e2e-update.sh deploy/test/e2e-move.sh \
 	deploy/test/server-sh-test.sh deploy/test/install-sh-test.sh deploy/test/cli-sh-test.sh \
@@ -473,8 +473,8 @@ gen-types: dev/.env ## Generate TypeScript types from PHP Data objects, the enum
 gen-openapi: dev/.env ## Regenerate the public API's OpenAPI document (dashboard/resources/api/openapi.json, docs/16)
 	@$(call IN_DASHBOARD,php artisan launchroom:api:openapi)
 
-gen-cli: dev/.env go-image ## Regenerate the CLI's API enums from the OpenAPI document (cli/internal/api/enums_gen.go)
-	$(COMPOSE) run --rm --no-deps -w /src/cli go go test ./internal/api -run TestEnumsMatchOpenAPI -update
+gen-cli: dev/.env go-image ## Regenerate the CLI's API enums from the OpenAPI document (cli/internal/api/enums_gen.go) and the AI-editor table fixture (protocol/fixtures/cli/mcp-clients.json)
+	$(COMPOSE) run --rm --no-deps -w /src/cli go sh -c 'go test ./internal/api -run TestEnumsMatchOpenAPI -update && go test ./internal/mcpclients -run TestClientsFixture -update'
 
 ## Design assets
 

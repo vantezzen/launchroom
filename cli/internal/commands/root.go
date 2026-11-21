@@ -89,7 +89,9 @@ func (a *App) Root() *cobra.Command {
 	root.AddCommand(
 		a.loginCmd(), a.logoutCmd(), a.whoamiCmd(), a.linkCmd(), a.statusCmd(),
 		a.deployCmd(), a.logsCmd(), a.envCmd(), a.configCmd(), a.runCmd(), a.openCmd(),
-		a.dbCmd(), a.volumeCmd(), a.securityCmd(), a.serviceCmd(),
+		a.dbCmd(), a.volumeCmd(), a.securityCmd(), a.serviceCmd(), a.execCmd(),
+		a.deploymentsCmd(), a.rollbackCmd(), a.cancelCmd(), a.redeployCmd(), a.fixCmd(), a.rayCmd(), a.previewCmd(), a.updatesCmd(),
+		a.mcpCmd(),
 	)
 	root.SetFlagErrorFunc(func(_ *cobra.Command, err error) error { return exitcode.New(exitcode.Usage, err) })
 	markRunErrors(root)

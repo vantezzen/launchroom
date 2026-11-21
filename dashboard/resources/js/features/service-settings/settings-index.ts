@@ -77,6 +77,22 @@ export function settingsIndex(
         },
         {
             target: 'source',
+            label: 'Updates',
+            hint: 'Newer releases and automatic updates',
+            keywords: [
+                'update',
+                'upgrade',
+                'new version',
+                'release notes',
+                'update automatically',
+                'auto update',
+                'maintenance window',
+            ],
+            anchor: 'updates',
+            when: settings.source.type === 'image',
+        },
+        {
+            target: 'source',
             label: 'Branch',
             hint: 'Which branch deploys here',
             keywords: ['git branch', 'deploys from', 'override branch', 'main'],

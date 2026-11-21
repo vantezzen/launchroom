@@ -15,7 +15,7 @@ test('the dashboard sends members to their projects', function (): void {
     $this->get(route('dashboard'))->assertRedirect(route('projects.index'));
 });
 
-test('instance owners land on the first-run checklist until it is complete or dismissed', function (): void {
+test('instance owners land on the first-run checklist until only skipped steps are left or it is dismissed', function (): void {
     $owner = User::factory()->withTwoFactor()->create();
     $owner->forceFill(['is_instance_owner' => true])->save();
 

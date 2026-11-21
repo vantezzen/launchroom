@@ -31,6 +31,7 @@ services:
         healthcheck:
             test: ['CMD', 'versitygw', '--version']
         x-launchroom:
+            releases: https://github.com/versity/versitygw/releases
             name: versitygw
             logo: s3
             domain: ${input.domain}

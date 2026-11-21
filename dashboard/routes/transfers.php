@@ -2,6 +2,7 @@
 
 declare(strict_types=1);
 
+use App\Http\Controllers\Transfers\CopyController;
 use App\Http\Controllers\Transfers\DownloadController;
 use App\Http\Controllers\Transfers\ServiceTransfersController;
 use App\Http\Controllers\Transfers\TransferController;
@@ -50,6 +51,24 @@ Route::middleware(['web', 'auth', 'verified'])->group(function (): void {
     Route::post('transfers/services/{serviceInstance}/exports/{export}/link', [ServiceTransfersController::class, 'link'])
         ->middleware('throttle:20,1')
         ->name('transfers.services.exports.link');
+
+    // Copy data from another environment (D110, docs/14 §14).
+    Route::get('transfers/services/{serviceInstance}/copies/options', [CopyController::class, 'options'])
+        ->middleware('throttle:60,1')
+        ->name('transfers.services.copies.options');
+    Route::post('transfers/services/{serviceInstance}/copies/inspect', [CopyController::class, 'inspect'])
+        ->middleware('throttle:20,1')
+        ->name('transfers.services.copies.inspect');
+    Route::get('transfers/services/{serviceInstance}/copies/inspect/{task}', [CopyController::class, 'inspection'])
+        ->where('task', PublicId::routePattern(DaemonTask::publicIdPrefix()))
+        ->middleware('throttle:120,1')
+        ->name('transfers.services.copies.inspection');
+    Route::post('transfers/services/{serviceInstance}/copies', [CopyController::class, 'store'])
+        ->middleware('throttle:10,1')
+        ->name('transfers.services.copies.store');
+    Route::post('transfers/services/{serviceInstance}/copies/{copy}/cancel', [CopyController::class, 'cancel'])
+        ->middleware('throttle:30,1')
+        ->name('transfers.services.copies.cancel');
 
     Route::get('transfers/{transfer}', [TransferController::class, 'show'])
         ->middleware('throttle:120,1')

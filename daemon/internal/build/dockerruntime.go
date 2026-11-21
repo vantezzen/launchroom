@@ -25,6 +25,7 @@ func dockerfileRuntime(f presets.Facts, bs state.BuilderSpec, disabled []string,
 		s.EnvAliases = res.EnvAliases
 		s.RequiredSecrets = res.RequiredSecrets
 		s.VolumeSuggestions = res.VolumeSuggestions
+		s.Commands = res.Commands
 		if res.HealthPath != "" {
 			s.HealthPath = state.HTTPPath(res.HealthPath)
 		}

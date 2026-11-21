@@ -11,29 +11,69 @@ const (
 	APIAbilitySecretsRead  = "secrets:read"
 	APIAbilityDomainsWrite = "domains:write"
 	APIAbilityDataTransfer = "data:transfer"
+	APIAbilityRun          = "run"
+	APIAbilityFix          = "fix"
+	APIAbilityUpdate       = "update"
 )
 
 // APIAbilityValues lists every APIAbility value in the API's order.
-var APIAbilityValues = []string{APIAbilityRead, APIAbilityDeploy, APIAbilityEnvRead, APIAbilityEnvWrite, APIAbilitySecretsRead, APIAbilityDomainsWrite, APIAbilityDataTransfer}
+var APIAbilityValues = []string{APIAbilityRead, APIAbilityDeploy, APIAbilityEnvRead, APIAbilityEnvWrite, APIAbilitySecretsRead, APIAbilityDomainsWrite, APIAbilityDataTransfer, APIAbilityRun, APIAbilityFix, APIAbilityUpdate}
 
 // APITokenClient values (components.schemas.ApiTokenClient).
 const (
 	APITokenClientDashboard = "dashboard"
 	APITokenClientCli       = "cli"
+	APITokenClientRobot     = "robot"
 )
 
 // APITokenClientValues lists every APITokenClient value in the API's order.
-var APITokenClientValues = []string{APITokenClientDashboard, APITokenClientCli}
+var APITokenClientValues = []string{APITokenClientDashboard, APITokenClientCli, APITokenClientRobot}
 
 // AnalyticsRange values (components.schemas.AnalyticsRange).
 const (
+	AnalyticsRange1h  = "1h"
 	AnalyticsRange24h = "24h"
 	AnalyticsRange7d  = "7d"
 	AnalyticsRange30d = "30d"
 )
 
 // AnalyticsRangeValues lists every AnalyticsRange value in the API's order.
-var AnalyticsRangeValues = []string{AnalyticsRange24h, AnalyticsRange7d, AnalyticsRange30d}
+var AnalyticsRangeValues = []string{AnalyticsRange1h, AnalyticsRange24h, AnalyticsRange7d, AnalyticsRange30d}
+
+// AppUpdateStatus values (components.schemas.AppUpdateStatus).
+const (
+	AppUpdateStatusBackingUp  = "backing_up"
+	AppUpdateStatusDeploying  = "deploying"
+	AppUpdateStatusWatching   = "watching"
+	AppUpdateStatusSucceeded  = "succeeded"
+	AppUpdateStatusFailed     = "failed"
+	AppUpdateStatusRolledBack = "rolled_back"
+	AppUpdateStatusCancelled  = "cancelled"
+)
+
+// AppUpdateStatusValues lists every AppUpdateStatus value in the API's order.
+var AppUpdateStatusValues = []string{AppUpdateStatusBackingUp, AppUpdateStatusDeploying, AppUpdateStatusWatching, AppUpdateStatusSucceeded, AppUpdateStatusFailed, AppUpdateStatusRolledBack, AppUpdateStatusCancelled}
+
+// AppUpdateStatusTones is each AppUpdateStatus value's status tone (the dashboard's StatusTone).
+var AppUpdateStatusTones = map[string]string{
+	AppUpdateStatusBackingUp:  "progress",
+	AppUpdateStatusDeploying:  "progress",
+	AppUpdateStatusWatching:   "progress",
+	AppUpdateStatusSucceeded:  "active",
+	AppUpdateStatusFailed:     "failed",
+	AppUpdateStatusRolledBack: "failed",
+	AppUpdateStatusCancelled:  "idle",
+}
+
+// AutoUpdateMode values (components.schemas.AutoUpdateMode).
+const (
+	AutoUpdateModeOff   = "off"
+	AutoUpdateModePatch = "patch"
+	AutoUpdateModeMinor = "minor"
+)
+
+// AutoUpdateModeValues lists every AutoUpdateMode value in the API's order.
+var AutoUpdateModeValues = []string{AutoUpdateModeOff, AutoUpdateModePatch, AutoUpdateModeMinor}
 
 // CertStatus values (components.schemas.CertStatus).
 const (
@@ -67,6 +107,82 @@ const (
 
 // ChangeKindValues lists every ChangeKind value in the API's order.
 var ChangeKindValues = []string{ChangeKindAdded, ChangeKindRemoved, ChangeKindChanged}
+
+// CheckGateState values (components.schemas.CheckGateState).
+const (
+	CheckGateStateWaiting     = "waiting"
+	CheckGateStatePassed      = "passed"
+	CheckGateStateNone        = "none"
+	CheckGateStateUnsupported = "unsupported"
+	CheckGateStateSkipped     = "skipped"
+	CheckGateStateFailed      = "failed"
+	CheckGateStateTimedOut    = "timed_out"
+)
+
+// CheckGateStateValues lists every CheckGateState value in the API's order.
+var CheckGateStateValues = []string{CheckGateStateWaiting, CheckGateStatePassed, CheckGateStateNone, CheckGateStateUnsupported, CheckGateStateSkipped, CheckGateStateFailed, CheckGateStateTimedOut}
+
+// CheckGateStateTones is each CheckGateState value's status tone (the dashboard's StatusTone).
+var CheckGateStateTones = map[string]string{
+	CheckGateStateWaiting:     "progress",
+	CheckGateStatePassed:      "active",
+	CheckGateStateNone:        "idle",
+	CheckGateStateUnsupported: "idle",
+	CheckGateStateSkipped:     "idle",
+	CheckGateStateFailed:      "failed",
+	CheckGateStateTimedOut:    "warning",
+}
+
+// CommandRunStatus values (components.schemas.CommandRunStatus).
+const (
+	CommandRunStatusQueued    = "queued"
+	CommandRunStatusRunning   = "running"
+	CommandRunStatusSucceeded = "succeeded"
+	CommandRunStatusFailed    = "failed"
+	CommandRunStatusTimedOut  = "timed_out"
+	CommandRunStatusCancelled = "cancelled"
+	CommandRunStatusError     = "error"
+)
+
+// CommandRunStatusValues lists every CommandRunStatus value in the API's order.
+var CommandRunStatusValues = []string{CommandRunStatusQueued, CommandRunStatusRunning, CommandRunStatusSucceeded, CommandRunStatusFailed, CommandRunStatusTimedOut, CommandRunStatusCancelled, CommandRunStatusError}
+
+// CommandRunStatusTones is each CommandRunStatus value's status tone (the dashboard's StatusTone).
+var CommandRunStatusTones = map[string]string{
+	CommandRunStatusQueued:    "progress",
+	CommandRunStatusRunning:   "progress",
+	CommandRunStatusSucceeded: "active",
+	CommandRunStatusFailed:    "failed",
+	CommandRunStatusTimedOut:  "failed",
+	CommandRunStatusCancelled: "idle",
+	CommandRunStatusError:     "failed",
+}
+
+// CommandSource values (components.schemas.CommandSource).
+const (
+	CommandSourceFramework = "framework"
+	CommandSourceConfig    = "config"
+)
+
+// CommandSourceValues lists every CommandSource value in the API's order.
+var CommandSourceValues = []string{CommandSourceFramework, CommandSourceConfig}
+
+// CommitCheckState values (components.schemas.CommitCheckState).
+const (
+	CommitCheckStatePending = "pending"
+	CommitCheckStatePassed  = "passed"
+	CommitCheckStateFailed  = "failed"
+)
+
+// CommitCheckStateValues lists every CommitCheckState value in the API's order.
+var CommitCheckStateValues = []string{CommitCheckStatePending, CommitCheckStatePassed, CommitCheckStateFailed}
+
+// CommitCheckStateTones is each CommitCheckState value's status tone (the dashboard's StatusTone).
+var CommitCheckStateTones = map[string]string{
+	CommitCheckStatePending: "progress",
+	CommitCheckStatePassed:  "active",
+	CommitCheckStateFailed:  "failed",
+}
 
 // ConfigFileStatus values (components.schemas.ConfigFileStatus).
 const (
@@ -139,6 +255,20 @@ var DeploymentStatusTones = map[string]string{
 	DeploymentStatusSuperseded:     "idle",
 }
 
+// DeploymentStepName values (components.schemas.DeploymentStepName).
+const (
+	DeploymentStepNamePlan    = "plan"
+	DeploymentStepNameBuild   = "build"
+	DeploymentStepNameRelease = "release"
+	DeploymentStepNameRollout = "rollout"
+	DeploymentStepNameHealth  = "health"
+	DeploymentStepNameRoute   = "route"
+	DeploymentStepNameCleanup = "cleanup"
+)
+
+// DeploymentStepNameValues lists every DeploymentStepName value in the API's order.
+var DeploymentStepNameValues = []string{DeploymentStepNamePlan, DeploymentStepNameBuild, DeploymentStepNameRelease, DeploymentStepNameRollout, DeploymentStepNameHealth, DeploymentStepNameRoute, DeploymentStepNameCleanup}
+
 // DeploymentTrigger values (components.schemas.DeploymentTrigger).
 const (
 	DeploymentTriggerPush     = "push"
@@ -151,10 +281,11 @@ const (
 	DeploymentTriggerAPI      = "api"
 	DeploymentTriggerRestart  = "restart"
 	DeploymentTriggerStart    = "start"
+	DeploymentTriggerUpdate   = "update"
 )
 
 // DeploymentTriggerValues lists every DeploymentTrigger value in the API's order.
-var DeploymentTriggerValues = []string{DeploymentTriggerPush, DeploymentTriggerPr, DeploymentTriggerTag, DeploymentTriggerManual, DeploymentTriggerRollback, DeploymentTriggerPromote, DeploymentTriggerConfig, DeploymentTriggerAPI, DeploymentTriggerRestart, DeploymentTriggerStart}
+var DeploymentTriggerValues = []string{DeploymentTriggerPush, DeploymentTriggerPr, DeploymentTriggerTag, DeploymentTriggerManual, DeploymentTriggerRollback, DeploymentTriggerPromote, DeploymentTriggerConfig, DeploymentTriggerAPI, DeploymentTriggerRestart, DeploymentTriggerStart, DeploymentTriggerUpdate}
 
 // DomainKind values (components.schemas.DomainKind).
 const (
@@ -195,6 +326,32 @@ const (
 
 // ExportSourceValues lists every ExportSource value in the API's order.
 var ExportSourceValues = []string{ExportSourceLive, ExportSourceSnapshot}
+
+// FailureFixAction values (components.schemas.FailureFixAction).
+const (
+	FailureFixActionSetPort            = "set_port"
+	FailureFixActionRaiseHealthTimeout = "raise_health_timeout"
+	FailureFixActionAddVariable        = "add_variable"
+	FailureFixActionGenerateDockerfile = "generate_dockerfile"
+	FailureFixActionUseTcpHealthcheck  = "use_tcp_healthcheck"
+	FailureFixActionAccept4xx          = "accept_4xx"
+	FailureFixActionAddCapabilities    = "add_capabilities"
+	FailureFixActionFixVolumeOwner     = "fix_volume_owner"
+	FailureFixActionFreeDisk           = "free_disk"
+)
+
+// FailureFixActionValues lists every FailureFixAction value in the API's order.
+var FailureFixActionValues = []string{FailureFixActionSetPort, FailureFixActionRaiseHealthTimeout, FailureFixActionAddVariable, FailureFixActionGenerateDockerfile, FailureFixActionUseTcpHealthcheck, FailureFixActionAccept4xx, FailureFixActionAddCapabilities, FailureFixActionFixVolumeOwner, FailureFixActionFreeDisk}
+
+// FailureFixOutcome values (components.schemas.FailureFixOutcome).
+const (
+	FailureFixOutcomeDeploying   = "deploying"
+	FailureFixOutcomeStaged      = "staged"
+	FailureFixOutcomeFreeingDisk = "freeing_disk"
+)
+
+// FailureFixOutcomeValues lists every FailureFixOutcome value in the API's order.
+var FailureFixOutcomeValues = []string{FailureFixOutcomeDeploying, FailureFixOutcomeStaged, FailureFixOutcomeFreeingDisk}
 
 // FindingLevel values (components.schemas.FindingLevel).
 const (
@@ -300,6 +457,45 @@ const (
 // LogStreamValues lists every LogStream value in the API's order.
 var LogStreamValues = []string{LogStreamStdout, LogStreamStderr, LogStreamSystem}
 
+// PreviewHealth values (components.schemas.PreviewHealth).
+const (
+	PreviewHealthNone     = "none"
+	PreviewHealthBuilding = "building"
+	PreviewHealthLive     = "live"
+	PreviewHealthFailed   = "failed"
+	PreviewHealthStopped  = "stopped"
+)
+
+// PreviewHealthValues lists every PreviewHealth value in the API's order.
+var PreviewHealthValues = []string{PreviewHealthNone, PreviewHealthBuilding, PreviewHealthLive, PreviewHealthFailed, PreviewHealthStopped}
+
+// PreviewStatus values (components.schemas.PreviewStatus).
+const (
+	PreviewStatusSkipped          = "skipped"
+	PreviewStatusAwaitingApproval = "awaiting_approval"
+	PreviewStatusQueued           = "queued"
+	PreviewStatusPreparing        = "preparing"
+	PreviewStatusRunning          = "running"
+	PreviewStatusFailed           = "failed"
+	PreviewStatusClosed           = "closed"
+	PreviewStatusExpired          = "expired"
+)
+
+// PreviewStatusValues lists every PreviewStatus value in the API's order.
+var PreviewStatusValues = []string{PreviewStatusSkipped, PreviewStatusAwaitingApproval, PreviewStatusQueued, PreviewStatusPreparing, PreviewStatusRunning, PreviewStatusFailed, PreviewStatusClosed, PreviewStatusExpired}
+
+// PreviewStatusTones is each PreviewStatus value's status tone (the dashboard's StatusTone).
+var PreviewStatusTones = map[string]string{
+	PreviewStatusSkipped:          "idle",
+	PreviewStatusAwaitingApproval: "staged",
+	PreviewStatusQueued:           "progress",
+	PreviewStatusPreparing:        "progress",
+	PreviewStatusRunning:          "active",
+	PreviewStatusFailed:           "failed",
+	PreviewStatusClosed:           "idle",
+	PreviewStatusExpired:          "idle",
+}
+
 // PromotionClass values (components.schemas.PromotionClass).
 const (
 	PromotionClassStructural          = "structural"
@@ -387,6 +583,54 @@ const (
 // TeamRoleValues lists every TeamRole value in the API's order.
 var TeamRoleValues = []string{TeamRoleOwner, TeamRoleAdmin, TeamRoleDeveloper, TeamRoleViewer}
 
+// TraceFailure values (components.schemas.TraceFailure).
+const (
+	TraceFailureRefused           = "refused"
+	TraceFailureTimeout           = "timeout"
+	TraceFailureNoHealthyUpstream = "no_healthy_upstream"
+	TraceFailureTransport         = "transport"
+	TraceFailureClientClosed      = "client_closed"
+)
+
+// TraceFailureValues lists every TraceFailure value in the API's order.
+var TraceFailureValues = []string{TraceFailureRefused, TraceFailureTimeout, TraceFailureNoHealthyUpstream, TraceFailureTransport, TraceFailureClientClosed}
+
+// TraceFirewallOutcome values (components.schemas.TraceFirewallOutcome).
+const (
+	TraceFirewallOutcomeClean    = "clean"
+	TraceFirewallOutcomeDetected = "detected"
+	TraceFirewallOutcomeBlocked  = "blocked"
+)
+
+// TraceFirewallOutcomeValues lists every TraceFirewallOutcome value in the API's order.
+var TraceFirewallOutcomeValues = []string{TraceFirewallOutcomeClean, TraceFirewallOutcomeDetected, TraceFirewallOutcomeBlocked}
+
+// TraceOrigin values (components.schemas.TraceOrigin).
+const (
+	TraceOriginApp             = "app"
+	TraceOriginFirewall        = "firewall"
+	TraceOriginUpstreamFailure = "upstream_failure"
+	TraceOriginStopped         = "stopped"
+	TraceOriginRedirect        = "redirect"
+	TraceOriginNoRoute         = "no_route"
+	TraceOriginAccessRefused   = "access_refused"
+	TraceOriginEdge            = "edge"
+)
+
+// TraceOriginValues lists every TraceOrigin value in the API's order.
+var TraceOriginValues = []string{TraceOriginApp, TraceOriginFirewall, TraceOriginUpstreamFailure, TraceOriginStopped, TraceOriginRedirect, TraceOriginNoRoute, TraceOriginAccessRefused, TraceOriginEdge}
+
+// TraceStop values (components.schemas.TraceStop).
+const (
+	TraceStopEdge      = "edge"
+	TraceStopFirewall  = "firewall"
+	TraceStopAppServer = "app_server"
+	TraceStopService   = "service"
+)
+
+// TraceStopValues lists every TraceStop value in the API's order.
+var TraceStopValues = []string{TraceStopEdge, TraceStopFirewall, TraceStopAppServer, TraceStopService}
+
 // TransferDirection values (components.schemas.TransferDirection).
 const (
 	TransferDirectionUpload   = "upload"
@@ -418,6 +662,28 @@ const (
 // TransferStatusValues lists every TransferStatus value in the API's order.
 var TransferStatusValues = []string{TransferStatusReceiving, TransferStatusReady, TransferStatusFailed, TransferStatusExpired}
 
+// UpdateCheckStatus values (components.schemas.UpdateCheckStatus).
+const (
+	UpdateCheckStatusCurrent   = "current"
+	UpdateCheckStatusAvailable = "available"
+	UpdateCheckStatusUnknown   = "unknown"
+	UpdateCheckStatusFailed    = "failed"
+)
+
+// UpdateCheckStatusValues lists every UpdateCheckStatus value in the API's order.
+var UpdateCheckStatusValues = []string{UpdateCheckStatusCurrent, UpdateCheckStatusAvailable, UpdateCheckStatusUnknown, UpdateCheckStatusFailed}
+
+// UpdateKind values (components.schemas.UpdateKind).
+const (
+	UpdateKindMajor = "major"
+	UpdateKindMinor = "minor"
+	UpdateKindPatch = "patch"
+	UpdateKindBuild = "build"
+)
+
+// UpdateKindValues lists every UpdateKind value in the API's order.
+var UpdateKindValues = []string{UpdateKindMajor, UpdateKindMinor, UpdateKindPatch, UpdateKindBuild}
+
 // VariableType values (components.schemas.VariableType).
 const (
 	VariableTypeConfig = "config"
@@ -426,3 +692,13 @@ const (
 
 // VariableTypeValues lists every VariableType value in the API's order.
 var VariableTypeValues = []string{VariableTypeConfig, VariableTypeSecret}
+
+// WafMode values (components.schemas.WafMode).
+const (
+	WafModeOff   = "off"
+	WafModeLog   = "log"
+	WafModeBlock = "block"
+)
+
+// WafModeValues lists every WafMode value in the API's order.
+var WafModeValues = []string{WafModeOff, WafModeLog, WafModeBlock}

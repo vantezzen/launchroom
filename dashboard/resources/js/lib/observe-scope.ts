@@ -82,14 +82,30 @@ function allOf<T extends string>() {
     ): L => list;
 }
 
-/** Analytics → Resources and the server pages offer three of the MetricRange cases. */
-type ResourcesRange = Extract<App.Enums.MetricRange, '1h' | '24h' | '7d'>;
+/** Analytics → Resources and the server pages read four of the MetricRange cases. */
+type ResourcesRange = Extract<
+    App.Enums.MetricRange,
+    '1h' | '24h' | '7d' | '30d'
+>;
+
+/**
+ * The ranges every observe page offers, in this order (design-system §9):
+ * Hour, Day, Week and Month. A page adds a range only where it serves that
+ * page's job; Logs is the one that does (15 min, for what just happened).
+ */
+export const SHARED_RANGES = ['1h', '24h', '7d', '30d'] as const;
 
 export const RANGE_SETS = {
-    logs: allOf<App.Enums.LogRange>()(['15m', '1h', '24h', '7d', '30d']),
-    resources: allOf<ResourcesRange>()(['1h', '24h', '7d']),
-    analytics: allOf<App.Enums.AnalyticsRange>()(['24h', '7d', '30d']),
+    logs: allOf<App.Enums.LogRange>()(['15m', ...SHARED_RANGES]),
+    resources: allOf<ResourcesRange>()(SHARED_RANGES),
+    analytics: allOf<App.Enums.AnalyticsRange>()(SHARED_RANGES),
 };
+
+/** Which observe page a range control belongs to (`RangeSelect`). */
+export type RangePage = keyof typeof RANGE_SETS;
+
+/** The ranges of a page: the shared four, plus its own. */
+export type RangeOf<P extends RangePage> = (typeof RANGE_SETS)[P][number];
 
 export function isObserveRange(value: unknown): value is ObserveRange {
     return typeof value === 'string' && Object.hasOwn(RANGE_LABEL, value);
@@ -104,6 +120,24 @@ export function rangeOptions<T extends ObserveRange>(
     supported: readonly T[],
 ): TimeRangeOption<T>[] {
     return supported.map((value) => ({ value, label: RANGE_LABEL[value] }));
+}
+
+/**
+ * The width of one chart bucket in words, for "Requests per …":
+ * "10 minutes", "hour", "day".
+ */
+export function bucketWords(seconds: number): string {
+    if (seconds % 86_400 === 0) {
+        return seconds === 86_400 ? 'day' : `${seconds / 86_400} days`;
+    }
+
+    if (seconds % 3600 === 0) {
+        return seconds === 3600 ? 'hour' : `${seconds / 3600} hours`;
+    }
+
+    const minutes = Math.max(1, Math.round(seconds / 60));
+
+    return minutes === 1 ? 'minute' : `${minutes} minutes`;
 }
 
 /**

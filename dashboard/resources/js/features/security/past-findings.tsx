@@ -48,7 +48,8 @@ export function PastFindings({
                 aria-label="Past findings"
                 className={cn(
                     card,
-                    'grid grid-cols-1 overflow-hidden md:grid-cols-2',
+                    'grid grid-cols-1 overflow-hidden',
+                    rows.length > 1 && 'md:grid-cols-2',
                 )}
             >
                 {rows.map(([kind, items], index) => (

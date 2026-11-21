@@ -59,6 +59,8 @@ function instantDeploymentProps(
         expectsRelease: preview.expectsRelease ?? false,
         newer: null,
         older: null,
+        checks: null,
+        canSkipChecks: false,
     };
 
     return {

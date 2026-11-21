@@ -9,14 +9,14 @@ import { delta } from '@/features/metrics/format';
 import { rangeWords } from '@/lib/observe-scope';
 import { cn } from '@/lib/utils';
 import { card } from './format';
-import type { ActionGroup } from './shape';
 import { formatCompact, formatShare, plural, relativeTime } from '@/lib/format';
 
 type PageData = App.Data.Security.SecurityPageData;
 
 /**
  * The top of the Security page (docs/22 §9.2 part 1): the verdict ("am I
- * okay?") with the protections at work as three numbers underneath.
+ * okay?", counted in things to fix) with the protections at work as three
+ * numbers underneath.
  */
 export function SecurityHero({
     data,
@@ -24,16 +24,13 @@ export function SecurityHero({
     range,
 }: {
     data: PageData;
-    groups: ActionGroup[];
+    groups: App.Data.Security.FixGroupData[];
     range: string;
 }) {
     const needs = groups.length;
-    const services = new Set(
-        groups.flatMap((g) =>
-            g.findings.map((f) => f.service.id + f.service.environmentId),
-        ),
-    ).size;
+    const services = data.summary.actionNeededServices;
     const exploited = groups.filter((g) => g.knownExploited).length;
+    const worth = data.worthKnowing.reduce((sum, g) => sum + g.count, 0);
 
     return (
         <section
@@ -60,7 +57,7 @@ export function SecurityHero({
                 <div className="flex min-w-0 flex-col gap-1">
                     <p className="type-title text-[22px] leading-7 sm:text-[26px] sm:leading-8">
                         {needs > 0
-                            ? `${plural(needs, 'vulnerability', 'vulnerabilities')} ${needs === 1 ? 'needs' : 'need'} you`
+                            ? `${plural(needs, 'thing')} to fix`
                             : 'Nothing needs you'}
                     </p>
                     <MetaLine className="type-body text-muted-foreground">
@@ -72,6 +69,14 @@ export function SecurityHero({
                                     ? 'One is known to be exploited'
                                     : `${exploited} are known to be exploited`}
                             </span>
+                        ) : null}
+                        {worth > 0 ? (
+                            <a
+                                href="#worth-knowing"
+                                className="hover:text-foreground hover:underline"
+                            >
+                                {worth.toLocaleString('en')} worth knowing
+                            </a>
                         ) : null}
                         <CheckedLine data={data} />
                     </MetaLine>

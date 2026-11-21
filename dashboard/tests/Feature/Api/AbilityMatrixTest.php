@@ -15,6 +15,7 @@ use App\Enums\Transfers\TransferDirection;
 use App\Enums\Transfers\TransferPurpose;
 use App\Enums\VariableType;
 use App\Http\Middleware\RequireTokenAbility;
+use App\Models\Commands\CommandRun;
 use App\Models\Security\SecurityFinding;
 use App\Models\ServiceInstance;
 use App\Models\Team;
@@ -38,7 +39,7 @@ use Tests\Support\Projects;
 beforeEach(fn () => Projects::useTestKek());
 
 /**
- * @return list<array{Route, string, ApiAbility|null}>
+ * @return list<array{Route, string, ApiAbility|null, list<ApiAbility>}>
  */
 function apiRoutes(): array
 {
@@ -50,14 +51,16 @@ function apiRoutes(): array
         }
 
         $ability = null;
+        $all = [];
 
         foreach (RouteFacade::gatherRouteMiddleware($route) as $middleware) {
             if (is_string($middleware) && str_starts_with($middleware, RequireTokenAbility::class.':')) {
                 $ability = ApiAbility::from(substr($middleware, strlen(RequireTokenAbility::class) + 1));
+                $all[] = $ability;
             }
         }
 
-        $routes[] = [$route, array_values(array_diff($route->methods(), ['HEAD']))[0], $ability];
+        $routes[] = [$route, array_values(array_diff($route->methods(), ['HEAD']))[0], $ability, $all];
     }
 
     return $routes;
@@ -101,7 +104,7 @@ function apiUri(Route $route, array $ids): string
     return (string) preg_replace_callback('/\{(\w+)\}/', static fn (array $m): string => $ids[$m[1]], substr($route->uri(), strlen('api/v1/')));
 }
 
-test('every authenticated API route declares exactly one ability, except /me', function (): void {
+test('every authenticated API route declares an ability, except /me', function (): void {
     $missing = [];
 
     foreach (apiRoutes() as [$route, $method, $ability]) {
@@ -135,6 +138,13 @@ test('a token without the route\'s ability gets 403 missing_ability; with it, ne
         ...transferIds($world->team, $instance),
         'index' => '0',
         'token' => 'lr_dl_'.str_repeat('A', 43),
+        // A failed deployment's fix (D111).
+        'code' => 'use_tcp_healthcheck',
+        // One-off commands (D105).
+        'commandRun' => CommandRun::query()->forceCreate([
+            'team_id' => $world->team->id, 'project_id' => $world->project->id, 'environment_id' => $world->production->id,
+            'service_instance_id' => $instance->id, 'argv' => ['ls'], 'timeout_seconds' => 600, 'status' => 'error',
+        ])->public_id,
         // Security center (docs/22 §11).
         'finding' => SecurityFinding::query()->forceCreate([
             'team_id' => $world->team->id, 'project_id' => $world->project->id, 'environment_id' => $world->production->id,
@@ -146,7 +156,7 @@ test('a token without the route\'s ability gets 403 missing_ability; with it, ne
 
     $checked = 0;
 
-    foreach (apiRoutes() as [$route, $method, $ability]) {
+    foreach (apiRoutes() as [$route, $method, $ability, $all]) {
         if ($ability === null) {
             continue;
         }
@@ -158,7 +168,8 @@ test('a token without the route\'s ability gets 403 missing_ability; with it, ne
             ->and($response->json('error.code'))->toBe('missing_ability')
             ->and($response->json('error.ability'))->toBe($ability->value);
 
-        $only = array_values(array_unique([ApiAbility::Read->value, $ability->value]));
+        // A route that needs two abilities (the failure fix: deploy and fix) gets both.
+        $only = array_values(array_unique([ApiAbility::Read->value, ...array_map(static fn (ApiAbility $a): string => $a->value, $all)]));
         $allowed = Api::call($method, apiUri($route, $ids), Api::rawToken($owner, $world->team, $only), ['service' => $ids['service']]);
 
         $refused = $allowed->getStatusCode() === 403 && $allowed->json('error.code') === 'missing_ability';

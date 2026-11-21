@@ -7,12 +7,17 @@ namespace App\Queries;
 use App\Data\Activity\ActivityEntryData;
 use App\Data\Activity\ActivityFiltersData;
 use App\Enums\ActorType;
+use App\Enums\Alerts\AlertRule;
+use App\Enums\Alerts\AlertSeverity;
 use App\Enums\Alerts\AlertStatus;
+use App\Enums\AppUpdates\AppUpdateStatus;
 use App\Enums\AuditAction;
 use App\Enums\DeploymentStatus;
 use App\Enums\DeploymentTrigger;
 use App\Enums\PromotionKind;
+use App\Enums\Transfers\CopyRunStatus;
 use App\Models\Alerts\Alert;
+use App\Models\AppUpdates\AppUpdate;
 use App\Models\AuditEvent;
 use App\Models\Deployment;
 use App\Models\Environment;
@@ -20,6 +25,8 @@ use App\Models\EnvironmentPromotion;
 use App\Models\Project;
 use App\Models\Server;
 use App\Models\Service;
+use App\Models\ServiceInstance;
+use App\Models\Transfers\DataCopyRun;
 use App\Models\User;
 use App\Support\Links;
 use Carbon\CarbonInterval;
@@ -38,6 +45,9 @@ use Illuminate\Support\Collection;
 final class TeamActivity
 {
     private const int LIMIT = 150;
+
+    /** Security alerts opened this many seconds apart belong to one scan (one row). */
+    private const int SECURITY_BURST = 1800;
 
     /** Deployments of one group start within this many seconds of each other. */
     private const int GROUP_WINDOW = 600;
@@ -73,6 +83,14 @@ final class TeamActivity
             array_push($entries, ...$this->deployments($environments, $projects, $wants));
         }
 
+        if ($wants('update')) {
+            array_push($entries, ...$this->updates($environments, $projects));
+        }
+
+        if ($wants('copy')) {
+            array_push($entries, ...$this->copies($environments, $projects));
+        }
+
         if ($wants('promotion') || $wants('created')) {
             array_push($entries, ...$this->promotions($environments, $projects, $wants));
         }
@@ -98,6 +116,8 @@ final class TeamActivity
             ->whereIn('environment_id', $environments->keys()->all())
             ->with(['serviceInstance.service:id,name', 'actor:id,name', 'revision:id,number,message'])
             ->latest('id')
+            // An app update's deployment shows as its update (D106).
+            ->where('trigger', '!=', DeploymentTrigger::Update->value)
             ->limit(self::LIMIT * 3)
             ->get(['id', 'public_id', 'service_instance_id', 'environment_id', 'revision_id', 'trigger', 'commit_sha', 'commit_message', 'commit_author', 'status', 'actor_id', 'queued_at']);
 
@@ -176,6 +196,123 @@ final class TeamActivity
                 projectName: $project->name,
                 status: $status,
                 sha: $head->commit_sha !== null ? substr($head->commit_sha, 0, 7) : null,
+            );
+        }
+
+        return $entries;
+    }
+
+    /**
+     * App updates (D106): "updated listmonk to v6.3.0 in production", with
+     * the outcome; automatic ones have no actor and say so.
+     *
+     * @param  Collection<int, Environment>  $environments
+     * @param  Collection<int, Project>  $projects
+     * @return list<ActivityEntryData>
+     */
+    private function updates(Collection $environments, Collection $projects): array
+    {
+        $updates = AppUpdate::query()
+            ->whereIn('environment_id', $environments->keys()->all())
+            ->with(['serviceInstance.service:id,name', 'actor:id,name', 'deployment'])
+            ->latest('id')
+            ->limit(self::LIMIT)
+            ->get();
+
+        $entries = [];
+
+        foreach ($updates as $update) {
+            $environment = $environments->get($update->environment_id);
+            $project = $environment instanceof Environment ? $projects->get($environment->project_id) : null;
+
+            if (! $environment instanceof Environment || ! $project instanceof Project) {
+                continue;
+            }
+
+            $name = $update->serviceInstance->service->name;
+            $verb = match (true) {
+                $update->status === AppUpdateStatus::Succeeded => 'updated',
+                $update->status->isOpen() => 'is updating',
+                default => 'tried to update',
+            };
+
+            $entries[] = new ActivityEntryData(
+                id: $update->public_id,
+                kind: 'update',
+                at: $update->started_at->toIso8601String(),
+                actor: $update->actor->name ?? ($update->automatic ? 'launchroom' : null),
+                title: "{$verb} {$name} to {$update->to_version} in {$environment->name}",
+                detail: $update->message ?? "From {$update->from_version}. ".$update->kind->label().'.',
+                environmentId: $environment->public_id,
+                environmentName: $environment->name,
+                href: $update->deployment instanceof Deployment ? Links::deployment($update->deployment) : Links::service($update->serviceInstance),
+                projectId: $project->public_id,
+                projectName: $project->name,
+                status: match ($update->status) {
+                    AppUpdateStatus::Succeeded => 'live',
+                    AppUpdateStatus::Failed, AppUpdateStatus::RolledBack => 'failed',
+                    AppUpdateStatus::Cancelled => 'cancelled',
+                    default => 'deploying',
+                },
+            );
+        }
+
+        return $entries;
+    }
+
+    /**
+     * Copies between environments (D110): "copied postgres from production
+     * to staging", with the outcome.
+     *
+     * @param  Collection<int, Environment>  $environments
+     * @param  Collection<int, Project>  $projects
+     * @return list<ActivityEntryData>
+     */
+    private function copies(Collection $environments, Collection $projects): array
+    {
+        $copies = DataCopyRun::query()
+            ->whereIn('target_service_instance_id', ServiceInstance::query()->select('id')->whereIn('environment_id', $environments->keys()->all()))
+            ->with(['target.service', 'target.environment.project', 'source', 'actor:id,name', 'targetVolume'])
+            ->latest('id')
+            ->limit(self::LIMIT)
+            ->get();
+
+        $entries = [];
+
+        foreach ($copies as $copy) {
+            $environment = $environments->get($copy->target->environment_id);
+            $from = $environments->get($copy->source->environment_id);
+            $project = $environment instanceof Environment ? $projects->get($environment->project_id) : null;
+
+            if (! $environment instanceof Environment || ! $from instanceof Environment || ! $project instanceof Project) {
+                continue;
+            }
+
+            $what = $copy->targetVolume?->mount_path === null ? $copy->target->service->name : "{$copy->target->service->name}’s {$copy->targetVolume->mount_path}";
+            $verb = match ($copy->status) {
+                CopyRunStatus::Succeeded => 'copied',
+                CopyRunStatus::Exporting, CopyRunStatus::Importing => 'is copying',
+                default => 'tried to copy',
+            };
+
+            $entries[] = new ActivityEntryData(
+                id: $copy->public_id,
+                kind: 'copy',
+                at: ($copy->created_at ?? now())->toIso8601String(),
+                actor: $copy->actor?->name,
+                title: "{$verb} {$what} from {$from->name} to {$environment->name}",
+                detail: $copy->status === CopyRunStatus::Cancelled ? 'Cancelled before anything was replaced.' : $copy->error,
+                environmentId: $environment->public_id,
+                environmentName: $environment->name,
+                href: Links::service($copy->target),
+                projectId: $project->public_id,
+                projectName: $project->name,
+                status: match ($copy->status) {
+                    CopyRunStatus::Succeeded => 'live',
+                    CopyRunStatus::Failed => 'failed',
+                    CopyRunStatus::Cancelled => 'cancelled',
+                    default => null,
+                },
             );
         }
 
@@ -310,8 +447,9 @@ final class TeamActivity
 
     /**
      * Alerts as activity (docs/15 §3.6): when each opened, open or resolved,
-     * with its summary (or how long it lasted). A project filter keeps the
-     * project's alerts only; `$openOnly` the ones still firing.
+     * with its summary (or how long it lasted); security alerts of one scan
+     * fold into one row (D107). A project filter keeps the project's alerts
+     * only; `$openOnly` the ones still firing.
      *
      * @param  Collection<int, Project>  $projects
      * @return list<ActivityEntryData>
@@ -327,26 +465,121 @@ final class TeamActivity
             ->limit(self::LIMIT)
             ->get();
 
-        return array_values($alerts->map(static function (Alert $alert): ActivityEntryData {
-            $resolved = $alert->status === AlertStatus::Resolved && $alert->resolved_at !== null;
-            $lasted = $resolved ? CarbonInterval::seconds(max(60, (int) $alert->opened_at->diffInSeconds($alert->resolved_at)))->cascade()->forHumans(['short' => true, 'parts' => 2]) : null;
+        $entries = [];
 
-            return new ActivityEntryData(
-                id: $alert->public_id,
-                kind: 'alert',
-                at: $alert->opened_at->toIso8601String(),
-                actor: null,
-                title: $alert->title,
-                detail: $resolved ? "Resolved after {$lasted}.".($alert->resolve_reason !== null ? ' '.$alert->resolve_reason : '') : $alert->summary,
-                environmentId: $alert->environment?->public_id,
-                environmentName: $alert->environment?->name,
-                href: $alert->href,
-                projectId: $alert->project?->public_id,
-                projectName: $alert->project?->name,
-                status: $resolved ? 'resolved' : 'firing',
-                severity: $alert->severity->value,
-            );
-        })->all());
+        foreach ($this->securityBursts($alerts) as $burst) {
+            $entries[] = count($burst) > 1 ? $this->securityEntry($burst) : $this->alertEntry($burst[0]);
+        }
+
+        return $entries;
+    }
+
+    private function alertEntry(Alert $alert): ActivityEntryData
+    {
+        $resolved = $alert->status === AlertStatus::Resolved && $alert->resolved_at !== null;
+        $lasted = $resolved ? CarbonInterval::seconds(max(60, (int) $alert->opened_at->diffInSeconds($alert->resolved_at)))->cascade()->forHumans(['short' => true, 'parts' => 2]) : null;
+
+        return new ActivityEntryData(
+            id: $alert->public_id,
+            kind: 'alert',
+            at: $alert->opened_at->toIso8601String(),
+            actor: null,
+            title: $alert->title,
+            detail: $resolved ? "Resolved after {$lasted}.".($alert->resolve_reason !== null ? ' '.$alert->resolve_reason : '') : $alert->summary,
+            environmentId: $alert->environment?->public_id,
+            environmentName: $alert->environment?->name,
+            href: $alert->href,
+            projectId: $alert->project?->public_id,
+            projectName: $alert->project?->name,
+            status: $resolved ? 'resolved' : 'firing',
+            severity: $alert->severity->value,
+        );
+    }
+
+    /**
+     * Alerts newest first, with security alerts that opened together (one
+     * scan, less than SECURITY_BURST apart) as one burst (D107): a scan that
+     * finds three packages to update is one row, and deploys stay visible.
+     *
+     * @param  Collection<int, Alert>  $alerts
+     * @return list<non-empty-list<Alert>>
+     */
+    private function securityBursts(Collection $alerts): array
+    {
+        $bursts = [];
+        $open = null;
+
+        foreach ($alerts as $alert) {
+            if ($alert->rule !== AlertRule::Vulnerability) {
+                $bursts[] = [$alert];
+
+                continue;
+            }
+
+            $last = $open === null ? null : $bursts[$open][array_key_last($bursts[$open])];
+
+            if ($last instanceof Alert && abs($last->opened_at->getTimestamp() - $alert->opened_at->getTimestamp()) <= self::SECURITY_BURST) {
+                $bursts[$open][] = $alert;
+
+                continue;
+            }
+
+            $bursts[] = [$alert];
+            $open = array_key_last($bursts);
+        }
+
+        return $bursts;
+    }
+
+    /**
+     * "Security updates needed for lodash, next and node", the most urgent
+     * alert's title under it, linking to the Security page.
+     *
+     * @param  non-empty-list<Alert>  $alerts  newest first
+     */
+    private function securityEntry(array $alerts): ActivityEntryData
+    {
+        usort($alerts, static fn (Alert $a, Alert $b): int => [$b->status === AlertStatus::Firing, $b->severity === AlertSeverity::Critical, $b->opened_at->getTimestamp()]
+            <=> [$a->status === AlertStatus::Firing, $a->severity === AlertSeverity::Critical, $a->opened_at->getTimestamp()]);
+        $packages = [];
+
+        foreach ($alerts as $alert) {
+            $package = strtok($alert->facts['Package'] ?? '', ' ');
+
+            if ($package !== false) {
+                $packages[$package] = true;
+            }
+        }
+
+        $names = array_keys($packages);
+        $shown = array_slice($names, 0, 3);
+        $more = count($names) - count($shown);
+        $list = match (true) {
+            $shown === [] => null,
+            $more > 0 => implode(', ', $shown)." and {$more} more",
+            count($shown) === 1 => $shown[0],
+            default => implode(', ', array_slice($shown, 0, -1)).' and '.end($shown),
+        };
+        $firing = array_any($alerts, static fn (Alert $a): bool => $a->status === AlertStatus::Firing);
+        $projects = array_unique(array_map(static fn (Alert $a): ?int => $a->project_id, $alerts));
+        $project = count($projects) === 1 ? $alerts[0]->project : null;
+        $newest = max(array_map(static fn (Alert $a): string => $a->opened_at->toIso8601String(), $alerts));
+
+        return new ActivityEntryData(
+            id: 'security-'.$alerts[0]->public_id,
+            kind: 'alert',
+            at: $newest,
+            actor: null,
+            title: $list === null ? count($alerts).' security alerts' : "Security updates needed for {$list}",
+            detail: 'Most urgent: '.$alerts[0]->title,
+            environmentId: null,
+            environmentName: null,
+            href: Links::security(),
+            projectId: $project?->public_id,
+            projectName: $project?->name,
+            status: $firing ? 'firing' : 'resolved',
+            severity: array_any($alerts, static fn (Alert $a): bool => $a->severity === AlertSeverity::Critical) ? 'critical' : 'warning',
+        );
     }
 
     /**

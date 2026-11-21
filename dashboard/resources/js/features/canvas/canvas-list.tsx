@@ -3,9 +3,9 @@ import { AlertsChip } from '@/components/attention-chip';
 import { Status } from '@/components/status';
 import { Button } from '@/components/ui/button';
 import { GROUPS, groupOf } from './groups';
-import { compactAge } from '@/lib/format';
 import { ServiceGlyph } from '@/components/service-glyph';
 import { StagedChip } from '@/features/staged-changes/effects';
+import { statusDetail } from '@/features/service-status/live-status';
 
 /**
  * The canvas on phones (design-system §4.3): services as cards grouped
@@ -68,12 +68,9 @@ export function CanvasList({
                                                     state={node.status.state}
                                                     label={node.status.label}
                                                     detail={
-                                                        node.status.since
-                                                            ? compactAge(
-                                                                  node.status
-                                                                      .since,
-                                                              )
-                                                            : undefined
+                                                        statusDetail(
+                                                            node.status,
+                                                        ) ?? undefined
                                                     }
                                                     className="min-w-0 type-small"
                                                 />

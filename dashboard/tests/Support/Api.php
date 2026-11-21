@@ -43,7 +43,7 @@ final class Api
      *
      * @param  list<string>  $abilities
      */
-    public static function rawToken(User $user, Team $team, array $abilities, mixed $expiresAt = 'default'): string
+    public static function rawToken(User $user, Team $team, array $abilities, mixed $expiresAt = 'default', ?bool $fullAccess = null): string
     {
         $secret = 'lr_pat_'.Str::random(40);
         $token = new ApiToken;
@@ -56,6 +56,7 @@ final class Api
             'client' => ApiTokenClient::Dashboard,
             'tokenable_type' => $user->getMorphClass(),
             'tokenable_id' => $user->id,
+            ...($fullAccess === null ? [] : ['full_access' => $fullAccess]),
         ])->save();
 
         return $token->id.'|'.$secret;

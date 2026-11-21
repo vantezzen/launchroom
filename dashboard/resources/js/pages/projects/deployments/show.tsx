@@ -15,6 +15,7 @@ import { Page, PageHeader } from '@/components/patterns/page';
 import { Section } from '@/components/patterns/section';
 import { Button } from '@/components/ui/button';
 import { ConfigFailureCard } from '@/features/config-as-code/config-failure-card';
+import { ChecksCard } from '@/features/deployments/checks-card';
 import { FailureCard, fixAction } from '@/features/deployments/failure-card';
 import type { QuotedLine } from '@/features/deployments/failure-card';
 import { DeploymentImpact } from '@/features/deployments/deployment-impact';
@@ -51,8 +52,13 @@ import {
 } from '@/features/logs/step-log';
 import { useDeploymentLogs } from '@/features/logs/use-deployment-logs';
 import { liveReload } from '@/lib/live-reload';
+import { useLiveProps } from '@/hooks/use-live-props';
 import services from '@/routes/projects/services';
-import { show as deploymentShow, rollback } from '@/routes/deployments';
+import {
+    show as deploymentShow,
+    rollback,
+    skipChecks,
+} from '@/routes/deployments';
 import { TimeAgo } from '@/components/time-ago';
 import { formatDuration, shortSha } from '@/lib/format';
 import ProjectLayout from '@/features/app-shell/project-layout';
@@ -161,6 +167,11 @@ function DeploymentPage({
     const fix = fixAction(detail, abilities.deploy);
 
     const refreshDetail = () => liveReload(['detail']);
+    // The checks of a waiting push change without a status event (D111).
+    useLiveProps(['detail'], {
+        while: !pending && detail.checks?.state === 'waiting',
+        everyMs: 10_000,
+    });
 
     const jumpTo = useCallback((line: number) => {
         document.getElementById('steps')?.scrollIntoView({ block: 'start' });
@@ -436,6 +447,21 @@ function DeploymentPage({
                 {/* A failure leads with its explanation (DPL-2): the overview
                     follows with the facts. */}
                 <div className="flex flex-col gap-4">
+                    {!pending && detail.checks && (
+                        <ChecksCard
+                            checks={detail.checks}
+                            commitSha={deployment.commitSha}
+                            serving={detail.serving !== null}
+                            canSkip={detail.canSkipChecks}
+                            onSkip={() =>
+                                router.post(
+                                    skipChecks(deploymentArgs(deployment)).url,
+                                    {},
+                                    { preserveScroll: true },
+                                )
+                            }
+                        />
+                    )}
                     {pending ? null : detail.configErrors ? (
                         <ConfigFailureCard detail={detail} />
                     ) : (

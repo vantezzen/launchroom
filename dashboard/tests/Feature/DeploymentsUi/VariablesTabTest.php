@@ -44,6 +44,22 @@ test('the tab lists config values, masks secrets everywhere and previews referen
     expect($response->getContent())->not->toContain($password);
 });
 
+test('broken references come with valid references to use instead, never values', function (): void {
+    $world = DeploymentUi::make();
+    $world->variable('DB', '${{postgres.DATABSE_URL}}');
+    $world->variable('SECRET_DB', 'x-${{postgres.DATABSE_URL}}-tok_hidden_value', VariableType::Secret);
+
+    $response = $this->actingAs($world->member(TeamRole::Developer))
+        ->getJson(route('variables.index', $world->serviceArgs()))
+        ->assertOk();
+    $rows = collect($response->json('variables'))->keyBy('key');
+
+    expect($rows['DB']['fixes'])->toBe([['expression' => '${{postgres.DATABSE_URL}}', 'suggestions' => ['${{postgres.DATABASE_URL}}']]])
+        ->and($rows['SECRET_DB']['fixes'][0]['suggestions'])->toBe(['${{postgres.DATABASE_URL}}'])
+        ->and($rows['APP_NAME']['fixes'] ?? [])->toBe([])
+        ->and($response->getContent())->not->toContain('tok_hidden_value');
+});
+
 test('create, update and delete are staged and need write permission', function (): void {
     $world = DeploymentUi::make();
     $viewer = $world->member(TeamRole::Viewer);

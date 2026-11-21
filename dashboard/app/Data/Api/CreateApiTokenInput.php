@@ -18,15 +18,16 @@ use Spatie\LaravelData\Data;
 final class CreateApiTokenInput extends Data
 {
     /**
-     * @param  list<string>  $abilities  ApiAbility values
+     * @param  list<string>  $abilities  ApiAbility values (ignored with full access)
      */
     public function __construct(
         #[Min(1), Max(80)]
         public string $name,
         #[In([7, 30, 90, 365])]
         public int $expiresInDays,
-        #[Min(1)]
-        public array $abilities,
+        public array $abilities = [],
+        /** Every ability the role allows, including ones added later (D113). */
+        public bool $fullAccess = false,
     ) {}
 
     /**

@@ -10,7 +10,7 @@ use Spatie\LaravelData\Data;
 
 /**
  * Query string of the analytics endpoints (docs/15 §5.4):
- * `?range=24h|7d|30d` (default 7d), `environment` (default production,
+ * `?range=1h|24h|7d|30d` (default 7d), `environment` (default production,
  * dashboard only) and `service` (public ids).
  */
 final class AnalyticsQueryData extends Data

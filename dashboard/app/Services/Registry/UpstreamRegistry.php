@@ -99,6 +99,95 @@ final readonly class UpstreamRegistry
     }
 
     /**
+     * Every tag of a repository (`GET /v2/<repository>/tags/list`, D106),
+     * following the registry's `Link` pages up to $maxPages. Tag lists don't
+     * count as pulls on Docker Hub.
+     *
+     * @return list<string>
+     *
+     * @throws UpstreamRegistryError
+     */
+    public function tags(UpstreamAuth $auth, string $repository, int $maxPages = 10): array
+    {
+        $url = $auth->baseUrl().'/v2/'.$repository.'/tags/list?n=1000';
+        $tags = [];
+
+        for ($page = 0; $page < $maxPages && $url !== null; $page++) {
+            $response = $this->send($auth, 'GET', $url, $this->scope($repository), ['Accept' => 'application/json'], $this->small);
+
+            if (! $response->successful()) {
+                throw $this->statusError($auth, $response->status(), $repository);
+            }
+
+            $list = $response->json('tags');
+
+            foreach (is_array($list) ? $list : [] as $tag) {
+                if (is_string($tag) && preg_match('/^[A-Za-z0-9_][A-Za-z0-9_.-]{0,127}$/D', $tag) === 1) {
+                    $tags[] = $tag;
+                }
+            }
+
+            $url = $this->nextPage($url, $response->header('Link'), $auth);
+        }
+
+        return array_values(array_unique($tags));
+    }
+
+    /**
+     * The digest a tag names right now (`HEAD …/manifests/<tag>`, the
+     * multi-arch one first; a HEAD is not a pull). Null when the registry
+     * didn't name one.
+     *
+     * @throws UpstreamRegistryError
+     */
+    public function digest(UpstreamAuth $auth, string $repository, string $tag): ?string
+    {
+        $url = $auth->baseUrl().'/v2/'.$repository.'/manifests/'.rawurlencode($tag);
+        $response = $this->send($auth, 'HEAD', $url, $this->scope($repository), ['Accept' => implode(', ', RegistryLayout::MANIFEST_ACCEPT)], $this->small);
+
+        if (! $response->successful()) {
+            throw $this->statusError($auth, $response->status(), $repository.':'.$tag);
+        }
+
+        $digest = $response->header('Docker-Content-Digest');
+
+        return preg_match('/^sha256:[a-f0-9]{64}$/D', $digest) === 1 ? $digest : null;
+    }
+
+    /**
+     * A small JSON blob (an image config), checked against its digest.
+     *
+     * @return array<array-key, mixed>
+     *
+     * @throws UpstreamRegistryError
+     */
+    public function jsonBlob(UpstreamAuth $auth, string $repository, string $digest): array
+    {
+        $url = $auth->baseUrl().'/v2/'.$repository.'/blobs/'.$digest;
+        $origin = strtolower((string) parse_url($auth->baseUrl(), PHP_URL_HOST));
+        $response = $this->send($auth, 'GET', $url, $this->scope($repository), [], $this->small);
+
+        for ($hops = 0; $response->redirect() && $hops < self::MAX_REDIRECTS; $hops++) {
+            $url = $this->absolute($url, $response->header('Location'));
+            $response = strtolower((string) parse_url($url, PHP_URL_HOST)) === $origin
+                ? $this->send($auth, 'GET', $url, $this->scope($repository), [], $this->small)
+                : $this->once('GET', $url, [], $this->small);
+        }
+
+        if (! $response->successful()) {
+            throw $this->statusError($auth, $response->status(), $repository.'@'.$digest);
+        }
+
+        if (! hash_equals($digest, 'sha256:'.hash('sha256', $response->body()))) {
+            throw new UpstreamRegistryError(UpstreamRegistryError::INVALID, "{$repository} sent a config that didn’t match its digest.");
+        }
+
+        $document = json_decode($response->body(), true);
+
+        return is_array($document) ? $document : [];
+    }
+
+    /**
      * Streams a blob into $path and checks its digest. Returns its size.
      *
      * @throws UpstreamRegistryError
@@ -200,6 +289,10 @@ final readonly class UpstreamRegistry
         $challenge = trim($challenge);
 
         if (preg_match('/^basic\b/i', $challenge) === 1) {
+            if ($auth->isAnonymous()) {
+                throw $this->refused($auth);
+            }
+
             $auth->useBasic();
 
             return;
@@ -224,7 +317,7 @@ final readonly class UpstreamRegistry
 
         $query = array_filter(['service' => $params['service'] ?? null, 'scope' => $scope !== '' ? $scope : null], is_string(...));
         $url = $realm.(str_contains($realm, '?') ? '&' : '?').http_build_query($query);
-        $response = $this->once('GET', $url, ['Authorization' => $auth->basicHeader()], $this->small);
+        $response = $this->once('GET', $url, $auth->isAnonymous() ? [] : ['Authorization' => $auth->basicHeader()], $this->small);
 
         if ($response->status() === 401 || $response->status() === 403) {
             throw $this->refused($auth);
@@ -292,6 +385,22 @@ final readonly class UpstreamRegistry
         $header = $response->header('Docker-Content-Digest');
 
         return $header !== '' && preg_match('/^sha256:[a-f0-9]{64}$/D', $header) === 1 && ! hash_equals($header, $digest);
+    }
+
+    /**
+     * The next page of a tag list from its `Link: <…>; rel="next"` header,
+     * only on the registry itself.
+     */
+    private function nextPage(string $current, string $link, UpstreamAuth $auth): ?string
+    {
+        if (preg_match('/<([^>]+)>\s*;\s*rel="?next"?/i', $link, $m) !== 1) {
+            return null;
+        }
+
+        $next = $this->absolute($current, $m[1]);
+        $host = static fn (string $url): string => strtolower((string) parse_url($url, PHP_URL_HOST));
+
+        return $host($next) === $host($auth->baseUrl()) && $next !== $current ? $next : null;
     }
 
     private function absolute(string $base, string $location): string

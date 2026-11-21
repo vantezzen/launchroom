@@ -1,5 +1,7 @@
 import { useRef } from 'react';
 import type { KeyboardEvent, ReactNode } from 'react';
+import { RANGE_SETS, rangeOptions } from '@/lib/observe-scope';
+import type { RangeOf, RangePage } from '@/lib/observe-scope';
 import { cn } from '@/lib/utils';
 
 /**
@@ -78,5 +80,31 @@ export function TimeRangeSelect<T extends string>({
                 );
             })}
         </div>
+    );
+}
+
+/**
+ * The time range of an observe page (design-system §9): the shared Hour,
+ * Day, Week and Month, plus the page's own extra ranges (Logs: 15 min), with
+ * the same labels everywhere. Every page with a time range uses this one.
+ */
+export function RangeSelect<P extends RangePage>({
+    page,
+    value,
+    onChange,
+    className,
+}: {
+    page: P;
+    value: RangeOf<P>;
+    onChange: (value: RangeOf<P>) => void;
+    className?: string;
+}) {
+    return (
+        <TimeRangeSelect<RangeOf<P>>
+            value={value}
+            onChange={onChange}
+            options={rangeOptions<RangeOf<P>>(RANGE_SETS[page])}
+            className={className}
+        />
     );
 }

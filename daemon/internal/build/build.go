@@ -538,6 +538,7 @@ func (b *Builder) resolve(dir, work string, job *Job, envNames []string, sink Lo
 		s.RuntimeEnv = preset.RuntimeEnv
 		s.Processes = preset.Processes
 		s.ReleaseCommand = preset.ReleaseCommand
+		s.Commands = preset.Commands
 		s.HealthPath = state.HTTPPath(preset.HealthPath)
 		s.GeneratedSecrets = preset.GeneratedSecrets
 		s.EnvAliases = preset.EnvAliases

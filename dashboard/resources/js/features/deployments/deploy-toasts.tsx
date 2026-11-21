@@ -4,6 +4,13 @@ import { cancel, show } from '@/routes/deployments';
 import { ChannelEvents } from '@/components/channel-events';
 import { shortSha } from '@/lib/format';
 import { channelName } from '@/lib/realtime';
+import type { LiveStatus } from '@/features/service-status/live-status';
+import {
+    contradictsLive,
+    statusOf,
+} from '@/features/service-status/live-status';
+import { liveStatusKey } from '@/features/service-status/store';
+import { queryClient } from '@/lib/query-client';
 import { isCancellable, isInProgress } from './format';
 
 type Update = App.Data.Broadcasts.DeploymentUpdatedData;
@@ -52,7 +59,12 @@ function announceOutcome(project: string, name: string, event: Update) {
 
     announced.add(key);
 
-    if (event.status === 'active' && quiet.has(event.serviceId)) {
+    // Never "is live" when the store already knows better (D108): a late
+    // event after the container crashed or the service was stopped.
+    if (
+        event.status === 'active' &&
+        (quiet.has(event.serviceId) || storeContradictsLive(event))
+    ) {
         toast.dismiss(event.deploymentId);
 
         return;
@@ -62,6 +74,7 @@ function announceOutcome(project: string, name: string, event: Update) {
     const options = { id: event.deploymentId, duration: 6_000 };
 
     if (event.status === 'active') {
+        watchLiveToast(event);
         toast.success(`${name} is live`, {
             ...options,
             description: undefined,
@@ -83,6 +96,41 @@ function announceOutcome(project: string, name: string, event: Update) {
             cancel: undefined,
         });
     }
+}
+
+function storeContradictsLive(event: Update): boolean {
+    return contradictsLive(
+        statusOf(
+            queryClient.getQueryData<LiveStatus>(
+                liveStatusKey(event.environmentId),
+            ),
+            event.serviceId,
+        ),
+        event.deploymentId,
+    );
+}
+
+/** "is live" toasts still showing: dropped once the store contradicts them. */
+const liveToasts = new Map<string, Update>();
+let watching = false;
+
+function watchLiveToast(event: Update) {
+    liveToasts.set(event.deploymentId, event);
+    window.setTimeout(() => liveToasts.delete(event.deploymentId), 7_000);
+
+    if (watching) {
+        return;
+    }
+
+    watching = true;
+    queryClient.getQueryCache().subscribe(() => {
+        liveToasts.forEach((shown, id) => {
+            if (storeContradictsLive(shown)) {
+                toast.dismiss(id);
+                liveToasts.delete(id);
+            }
+        });
+    });
 }
 
 function isOutcome(status: App.Enums.DeploymentStatus): boolean {

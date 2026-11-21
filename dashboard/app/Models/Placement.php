@@ -41,6 +41,7 @@ use Illuminate\Support\Carbon;
  * @property PullProgressData|null $pull in-flight image pull while `pulling` (docs/04 §11 "Pulls")
  * @property int $restart_count
  * @property Carbon|null $observed_at
+ * @property Carbon|null $phase_changed_at when the observed phase last changed (D108)
  * @property ProbeProgressData|null $probe health check progress and launchroomd's port hint (D68)
  * @property WorkloadIssueData|null $issue clearly wrong (crash loop, port mismatch; D68)
  * @property ContainerExitData|null $last_exit the container's last exit (D68)
@@ -124,6 +125,7 @@ final class Placement extends Model
             'health' => ProbeState::class,
             'restart_count' => 'integer',
             'observed_at' => 'datetime',
+            'phase_changed_at' => 'datetime',
             'pull' => PullProgressData::class,
             'probe' => ProbeProgressData::class,
             'issue' => WorkloadIssueData::class,

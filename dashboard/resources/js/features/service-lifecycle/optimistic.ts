@@ -5,6 +5,10 @@ import type {
     PageProps,
 } from '@inertiajs/core';
 import { toast } from 'sonner';
+import {
+    holdOptimisticStatus,
+    refreshAllLiveStatus,
+} from '@/features/service-status/store';
 import { vocabulary } from '@/lib/vocabulary';
 
 type Node = App.Data.Canvas.CanvasNodeData;
@@ -12,9 +16,10 @@ type Panel = App.Data.Canvas.ServicePanelData;
 type Controls = App.Data.Canvas.ServiceControlsData;
 
 /**
- * Optimistic service state for lifecycle actions (docs/10 §3): the canvas
- * node's status and the panel's header actions change on the click; Inertia
- * restores both when the request fails. Pages without a canvas (the
+ * Optimistic service state for lifecycle actions (docs/10 §3): the service's
+ * status in the live-status store and the panel's header actions change on
+ * the click; a failure restores both (Inertia the props, a refetch the
+ * store). Pages without a canvas (the
  * deployment page) have nothing to change. The status is the one
  * App\Support\Canvas\NodeStatus answers for `reason`; `label` only where
  * the server words it by step too (a deploying node).
@@ -29,11 +34,19 @@ export function optimisticService(
     const status = { reason, state: tone, label: label ?? word, detail: null };
 
     return (props: PageProps) => {
-        const { nodes, panel } = props as {
+        const { nodes, panel, environment } = props as {
             nodes?: Node[];
             panel?: Panel | null;
+            environment?: { id: string } | null;
         };
         const next: Partial<PageProps> = {};
+
+        // Every status surface reads the live-status store (D108): the
+        // canvas, the panel, the top bar and the deployment card change
+        // together. A failure refetches it (rollbackToast).
+        if (environment) {
+            holdOptimisticStatus(environment.id, service, reason, label);
+        }
 
         if (Array.isArray(nodes)) {
             const since = new Date().toISOString();
@@ -70,9 +83,13 @@ const CALM = new Set([403, 404, 422, 500, 502, 503]);
  */
 export function rollbackToast(message: string) {
     return {
-        onError: (errors: Errors) =>
-            toast.error(Object.values(errors)[0] ?? message),
+        onError: (errors: Errors) => {
+            void refreshAllLiveStatus();
+            toast.error(Object.values(errors)[0] ?? message);
+        },
         onHttpException: (response: HttpExceptionResponse) => {
+            void refreshAllLiveStatus();
+
             if (!CALM.has(response.status)) {
                 return;
             }

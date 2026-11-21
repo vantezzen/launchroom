@@ -271,7 +271,7 @@ test('anything that cannot be shown gets one answer', function (callable $input,
     $t = $input();
     $props = tracePage($user, $t);
 
-    expect($props['error'])->toBe(DecodeTrace::NOT_READABLE)
+    expect($props['error'])->toBe(TraceCodec::NOT_READABLE)
         ->and($props)->not->toHaveKey('trace')
         ->and($props['input'])->toBe(trim($t));
 })->with([
@@ -293,7 +293,7 @@ test('rays from edges before the prefix still open, a newer format says so', fun
 
     $props = tracePage($this->owner, 'X-Launchroom-Ray: lr2.'.$legacy);
 
-    expect($props['error'])->toBe(DecodeTrace::NEWER)
+    expect($props['error'])->toBe(TraceCodec::NEWER)
         ->and($props)->not->toHaveKey('trace');
 });
 
@@ -303,8 +303,8 @@ test('traces of another team\'s edge are refused, even for a member of both', fu
     $both = memberOf($other, TeamRole::Owner);
     Membership::query()->create(['team_id' => $this->team->id, 'user_id' => $both->id, 'role' => TeamRole::Owner]);
 
-    expect(tracePage($both, $header)['error'])->toBe(DecodeTrace::NOT_READABLE)
-        ->and(tracePage(memberOf($other, TeamRole::Owner), $header)['error'])->toBe(DecodeTrace::NOT_READABLE);
+    expect(tracePage($both, $header)['error'])->toBe(TraceCodec::NOT_READABLE)
+        ->and(tracePage(memberOf($other, TeamRole::Owner), $header)['error'])->toBe(TraceCodec::NOT_READABLE);
 });
 
 test('the dashboard\'s own routes are shown to members who manage servers', function (): void {

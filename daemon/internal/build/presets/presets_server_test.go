@@ -15,7 +15,7 @@ func validSummary(t *testing.T, r *Result) {
 	s := state.BuildSummary{
 		Builder: state.BuilderRailpack, BuilderReason: state.ReasonPresetAndRailpack,
 		Presets: []state.AppliedPreset{r.Applied}, RuntimeEnv: r.RuntimeEnv, Processes: r.Processes,
-		ReleaseCommand: r.ReleaseCommand, HealthPath: state.HTTPPath(r.HealthPath), GeneratedSecrets: r.GeneratedSecrets,
+		ReleaseCommand: r.ReleaseCommand, Commands: r.Commands, HealthPath: state.HTTPPath(r.HealthPath), GeneratedSecrets: r.GeneratedSecrets,
 		EnvAliases: r.EnvAliases, RequiredSecrets: r.RequiredSecrets, VolumeSuggestions: r.VolumeSuggestions, Warnings: r.Warnings,
 	}
 	c := &state.TaskCompletion{TypeMeta: state.NewTypeMeta(state.KindTaskCompletion), Attempt: 1, Outcome: state.OutcomeSucceeded,

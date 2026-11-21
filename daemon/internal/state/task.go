@@ -532,7 +532,19 @@ type RunOnceSpec struct {
 	// be declared in the server's verified NodeState for the same service
 	// and environment.
 	Mounts []RunOnceMount `json:"mounts,omitzero" jsonschema:"nullable,maxItems=32" lr:"feature=releaseMounts"`
+	// OutputLimit caps the bytes of container output shipped as log lines
+	// (one-off commands, D105; daemon feature "commandRuns"). Past it,
+	// launchroomd ships one system line, drops the rest of the output and
+	// lets the command run to its end (RunOnceResult.outputTruncated).
+	// Omitted: no limit.
+	OutputLimit int64 `json:"outputLimit,omitzero" jsonschema:"minimum=1024,maximum=67108864" lr:"feature=commandRuns"`
 }
+
+// Limits of RunOnceSpec.outputLimit.
+const (
+	MinRunOnceOutputLimit = 1024
+	MaxRunOnceOutputLimit = 64 << 20
+)
 
 // RunOnceMount mounts one of the service's volumes into a run_once container.
 type RunOnceMount struct {
@@ -589,6 +601,9 @@ func (s *RunOnceSpec) Validate() error {
 		e.check(idx("maskEnv", i), n)
 	}
 	unique(&e, "maskEnv", s.MaskEnv)
+	if s.OutputLimit != 0 && (s.OutputLimit < MinRunOnceOutputLimit || s.OutputLimit > MaxRunOnceOutputLimit) {
+		e.addf("outputLimit", "must be between %d and %d", MinRunOnceOutputLimit, MaxRunOnceOutputLimit)
+	}
 	e.check("network.id", s.Network.ID)
 	e.check("network.name", s.Network.Name)
 	e.check("network.subnet", s.Network.Subnet)

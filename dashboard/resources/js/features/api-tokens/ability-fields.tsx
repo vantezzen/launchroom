@@ -35,6 +35,27 @@ export function defaultAbilities(
         .map((option) => option.value);
 }
 
+/**
+ * The abilities a sign-in starts with: the ones the CLI asked for
+ * (`launchroom login --abilities`) that the role allows, else the defaults.
+ */
+export function startingAbilities(
+    team: TeamOption | null | undefined,
+    suggested: Ability[],
+): Ability[] {
+    if (suggested.length === 0) {
+        return defaultAbilities(team);
+    }
+
+    return (team?.abilities ?? [])
+        .filter(
+            (option) =>
+                option.locked ||
+                (option.available && suggested.includes(option.value)),
+        )
+        .map((option) => option.value);
+}
+
 function toggleAbility(
     current: Ability[],
     ability: Ability,
@@ -48,14 +69,11 @@ function toggleAbility(
 const PRESET_LABEL: Record<AccessPreset, string> = {
     deploy: 'Deploy',
     read: 'Read only',
-    everything: 'Everything',
+    full: 'Full access',
     custom: 'Custom',
 };
 
-function presetSentence(
-    team: TeamOption | null | undefined,
-    preset: AccessPreset,
-): string | null {
+function presetSentence(preset: AccessPreset): string | null {
     if (preset === 'read') {
         return 'Can see projects, deployments, logs and servers, and change nothing.';
     }
@@ -64,20 +82,17 @@ function presetSentence(
         return 'Can deploy and change variables. Can’t read secret values.';
     }
 
-    if (preset === 'everything') {
-        const all = presetAbilities(team, 'everything');
-
-        return all.includes('secrets:read') || all.includes('data:transfer')
-            ? 'Everything your role allows. Secret reads and data transfers are audited.'
-            : 'Everything your role allows.';
+    if (preset === 'full') {
+        return 'Everything your role allows, including permissions launchroom adds later.';
     }
 
     return null;
 }
 
 /**
- * A token's access (settings dialog, CLI approval): presets first (Deploy,
- * Read only, Everything), the ability boxes only under Custom. Abilities
+ * A token's access (settings dialog, robot dialog, CLI approval): presets
+ * first (Deploy, Read only, Full access), the ability boxes only under
+ * Custom. Full access is the token's own flag (D113), not a list. Abilities
  * the role can't grant stay disabled.
  */
 export function AbilityFields({
@@ -86,6 +101,9 @@ export function AbilityFields({
     team,
     value,
     onChange,
+    fullAccess,
+    onFullAccessChange,
+    fullAccessHint,
     explainUnavailable = false,
     children,
 }: {
@@ -94,16 +112,21 @@ export function AbilityFields({
     team: TeamOption | null | undefined;
     value: Ability[];
     onChange: (abilities: Ability[]) => void;
+    fullAccess: boolean;
+    onFullAccessChange: (fullAccess: boolean) => void;
+    /** Replaces the Full access sentence (robots have no role of their own). */
+    fullAccessHint?: string;
     /** Says why a box is disabled ("not available with your role"). */
     explainUnavailable?: boolean;
     /** Under the boxes (validation errors). */
     children?: ReactNode;
 }) {
     const [preset, setPreset] = useState<AccessPreset>(() =>
-        presetOf(team, value),
+        presetOf(team, value, fullAccess),
     );
     const choose = (next: AccessPreset) => {
         setPreset(next);
+        onFullAccessChange(next === 'full');
 
         if (next !== 'custom') {
             onChange(presetAbilities(team, next));
@@ -125,7 +148,9 @@ export function AbilityFields({
             />
             {preset !== 'custom' && (
                 <p className="type-small text-muted-foreground">
-                    {presetSentence(team, preset)}
+                    {preset === 'full' && fullAccessHint
+                        ? fullAccessHint
+                        : presetSentence(preset)}
                 </p>
             )}
             {preset === 'custom' &&

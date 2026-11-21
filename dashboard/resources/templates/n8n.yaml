@@ -45,6 +45,7 @@ services:
                 limits:
                     memory: 1g
         x-launchroom:
+            releases: https://github.com/n8n-io/n8n/releases
             name: n8n
             logo: n8n
             domain: ${input.domain}

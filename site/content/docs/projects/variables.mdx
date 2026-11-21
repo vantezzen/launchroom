@@ -54,7 +54,8 @@ database, so previews and new environments work without editing any variable.
 
 A reference to a service or variable that doesn't exist in this environment is broken. The Variables page flags it in
 red, and the deploy is refused with the name of every broken reference. launchroom never deploys the literal `${{…}}`
-text.
+text. **Fix** above the table takes you to the broken row, which suggests the references you most likely meant, such as
+the same variable on another service. Pick one to open the editor with the value already rewritten.
 
 <Screenshot id="staged-changes-blocked" />
 

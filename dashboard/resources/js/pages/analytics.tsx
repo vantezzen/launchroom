@@ -9,14 +9,16 @@ import { index } from '@/routes/analytics';
  */
 export default function TeamAnalyticsPage({
     team,
+    readiness,
 }: {
     team: { name: string };
+    readiness: App.Data.Analytics.TrafficReadinessData;
 }) {
     return (
         <>
             <Head title="Analytics" />
             <Page size="wide">
-                <TeamAnalytics teamName={team.name} />
+                <TeamAnalytics teamName={team.name} readiness={readiness} />
             </Page>
         </>
     );

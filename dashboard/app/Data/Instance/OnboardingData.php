@@ -52,5 +52,7 @@ final class OnboardingData extends Data
         public ?SmallServerHintData $smallServerHint = null,
         /** The first app: live (step 4 is done) or its first deploy running. */
         public ?FirstAppData $firstApp = null,
+        /** "What's next" once nothing but skipped steps is left. */
+        public OnboardingNextData $whatsNext = new OnboardingNextData(customDomain: false, invite: false),
     ) {}
 }

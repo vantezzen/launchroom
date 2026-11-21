@@ -22,6 +22,7 @@ use App\Models\Security\WafExclusion;
 use App\Models\Server;
 use App\Models\Service;
 use App\Models\ServiceInstance;
+use App\Models\Transfers\DataCopyRun;
 use App\Models\Transfers\DataExportRun;
 use App\Models\Transfers\DataImportRun;
 use App\Models\Transfers\DataTransfer;
@@ -234,6 +235,14 @@ final class RouteScope
     public static function exportRun(ServiceInstance $instance, DataExportRun $run): DataExportRun
     {
         abort_unless($run->service_instance_id === $instance->id, 404);
+
+        return $run;
+    }
+
+    /** A copy belongs to the service it copies into (docs/14 §14). */
+    public static function copyRun(ServiceInstance $instance, DataCopyRun $run): DataCopyRun
+    {
+        abort_unless($run->target_service_instance_id === $instance->id, 404);
 
         return $run;
     }

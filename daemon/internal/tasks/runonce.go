@@ -6,10 +6,13 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"math"
 	"net"
 	"net/http"
 	"net/netip"
 	"slices"
+	"strconv"
+	"sync/atomic"
 	"time"
 
 	"github.com/vantezzen/launchroom/daemon/internal/docker"
@@ -136,7 +139,7 @@ func RunOnceHandler(o RunOnceOptions) Handler {
 
 		logs := newStepShipper(ctx, o.Client, state.LogSource{Kind: state.LogSourceTask, ID: string(t.ID)}, t.Attempt)
 		defer logs.Close()
-		r := &oneOff{o: o, task: t.ID, logs: logs, mask: secret.NewMasker(secret.MaskValues(env, spec.MaskEnv)...)}
+		r := &oneOff{o: o, task: t.ID, logs: logs, mask: secret.NewMasker(secret.MaskValues(env, spec.MaskEnv)...), out: &outputCap{limit: spec.OutputLimit}}
 
 		// A retried attempt may find the container of an earlier one.
 		if err := r.removeLeftovers(ctx); err != nil {
@@ -190,14 +193,14 @@ func RunOnceHandler(o RunOnceOptions) Handler {
 			if err != nil {
 				return state.TaskResults{}, err
 			}
-			return state.TaskResults{RunOnce: &state.RunOnceResult{ExitCode: exit, DurationMs: time.Since(started).Milliseconds(), Probe: outcome}}, nil
+			return state.TaskResults{RunOnce: &state.RunOnceResult{ExitCode: exit, DurationMs: time.Since(started).Milliseconds(), Probe: outcome, OutputTruncated: r.out.truncated.Load()}}, nil
 		}
 		exit, err := r.wait(ctx, id)
 		if err != nil {
 			return state.TaskResults{}, err
 		}
 		logs.Line("run", state.StreamSystem, fmt.Sprintf("Exited with code %d", exit)) //nolint:contextcheck // see above
-		return state.TaskResults{RunOnce: &state.RunOnceResult{ExitCode: exit, DurationMs: time.Since(started).Milliseconds()}}, nil
+		return state.TaskResults{RunOnce: &state.RunOnceResult{ExitCode: exit, DurationMs: time.Since(started).Milliseconds(), OutputTruncated: r.out.truncated.Load()}}, nil
 	}
 }
 
@@ -206,6 +209,44 @@ type oneOff struct {
 	task state.TaskID
 	logs *stepShipper
 	mask *secret.Masker
+	out  *outputCap
+}
+
+// outputCap bounds the container output a run_once ships (spec.outputLimit,
+// D105): it counts the bytes of the shipped (masked) line texts; launchroom's
+// own system lines don't count. The first line past the limit is replaced by
+// one notice and every later line is dropped, while the command runs on.
+type outputCap struct {
+	limit     int64 // 0: no limit
+	used      int64 // only touched by the log stream's goroutine
+	truncated atomic.Bool
+}
+
+// admit returns what to ship for a container line: the line itself, the
+// notice that output stops (system, once), or nothing.
+func (c *outputCap) admit(text string) (ship string, notice bool, ok bool) {
+	if c.limit <= 0 {
+		return text, false, true
+	}
+	if c.truncated.Load() {
+		return "", false, false
+	}
+	if c.used+int64(len(text)) > c.limit {
+		c.truncated.Store(true)
+		return "Output stopped after " + sizeLabel(c.limit) + ". The command keeps running.", true, true
+	}
+	c.used += int64(len(text))
+	return text, false, true
+}
+
+// sizeLabel is a byte count in MiB or KiB with at most one decimal, rounded
+// down ("5 MiB", "1.5 KiB").
+func sizeLabel(n int64) string {
+	unit, name := float64(1<<20), " MiB"
+	if n < 1<<20 {
+		unit, name = 1<<10, " KiB"
+	}
+	return strconv.FormatFloat(math.Floor(float64(n)/unit*10)/10, 'f', -1, 64) + name
 }
 
 func (r *oneOff) removeLeftovers(ctx context.Context) error {
@@ -322,44 +363,41 @@ func (r *oneOff) probe(ctx context.Context, id string, spec *state.RunOnceSpec) 
 	}
 }
 
-// followLogs ships the container's (masked) log lines in step "run" until
-// stopped; done closes when the stream ended.
+// followLogs ships the container's (masked, capped) log lines in step "run"
+// until stopped; done closes when the stream ended.
 func (r *oneOff) followLogs(ctx context.Context, id string) (stop func(), done <-chan struct{}) {
 	logCtx, cancel := context.WithCancel(context.WithoutCancel(ctx))
 	logsDone := make(chan struct{})
 	go func() {
 		defer close(logsDone)
 		//nolint:contextcheck // log lines ship on the shipper's own context
-		_ = r.o.Docker.StreamLogs(logCtx, id, docker.LogsOptions{Tail: -1, Follow: true}, func(l docker.LogLine) error {
-			stream := state.StreamStdout
-			if l.Stream == "stderr" {
-				stream = state.StreamStderr
-			}
-			r.logs.Line("run", stream, r.mask.Mask(l.Text))
-			return nil
-		})
+		_ = r.o.Docker.StreamLogs(logCtx, id, docker.LogsOptions{Tail: -1, Follow: true}, r.shipLine)
 	}()
 	return cancel, logsDone
+}
+
+// shipLine ships one container log line, masked and within the output cap.
+func (r *oneOff) shipLine(l docker.LogLine) error {
+	stream := state.StreamStdout
+	if l.Stream == "stderr" {
+		stream = state.StreamStderr
+	}
+	text, notice, ok := r.out.admit(r.mask.Mask(l.Text))
+	switch {
+	case !ok:
+	case notice:
+		r.logs.Line("run", state.StreamSystem, text)
+	default:
+		r.logs.Line("run", stream, text)
+	}
+	return nil
 }
 
 // wait follows the container's logs until it exits and returns its exit code.
 // When ctx ends first (timeout, cancel), the container is stopped.
 func (r *oneOff) wait(ctx context.Context, id string) (int, error) {
-	logCtx, stopLogs := context.WithCancel(context.WithoutCancel(ctx))
+	stopLogs, logsDone := r.followLogs(ctx, id)
 	defer stopLogs()
-	logsDone := make(chan struct{})
-	go func() {
-		defer close(logsDone)
-		//nolint:contextcheck // log lines ship on the shipper's own context
-		_ = r.o.Docker.StreamLogs(logCtx, id, docker.LogsOptions{Tail: -1, Follow: true}, func(l docker.LogLine) error {
-			stream := state.StreamStdout
-			if l.Stream == "stderr" {
-				stream = state.StreamStderr
-			}
-			r.logs.Line("run", stream, r.mask.Mask(l.Text))
-			return nil
-		})
-	}()
 	tick := time.NewTicker(r.o.PollEvery)
 	defer tick.Stop()
 	for {

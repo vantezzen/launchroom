@@ -17,9 +17,8 @@ import {
 import { FleetLoad } from '@/features/servers/fleet-load';
 import { FleetTopology } from '@/features/servers/fleet-topology';
 import { fleetMap, fleetSummary } from '@/features/servers/fleet-map';
-import { ErrorDetails } from '@/features/servers/error-details';
 import { fleetOrder } from '@/features/servers/format';
-import { meshProblem, storageProblem } from '@/features/servers/problems';
+import { NetworkIssues } from '@/features/servers/network-issues';
 import { formatLatency, shortAge } from '@/lib/format';
 import { roleIcons } from '@/features/servers/server-status';
 import { SmallServerHint } from '@/features/servers/small-server-hint';
@@ -44,91 +43,6 @@ type Props = {
     meshLinks: App.Data.Servers.MeshLinkData[];
     smallServerHint?: App.Data.Servers.SmallServerHintData | null;
 };
-
-/** Things that need an owner's attention, one quiet line each. */
-function Attention({
-    mesh,
-    edgeOverview,
-    canManageIngress,
-}: {
-    mesh: App.Data.Servers.MeshOverviewData;
-    edgeOverview?: App.Data.Ingress.EdgeOverviewData;
-    canManageIngress: boolean;
-}) {
-    const items: {
-        key: string;
-        text: string;
-        detail: string;
-        raw?: string | null;
-    }[] = [];
-
-    if (edgeOverview?.singlePointOfFailure) {
-        items.push({
-            key: 'spof',
-            text: 'All public traffic goes through one server.',
-            detail: 'Give the edge role to a second public server so one can fail without downtime.',
-        });
-    }
-
-    if (edgeOverview && edgeOverview.degradedStorage.length > 0) {
-        const problem = storageProblem(edgeOverview.degradedStorage);
-        items.push({
-            key: 'storage',
-            text: problem.title,
-            detail: problem.detail,
-        });
-    }
-
-    if (mesh.canManage && mesh.error !== null) {
-        items.push({
-            key: 'mesh',
-            text: meshProblem.title,
-            detail: meshProblem.detail,
-            raw: mesh.error,
-        });
-    }
-
-    if (items.length === 0) {
-        return null;
-    }
-
-    return (
-        <ul className="flex flex-col divide-y overflow-hidden rounded-xl border bg-card">
-            {items.map((item) => (
-                <li
-                    key={item.key}
-                    className="flex flex-wrap items-start gap-x-4 gap-y-2 px-5 py-4"
-                >
-                    <StatusIcon state="warning" className="mt-1" />
-                    <div className="flex min-w-0 flex-1 flex-col">
-                        <span className="type-body font-medium">
-                            {item.text}
-                        </span>
-                        <span className="type-small text-muted-foreground">
-                            {item.detail}
-                        </span>
-                        <ErrorDetails text={item.raw} className="mt-1.5" />
-                    </div>
-                    {canManageIngress && (
-                        <Button asChild size="sm" variant="ghost">
-                            <Link href={networkSettings()}>Open network</Link>
-                        </Button>
-                    )}
-                    {item.key === 'spof' && edgeOverview && (
-                        <a
-                            href={edgeOverview.guideUrl}
-                            target="_blank"
-                            rel="noreferrer"
-                            className="type-small text-signal underline-offset-4 hover:underline"
-                        >
-                            Learn more
-                        </a>
-                    )}
-                </li>
-            ))}
-        </ul>
-    );
-}
 
 function names(servers: Server[]): string {
     const list = servers.map((server) => server.name);
@@ -367,7 +281,7 @@ export default function ServersIndex({
                     }
                 />
 
-                <Attention
+                <NetworkIssues
                     mesh={mesh}
                     edgeOverview={edgeOverview}
                     canManageIngress={canManageIngress}

@@ -40,6 +40,8 @@ Route::middleware(['web', 'auth', 'verified'])
         Route::post('p/{project}/{environment}/d/{deployment}/rollback', [DeploymentController::class, 'rollback'])->name('deployments.rollback');
         Route::post('p/{project}/{environment}/d/{deployment}/redeploy', [DeploymentController::class, 'redeploy'])->name('deployments.redeploy');
         Route::post('p/{project}/{environment}/d/{deployment}/cancel', [DeploymentController::class, 'cancel'])->name('deployments.cancel');
+        // Deploy now on a push waiting for its commit's checks (D111).
+        Route::post('p/{project}/{environment}/d/{deployment}/skip-checks', [DeploymentController::class, 'skipChecks'])->name('deployments.skip-checks');
         // One-click fix of an explained failure.
         Route::post('p/{project}/{environment}/d/{deployment}/fix', [DeploymentController::class, 'fix'])->name('deployments.fix');
 

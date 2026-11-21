@@ -18,12 +18,7 @@ import type { MetricCardRow } from '@/features/metrics/metric-card';
 import { requestJson } from '@/lib/http';
 import { useObserveScope } from '@/hooks/use-observe-scope';
 import { logsDrill } from '@/lib/links';
-import {
-    rangeSeconds,
-    RANGE_SETS,
-    rangeOptions,
-    rangeWords,
-} from '@/lib/observe-scope';
+import { rangeSeconds, RANGE_SETS, rangeWords } from '@/lib/observe-scope';
 import { metrics as metricsRoute } from '@/routes/projects';
 import {
     formatBandwidth,
@@ -37,8 +32,6 @@ type Metrics = App.Data.Metrics.ProjectMetricsData;
 type Usage = App.Data.Metrics.ServiceUsageSeriesData;
 type Service = App.Data.Metrics.MetricsServiceData;
 type MetricKey = 'cpu' | 'memory' | 'latency' | 'bandwidth';
-
-const RANGES = rangeOptions(RANGE_SETS.resources);
 
 const TOP = 3;
 
@@ -90,14 +83,12 @@ function sumSeries(series: (number | null)[][]): (number | null)[] {
  */
 export function ProjectResources({
     project,
-    projectName,
     environment,
     environmentName,
     services,
     initialService,
 }: {
     project: string;
-    projectName: string;
     environment: string;
     environmentName: string;
     services: Service[];
@@ -397,7 +388,6 @@ export function ProjectResources({
         <>
             <AnalyticsHeader
                 project={project}
-                projectName={projectName}
                 environment={environment}
                 environmentName={environmentName}
                 view="resources"
@@ -405,7 +395,7 @@ export function ProjectResources({
                 service={focus}
                 onService={setFocus}
                 range={range}
-                ranges={RANGES}
+                rangePage="resources"
                 onRange={setRange}
                 snapped={snapped}
             />

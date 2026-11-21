@@ -41,6 +41,8 @@ use Illuminate\Contracts\Database\Query\Builder;
  * - a deployment that goes live collapses older queued ones of the instance
  *   (superseded); a push also supersedes a build still running for an older
  *   commit;
+ * - a push deployment of an environment that deploys after checks pass
+ *   waits for its commit's checks ({@see CheckGate}, D111);
  * - {@see DeploymentQueued} after commit: its listener starts it and reports
  *   "queued" to the git provider.
  */
@@ -51,6 +53,7 @@ final readonly class DeploymentFactory
         private DatabaseEngines $engines,
         private DeploymentSnapshots $snapshots,
         private BuildOrchestrator $builds,
+        private CheckGate $checkGate,
     ) {}
 
     /**
@@ -74,6 +77,8 @@ final readonly class DeploymentFactory
             'build_key' => $service->kind->isBuilt() ? $this->buildKey($project, $spec, $service, $env, $commit?->sha) : null,
             // Two copies never share data: a service that stops before it starts isn't staged.
             'hold_traffic' => $holdTraffic && ! $instance->stopsBeforeStart($service),
+            // A push may wait for its commit's checks first (D111).
+            'checks' => $this->checkGate->forNew($instance, $service, $trigger, $commit),
         ]);
 
         $this->snapshots->store($project, $deployment, $env->all());

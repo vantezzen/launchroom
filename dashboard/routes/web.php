@@ -8,6 +8,7 @@ use App\Http\Controllers\Analytics\TeamAnalyticsController;
 use App\Http\Controllers\ConfigSchemaController;
 use App\Http\Controllers\DashboardController;
 use App\Http\Controllers\Dev\DesignVisualsController;
+use App\Http\Controllers\FallbackController;
 use App\Http\Controllers\Instance\ClientVersionController;
 use App\Http\Controllers\Instance\OnboardingController;
 use App\Http\Controllers\Instance\ReadinessController;
@@ -35,8 +36,10 @@ use App\Http\Controllers\Teams\TeamController;
 use App\Http\Controllers\Teams\TeamSettingsController;
 use App\Http\Controllers\Traces\RequestTraceController;
 use App\Http\Middleware\LocalOnly;
+use App\Http\Routing\RouteFamily;
 use App\Models\Volume;
 use App\Support\PublicId;
+use Illuminate\Foundation\Http\Middleware\PreventRequestForgery;
 use Illuminate\Routing\RedirectController;
 use Illuminate\Support\Facades\Route;
 use Inertia\Controller as InertiaPage;
@@ -254,3 +257,12 @@ Route::middleware(['auth', 'verified'])->group(function (): void {
 });
 
 require __DIR__.'/settings.php';
+
+// Unknown pages get the 404 page inside the shell (docs/08 §24); paths of
+// machine-facing families stay unmatched and keep their own answers. Every
+// method, so a form posted to an unknown path is a 404 (not a 405 from a
+// GET-only fallback); it only answers 404, so it needs no CSRF check.
+Route::any('{fallbackPlaceholder}', FallbackController::class)
+    ->where('fallbackPlaceholder', RouteFamily::browserFallbackPattern())
+    ->withoutMiddleware(PreventRequestForgery::class)
+    ->fallback();

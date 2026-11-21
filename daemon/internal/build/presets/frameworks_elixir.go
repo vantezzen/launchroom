@@ -38,11 +38,14 @@ func (phoenix) Propose(f Facts, i Info) Proposal {
 	case !e.Ecto || i.Dockerfile:
 	case e.ReleaseModule != "" && e.App != "":
 		bin := "/app/_build/prod/rel/" + e.App + "/bin/" + e.App
+		migrate := []string{bin, "eval", e.ReleaseModule + ".migrate"}
 		p.Decisions = append(p.Decisions, Decision{
 			ID: "release-migrations", Title: "Run migrations once per deploy",
 			Detail: e.ReleaseModule + ".migrate runs as the release command before the new version starts.",
-			Effect: Effect{ReleaseCommand: []string{bin, "eval", e.ReleaseModule + ".migrate"}},
+			Effect: Effect{ReleaseCommand: migrate},
 		})
+		// The release binary's path exists only in Railpack's image.
+		p.Commands = phoenixCommands(migrate)
 	default:
 		p.Warnings = append(p.Warnings, Warning{Code: "phoenix-no-release-module",
 			Message: "Migrations don't run on deploy, because the app has no release module. Run mix phx.gen.release and commit lib/<app>/release.ex, and launchroom runs its migrate function on every deploy."})

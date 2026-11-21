@@ -1,20 +1,16 @@
 type Ability = App.Enums.ApiAbility;
 type TeamOption = App.Data.Api.ApiTeamOptionData;
 
-/** The access choices above the ability list; `custom` shows the boxes. */
-export type AccessPreset = 'deploy' | 'read' | 'everything' | 'custom';
+/**
+ * The access choices above the ability list; `custom` shows the boxes.
+ * `full` is a setting of its own (D113): the token gets every ability its
+ * role allows, including ones launchroom adds later.
+ */
+export type AccessPreset = 'deploy' | 'read' | 'full' | 'custom';
 
-/** Every ability, in the enum's order (the fallback without a team). */
-const ALL: Ability[] = [
-    'read',
-    'deploy',
-    'env:read',
-    'env:write',
-    'secrets:read',
-    'domains:write',
-    'data:transfer',
-];
-const DEFAULTS: Ability[] = ['read', 'deploy', 'env:read', 'env:write'];
+const DEFAULTS: Ability[] = ['read', 'deploy', 'env:read', 'env:write', 'fix'];
+/** The defaults before `fix` joined them (D111): those tokens still read "Deploy". */
+const FORMER_DEFAULTS: Ability[] = ['read', 'deploy', 'env:read', 'env:write'];
 
 function sameSet(a: Ability[], b: Ability[]): boolean {
     const left = new Set(a);
@@ -23,7 +19,11 @@ function sameSet(a: Ability[], b: Ability[]): boolean {
     return left.size === right.size && [...left].every((x) => right.has(x));
 }
 
-/** The abilities a preset grants in `team` (never more than the role allows). */
+/**
+ * The abilities a preset grants in `team` today (never more than the role
+ * allows). For `full` that is only today's list: the token itself carries
+ * the flag.
+ */
 export function presetAbilities(
     team: TeamOption | null | undefined,
     preset: Exclude<AccessPreset, 'custom'>,
@@ -40,49 +40,45 @@ export function presetAbilities(
                 return false;
             }
 
-            return (
-                preset === 'everything' ||
-                (preset === 'deploy' && option.default)
-            );
+            return preset === 'full' || (preset === 'deploy' && option.default);
         })
         .map((option) => option.value);
 }
 
 /**
- * The presets worth offering in `team`: one that grants the same as a
- * cheaper one is left out (a viewer only gets Read only and Custom).
+ * The presets worth offering in `team`: Deploy only when it grants more
+ * than Read only. Full access is always offered, it differs by including
+ * later permissions.
  */
 export function offeredPresets(
     team: TeamOption | null | undefined,
 ): AccessPreset[] {
     const read = presetAbilities(team, 'read');
     const deploy = presetAbilities(team, 'deploy');
-    const everything = presetAbilities(team, 'everything');
     const offered: AccessPreset[] = [];
 
     if (!sameSet(deploy, read)) {
         offered.push('deploy');
     }
 
-    offered.push('read');
-
-    if (!sameSet(everything, deploy) && !sameSet(everything, read)) {
-        offered.push('everything');
-    }
-
-    offered.push('custom');
+    offered.push('read', 'full', 'custom');
 
     return offered;
 }
 
-/** Which preset `abilities` is in `team`, else custom. */
+/** Which preset a token's access is in `team`, else custom. */
 export function presetOf(
     team: TeamOption | null | undefined,
     abilities: Ability[],
+    fullAccess = false,
 ): AccessPreset {
+    if (fullAccess) {
+        return 'full';
+    }
+
     const offered = offeredPresets(team);
 
-    for (const preset of ['deploy', 'read', 'everything'] as const) {
+    for (const preset of ['deploy', 'read'] as const) {
         if (
             offered.includes(preset) &&
             sameSet(presetAbilities(team, preset), withLocked(team, abilities))
@@ -106,25 +102,26 @@ function withLocked(
 }
 
 /**
- * One phrase for a token's access (Settings → API tokens): "Full access"
- * (everything its owner's role allows in the team), "Deploy" (the
- * defaults), "Read only", else "Custom" with the count.
+ * One phrase for a token's access (token lists): "Full access" for the
+ * flag, "Read only", "Deploy" (the defaults), else "Custom" with the
+ * count. A custom token that happens to have every ability today stays
+ * custom: it won't get later ones.
  */
-export function abilitySummary(
-    abilities: Ability[],
-    team?: TeamOption | null,
-): { label: string; custom: boolean } {
-    const everything = team ? presetAbilities(team, 'everything') : ALL;
+export function abilitySummary(token: {
+    abilities: Ability[];
+    fullAccess: boolean;
+}): { label: string; custom: boolean } {
+    const { abilities } = token;
+
+    if (token.fullAccess) {
+        return { label: 'Full access', custom: false };
+    }
 
     if (sameSet(abilities, ['read'])) {
         return { label: 'Read only', custom: false };
     }
 
-    if (sameSet(abilities, everything)) {
-        return { label: 'Full access', custom: false };
-    }
-
-    if (sameSet(abilities, DEFAULTS)) {
+    if (sameSet(abilities, DEFAULTS) || sameSet(abilities, FORMER_DEFAULTS)) {
         return { label: 'Deploy', custom: false };
     }
 

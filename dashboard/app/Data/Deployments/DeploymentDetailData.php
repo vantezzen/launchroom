@@ -56,5 +56,9 @@ final class DeploymentDetailData extends Data
         public ?DeploymentRefData $newer = null,
         /** The next older deployment of the same service in this environment (the header's ↓). */
         public ?DeploymentRefData $older = null,
+        /** A push that waits (or waited) for its commit's CI checks (D111); null when it didn't wait. */
+        public ?DeploymentChecksData $checks = null,
+        /** "Deploy now" while it waits for its checks. */
+        public bool $canSkipChecks = false,
     ) {}
 }

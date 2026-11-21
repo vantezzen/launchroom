@@ -16,5 +16,7 @@ final class RunOnceResult extends Data
         public int $durationMs,
         /** Set when the spec had a `probe` (docs/20 §6). */
         public ProbeOutcome|null|Optional $probe = new Optional,
+        /** The output passed the spec's `outputLimit` and the rest wasn't shipped (feature `commandRuns`). */
+        public bool|Optional $outputTruncated = new Optional,
     ) {}
 }

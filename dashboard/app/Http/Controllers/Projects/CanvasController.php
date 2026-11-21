@@ -18,12 +18,14 @@ use App\Enums\ServiceSettingsSection;
 use App\Enums\Sessions\InteractiveSessionKind;
 use App\Http\Controllers\Controller;
 use App\Http\Routing\RouteScope;
+use App\Models\Commands\CommandRun;
 use App\Models\Environment;
 use App\Models\Project;
 use App\Models\Security\SecurityFinding;
 use App\Models\Service;
 use App\Models\Sessions\InteractiveSession;
 use App\Models\User;
+use App\Queries\AppUpdates\ServiceUpdates;
 use App\Queries\CanvasGraph;
 use App\Queries\CronRunHistory;
 use App\Queries\CurrentEnvironmentSpec;
@@ -79,7 +81,8 @@ final class CanvasController extends Controller
         abort_if($section === ServiceSettingsSection::Backups && $service->kind !== ServiceKind::Database && ! $instance->volumes()->exists(), 404);
         $canConsole = Gate::allows('viewAny', [InteractiveSession::class, $instance, InteractiveSessionKind::Console]);
         $canData = $service->kind === ServiceKind::Database && Gate::allows('viewAny', [InteractiveSession::class, $instance, InteractiveSessionKind::Data]);
-        abort_if(($tab === ServicePanelTab::Console && ! $canConsole) || ($tab === ServicePanelTab::Data && ! $canData), 404);
+        $canCommands = $service->kind !== ServiceKind::Database && Gate::allows('viewAny', [CommandRun::class, $instance]);
+        abort_if(($tab === ServicePanelTab::Console && ! $canConsole) || ($tab === ServicePanelTab::Data && ! $canData) || ($tab === ServicePanelTab::Commands && ! $canCommands), 404);
 
         // One snapshot of the environment's intent for the whole request: the
         // controls, the settings and the canvas graph each diff against it.
@@ -90,7 +93,7 @@ final class CanvasController extends Controller
         };
 
         // Lazy: realtime refreshes that ask for nodes and edges only don't build it.
-        $panel = function () use ($project, $instance, $service, $tab, $section, $settings, $user, $canConsole, $canData, $spec): ServicePanelData {
+        $panel = function () use ($project, $instance, $service, $tab, $section, $settings, $user, $canConsole, $canData, $canCommands, $spec): ServicePanelData {
             // The header chip (docs/22 §9.1): open "Action needed" findings of this instance.
             $findings = array_values(array_filter(SecurityFinding::query()
                 ->where('team_id', $project->team_id)
@@ -107,6 +110,7 @@ final class CanvasController extends Controller
                 canDelete: $instance->removed_at === null && Gate::allows('delete', $instance),
                 canConsole: $canConsole,
                 canData: $canData,
+                canCommands: $canCommands,
                 section: $tab === ServicePanelTab::Settings ? $section : null,
                 actionNeeded: count($findings),
                 actionNeededFinding: count($findings) === 1 ? $findings[0] : null,
@@ -114,6 +118,7 @@ final class CanvasController extends Controller
                 origin: resolve(ServiceOrigin::class)->for($instance),
                 runtime: resolve(ServiceRuntimeFacts::class)->for($instance),
                 cronRuns: $service->kind === ServiceKind::Cron ? resolve(CronRunHistory::class)->for($instance, 5) : [],
+                update: resolve(ServiceUpdates::class)->for($instance, $user, $spec()),
             );
         };
 

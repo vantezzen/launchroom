@@ -131,7 +131,7 @@ errors as you type. The schema refuses unknown keys, so a typo is an error and i
 | `branch` | app, worker, cron | Deploy this service from another branch than the environment's |
 | `enabled` | all | `false` keeps the service out of this environment |
 | `build` | app | `builder` (`auto`, `dockerfile`, `railpack`, `static`), `dockerfilePath`, `installCommand`, `buildCommand`, `railpackVersion`, `watchPaths` (up to 64) |
-| `deploy` | all but database | `port`, `startCommand`, `releaseCommand`, `seedCommand`, `entrypoint`, `drainSeconds` (0 to 3600), `stopTimeoutSeconds` (1 to 300), `stopSignal`, `overlapOnVolumes`, `capabilities`, `schedule` (cron only), `healthcheck` |
+| `deploy` | all but database | `port`, `startCommand`, `releaseCommand`, `seedCommand`, `entrypoint`, `drainSeconds` (0 to 3600), `stopTimeoutSeconds` (1 to 300), `stopSignal`, `overlapOnVolumes`, `capabilities`, `schedule` (cron only), `healthcheck`, `commands` ([named commands](/docs/projects/run-a-command#name-your-own-commands)) |
 | `scaling` | all | `replicas` (0 to 64), `cpus` (0.05 to 1024), `memoryMb` (16 to 1048576), `placement` with `labels` and `strategy` (`spread` or `pack`) |
 | `variables` | all | `"KEY": "value"` or `"KEY": { "secret": true, "description": "…" }`. Up to 200 |
 | `domains` | app, image | Custom domains: `"host"` or `{ "hostname": "…", "redirectTo": "…" }`. Up to 20 |

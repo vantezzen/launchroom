@@ -21,6 +21,7 @@ import type { SettingsContext } from './settings-context';
 import { ServiceGlyph } from '@/components/service-glyph';
 import { SettingsCard, SettingsRow } from '@/components/settings/settings-card';
 import { CopyButton } from '@/components/copy-button';
+import { UpdatesCard } from '@/features/app-updates/updates-card';
 
 /** The thing the service runs, as an object: logo, name in mono, chips. */
 function SourceHero({
@@ -231,6 +232,7 @@ export function SourceSection({ context }: { context: SettingsContext }) {
                         )
                     }
                 />
+                {context.update && <UpdatesCard service={context.update} />}
                 <SettingsCard>
                     <SettingsRow
                         label="Pulled through your registry mirror"

@@ -33,7 +33,7 @@ final class ProjectShellPropsData extends Data
         public array|Optional $projectStatuses = new Optional,
         /** Loaded when the environment switcher opens (a partial reload). */
         public array|Optional $environmentStatuses = new Optional,
-        /** The open environment's status and deploy state (switcher, Deployments tab); deferred, so the page doesn't wait for it. */
-        public EnvironmentHealthData|Optional|null $environmentHealth = new Optional,
+        /** The open environment's live status (D108): seeds the store every status surface reads; deferred, so the page doesn't wait for it. */
+        public EnvironmentLiveStatusData|Optional|null $liveStatus = new Optional,
     ) {}
 }

@@ -7,7 +7,7 @@ import InputError from '@/components/input-error';
 import { Logo } from '@/components/logo';
 import { LiveWait } from '@/components/patterns/live-wait';
 import { MetaLine } from '@/components/patterns/meta-line';
-import { Page, PageHeader } from '@/components/patterns/page';
+import { Page } from '@/components/patterns/page';
 import { TopBarActions } from '@/components/patterns/top-bar';
 import { Status } from '@/components/status';
 import { Button } from '@/components/ui/button';
@@ -22,8 +22,13 @@ import {
     ServerDevice,
     serverFacts,
 } from '@/features/onboarding/server-summary';
-import { DoneRing, StepCard } from '@/components/steps/step-card';
+import { StepCard } from '@/components/steps/step-card';
 import type { GuidedStepStatus } from '@/components/steps/step-card';
+import {
+    DoneSummary,
+    OnboardingHero,
+    WhatsNext,
+} from '@/features/onboarding/checklist-progress';
 import { TwoFactorRecommendation } from '@/features/onboarding/two-factor-recommendation';
 import { SmallServerHint } from '@/features/servers/small-server-hint';
 import { cn } from '@/lib/utils';
@@ -256,7 +261,7 @@ function githubView(
         title: installOnly ? 'Install the GitHub App' : 'Connect GitHub',
         line:
             step.status === 'skipped'
-                ? 'Skipped. Connect it to deploy on every push.'
+                ? 'Connect it to deploy on every push.'
                 : installOnly
                   ? 'Step 2 of 2: install the app and pick the repositories to deploy.'
                   : 'Create the GitHub App, then install it. After that, every push deploys.',
@@ -524,9 +529,9 @@ function backupsView(data: Onboarding, step: Step): StepView {
             step.status === 'done'
                 ? 'Recovery kit saved'
                 : step.status === 'skipped'
-                  ? 'Skipped'
+                  ? 'Your data has no copy off this server yet.'
                   : 'S3-compatible storage you own, and a kit to rebuild everything.',
-        aside: step.status === 'done' ? undefined : optional,
+        aside: step.status === 'pending' ? optional : undefined,
         body: (
             <>
                 <ul className="grid gap-2 sm:grid-cols-2">
@@ -601,47 +606,44 @@ function OnboardingStep({
     );
 }
 
-const DONE_NAMES: Record<App.Enums.Instance.OnboardingStep, string> = {
-    server: 'Server',
-    github: 'GitHub',
-    domain: 'address',
-    project: 'first app',
-    backups: 'backups',
-};
-
-/** "Server, address and first app are set up": the done steps in one row. */
-function DoneSummary({ steps }: { steps: Step[] }) {
-    const names = steps
-        .filter((step) => step.status === 'done')
-        .map((step) => DONE_NAMES[step.id]);
-
-    if (names.length === 0) {
+/**
+ * The top bar's one button (D109). With steps left it only stops the
+ * redirect after sign-in; once nothing but skipped steps is left it takes
+ * Get started out of the sidebar. Complete, the entry leaves by itself.
+ */
+function DismissButton({
+    progress,
+}: {
+    progress: App.Data.Instance.OnboardingProgressData;
+}) {
+    if (progress.complete) {
         return null;
     }
 
-    const list =
-        names.length === 1
-            ? names[0]
-            : `${names.slice(0, -1).join(', ')} and ${names[names.length - 1]}`;
+    const label = progress.settled
+        ? progress.dismissed
+            ? 'Show in sidebar'
+            : 'Remove from sidebar'
+        : progress.dismissed
+          ? 'Show after sign-in'
+          : 'Hide for now';
 
     return (
-        <li className="flex items-center gap-4 rounded-xl border bg-card px-5 py-4 shadow-card">
-            <Check
-                aria-hidden="true"
-                className="size-5 shrink-0 text-status-ok"
-            />
-            <span className="type-body">
-                {list.charAt(0).toUpperCase() + list.slice(1)}{' '}
-                {names.length === 1 ? 'is' : 'are'} set up.
-            </span>
-        </li>
+        <Button
+            variant="ghost"
+            size="sm"
+            onClick={() => update({ dismissed: !progress.dismissed })}
+        >
+            {label}
+        </Button>
     );
 }
 
 /**
  * Get started (flows §1, direction §9.12): the hero with a progress ring
  * and the five steps as cards, only the current one open. Done steps are
- * one line with their result.
+ * one line with their result. The ring counts done steps only; skipped ones
+ * stay optional (D109).
  */
 export default function OnboardingPage({
     onboarding,
@@ -696,7 +698,6 @@ export default function OnboardingPage({
         backups: (step) => backupsView(onboarding, step),
     };
 
-    const remaining = progress.total - progress.done;
     const projectPending = steps.some(
         (step) => step.id === 'project' && step.status === 'pending',
     );
@@ -706,53 +707,23 @@ export default function OnboardingPage({
             <Head title="Get started" />
 
             <TopBarActions>
-                <Button
-                    variant="ghost"
-                    size="sm"
-                    onClick={() => update({ dismissed: !progress.dismissed })}
-                >
-                    {progress.dismissed
-                        ? 'Show after sign-in'
-                        : progress.complete
-                          ? 'Remove from sidebar'
-                          : 'Hide for now'}
-                </Button>
+                <DismissButton progress={progress} />
             </TopBarActions>
 
             <Page size="narrow" className="gap-8">
-                <PageHeader
-                    variant="display"
-                    title={
-                        progress.complete
-                            ? 'You’re all set.'
-                            : 'Your launchroom is up.'
-                    }
-                    description={
-                        progress.complete
-                            ? undefined
-                            : projectPending
-                              ? `${remaining} short ${remaining === 1 ? 'step' : 'steps'} until your first app is live${serverName ? ` on ${serverName}` : ''}.`
-                              : remaining === 1
-                                ? 'One more step and you’re done.'
-                                : `${remaining} steps left. Nothing here is urgent.`
-                    }
-                    actions={
-                        <DoneRing
-                            done={progress.done}
-                            total={progress.total}
-                            size={64}
-                        />
-                    }
-                    className="flex-row items-center justify-between"
+                <OnboardingHero
+                    progress={progress}
+                    projectPending={projectPending}
+                    serverName={serverName}
                 />
 
                 <ol className="flex flex-col gap-3">
-                    {progress.complete && <DoneSummary steps={steps} />}
+                    {progress.settled && <DoneSummary steps={steps} />}
                     {steps.map(
                         (step, index) =>
-                            // Complete: the done steps are one line, what was
+                            // Settled: the done steps are one line, what was
                             // skipped stays as rows with its action (PRJ-7).
-                            (!progress.complete ||
+                            (!progress.settled ||
                                 step.status === 'skipped') && (
                                 <OnboardingStep
                                     key={step.id}
@@ -765,6 +736,13 @@ export default function OnboardingPage({
                             ),
                     )}
                 </ol>
+
+                {progress.settled && (
+                    <WhatsNext
+                        next={onboarding.whatsNext}
+                        firstApp={onboarding.firstApp}
+                    />
+                )}
 
                 {onboarding.smallServerHint && (
                     <SmallServerHint hint={onboarding.smallServerHint} />

@@ -108,6 +108,7 @@ final readonly class ConfigFileValidator
 
         if (in_array('deploy', $checked, true)) {
             $this->schedule($service, $kind, $override, $problems, $errors);
+            $this->commands($service, $problems, $errors);
         }
 
         if (in_array('variables', $checked, true)) {
@@ -261,6 +262,31 @@ final readonly class ConfigFileValidator
             if ($literal !== '' && VariableType::suggestFor($key) === VariableType::Secret && ! VariableExposure::isBrowserInlined($key)) {
                 $warnings[] = $problems->at($pointer, "{$key} usually holds a secret, but here it is a plain value in the repository.", "If it is secret, set it in the dashboard and write \"{$key}\": { \"secret\": true } here.", key: true);
             }
+        }
+    }
+
+    /**
+     * Named commands (D105): `launchroom exec <name>` must find one.
+     *
+     * @param  list<ConfigFileProblemData>  $errors
+     */
+    private function commands(EffectiveService $service, Problems $problems, array &$errors): void
+    {
+        $commands = $service->group('deploy')['commands'] ?? null;
+        $seen = [];
+
+        foreach (is_array($commands) ? $commands : [] as $index => $command) {
+            $name = is_array($command) ? ($command['name'] ?? null) : null;
+
+            if (! is_string($name)) {
+                continue;
+            }
+
+            if (isset($seen[$name])) {
+                $errors[] = $problems->at($service->pointerFor('deploy', 'commands', (string) $index, 'name'), "There are two commands named \"{$name}\".", 'Each name runs one command: rename one of them.');
+            }
+
+            $seen[$name] = true;
         }
     }
 

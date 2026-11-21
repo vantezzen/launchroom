@@ -4,9 +4,12 @@ declare(strict_types=1);
 
 use App\Enums\ApiAbility;
 use App\Http\Controllers\Api\V1\AnalyticsController;
+use App\Http\Controllers\Api\V1\AppUpdateController;
 use App\Http\Controllers\Api\V1\CliSessionController;
+use App\Http\Controllers\Api\V1\CommandController;
 use App\Http\Controllers\Api\V1\ConfigController;
 use App\Http\Controllers\Api\V1\DeploymentController;
+use App\Http\Controllers\Api\V1\DeploymentFailureController;
 use App\Http\Controllers\Api\V1\DomainController;
 use App\Http\Controllers\Api\V1\DownloadController;
 use App\Http\Controllers\Api\V1\EnvironmentController;
@@ -15,12 +18,15 @@ use App\Http\Controllers\Api\V1\ImportController;
 use App\Http\Controllers\Api\V1\LogController;
 use App\Http\Controllers\Api\V1\MeController;
 use App\Http\Controllers\Api\V1\OpenApiController;
+use App\Http\Controllers\Api\V1\PreviewController;
 use App\Http\Controllers\Api\V1\ProjectController;
 use App\Http\Controllers\Api\V1\SecurityController;
 use App\Http\Controllers\Api\V1\ServerController;
 use App\Http\Controllers\Api\V1\ServiceActionController;
+use App\Http\Controllers\Api\V1\TraceController;
 use App\Http\Controllers\Api\V1\TransferController;
 use App\Http\Controllers\Api\V1\VariableController;
+use App\Http\Middleware\EnforceTokenScope;
 use App\Http\Middleware\IdempotentRequest;
 use App\Http\Middleware\RequireTokenAbility;
 use App\Support\Transfers\DownloadToken;
@@ -49,7 +55,8 @@ Route::middleware(SubstituteBindings::class)->group(function () use ($ability): 
         ->middleware('throttle:api-cli-poll')
         ->name('api.cli.sessions.token');
 
-    Route::middleware(['auth:sanctum', 'throttle:api'])
+    // EnforceTokenScope runs after the bindings: scoped tokens stay in their project or service (docs/16 §1.4).
+    Route::middleware(['auth:sanctum', 'throttle:api', EnforceTokenScope::class])
         ->name('api.')
         ->group(function () use ($ability): void {
             Route::get('me', MeController::class)->name('me');
@@ -63,6 +70,7 @@ Route::middleware(SubstituteBindings::class)->group(function () use ($ability): 
                 Route::get('environments/{environment}/services/{service}', [EnvironmentController::class, 'service'])->name('services.show');
                 Route::get('environments/{environment}/deployments', [DeploymentController::class, 'index'])->name('deployments.index');
                 Route::get('deployments/{deployment}', [DeploymentController::class, 'show'])->name('deployments.show');
+                Route::get('deployments/{deployment}/failure', [DeploymentFailureController::class, 'show'])->name('deployments.failure');
                 Route::get('deployments/{deployment}/logs', [LogController::class, 'deployment'])->name('deployments.logs');
                 Route::get('deployments/{deployment}/logs/stream', [LogController::class, 'deploymentStream'])->name('deployments.logs.stream');
                 Route::get('environments/{environment}/logs', [LogController::class, 'environment'])->name('environments.logs');
@@ -84,14 +92,26 @@ Route::middleware(SubstituteBindings::class)->group(function () use ($ability): 
                 Route::get('environments/{environment}/config/status', [ConfigController::class, 'status'])->name('config.status');
                 Route::post('environments/{environment}/config/validate', [ConfigController::class, 'check'])->middleware('throttle:api-write')->name('config.validate');
                 Route::post('environments/{environment}/config/diff', [ConfigController::class, 'diff'])->middleware('throttle:api-write')->name('config.diff');
+                // Previews (docs/06 §7) and rays (docs/23 §6), D111.
+                Route::get('projects/{project}/previews', [PreviewController::class, 'index'])->name('previews.index');
+                Route::post('traces/decode', [TraceController::class, 'decode'])->middleware('throttle:api-write')->name('traces.decode');
+                // App updates of image services (D106).
+                Route::get('app-updates', [AppUpdateController::class, 'index'])->name('app-updates.index');
             });
 
-            Route::middleware([$ability(ApiAbility::Deploy), 'throttle:api-write', IdempotentRequest::class])->group(function (): void {
+            Route::middleware([$ability(ApiAbility::Deploy), 'throttle:api-write', IdempotentRequest::class])->group(function () use ($ability): void {
                 Route::post('environments/{environment}/deployments', [DeploymentController::class, 'store'])->name('deployments.store');
                 Route::post('environments/{environment}/deploy', [DeploymentController::class, 'deployEnvironment'])->name('environments.deploy');
                 Route::post('deployments/{deployment}/redeploy', [DeploymentController::class, 'redeploy'])->name('deployments.redeploy');
                 Route::post('deployments/{deployment}/rollback', [DeploymentController::class, 'rollback'])->name('deployments.rollback');
                 Route::post('deployments/{deployment}/cancel', [DeploymentController::class, 'cancel'])->name('deployments.cancel');
+                // Deploy now on a push waiting for its commit's checks (D111).
+                Route::post('deployments/{deployment}/skip-checks', [DeploymentController::class, 'skipChecks'])->name('deployments.skip-checks');
+                Route::post('environments/{environment}/auto-deploy/resume', [EnvironmentController::class, 'resumeAutoDeploy'])->name('environments.auto-deploy.resume');
+                // A failed deployment's suggested fix (D111): `deploy` and `fix`, since it changes a setting.
+                Route::post('deployments/{deployment}/fixes/{code}', [DeploymentFailureController::class, 'fix'])->middleware($ability(ApiAbility::Fix))->name('deployments.fixes.apply');
+                // An app update changes the image and deploys (D106): `update` next to `deploy`.
+                Route::post('environments/{environment}/services/{service}/update', [AppUpdateController::class, 'apply'])->middleware($ability(ApiAbility::Update))->name('app-updates.apply');
                 // Service lifecycle (D68): the service panel header's actions.
                 Route::post('environments/{environment}/services/{service}/deploy', [ServiceActionController::class, 'deploy'])->name('services.deploy');
                 Route::post('environments/{environment}/services/{service}/restart', [ServiceActionController::class, 'restart'])->name('services.restart');
@@ -127,6 +147,20 @@ Route::middleware(SubstituteBindings::class)->group(function () use ($ability): 
                     Route::post('environments/{environment}/services/{service}/imports', [ImportController::class, 'store'])->name('imports.store');
                     Route::post('environments/{environment}/services/{service}/exports', [ExportController::class, 'store'])->name('exports.store');
                     Route::post('exports/{export}/link', [ExportController::class, 'link'])->name('exports.link');
+                });
+            });
+
+            // One-off commands (D105): the opt-in `run` ability.
+            Route::middleware([$ability(ApiAbility::Run)])->group(function (): void {
+                Route::get('environments/{environment}/services/{service}/commands', [CommandController::class, 'catalogue'])->name('commands.index');
+                Route::get('environments/{environment}/services/{service}/command-runs', [CommandController::class, 'index'])->name('command-runs.index');
+                Route::get('command-runs/{commandRun}', [CommandController::class, 'show'])->name('command-runs.show');
+                Route::get('command-runs/{commandRun}/output', [CommandController::class, 'output'])->name('command-runs.output');
+                Route::get('command-runs/{commandRun}/output/stream', [CommandController::class, 'stream'])->name('command-runs.output.stream');
+
+                Route::middleware(['throttle:api-write', IdempotentRequest::class])->group(function (): void {
+                    Route::post('environments/{environment}/services/{service}/command-runs', [CommandController::class, 'store'])->name('command-runs.store');
+                    Route::post('command-runs/{commandRun}/cancel', [CommandController::class, 'cancel'])->name('command-runs.cancel');
                 });
             });
 

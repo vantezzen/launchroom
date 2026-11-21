@@ -19,7 +19,8 @@ final class ServiceTransfersData extends Data
      * @param  list<DependentServiceData>  $dependents
      * @param  list<ImportRunData>  $imports
      * @param  list<ExportRunData>  $exports
-     * @param  array{self: string, transfers: string, inspect: string, imports: string, exports: string, prepare: string}  $urls
+     * @param  array{self: string, transfers: string, inspect: string, imports: string, exports: string, prepare: string, copyOptions: string}  $urls
+     * @param  list<CopyRunData>  $copies
      */
     public function __construct(
         public string $serviceInstanceId,
@@ -48,5 +49,9 @@ final class ServiceTransfersData extends Data
         public ?DatabasePreparationData $preparation = null,
         /** How a database takes an import; null for volumes and engines without imports. */
         public ?ImportFormatData $importFormat = null,
+        /** Copies from other environments into this service (docs/14 §14), newest first. */
+        public array $copies = [],
+        /** Whether the user may copy into it from some environment (sources are checked in the sheet). */
+        public bool $canCopy = false,
     ) {}
 }

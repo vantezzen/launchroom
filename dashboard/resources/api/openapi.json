@@ -22,7 +22,13 @@
             "name": "Analytics"
         },
         {
+            "name": "App updates"
+        },
+        {
             "name": "CLI sign-in"
+        },
+        {
+            "name": "Commands"
         },
         {
             "name": "Deployments"
@@ -61,7 +67,13 @@
             "name": "Projects"
         },
         {
+            "name": "Previews"
+        },
+        {
             "name": "Servers"
+        },
+        {
+            "name": "Traces"
         }
     ],
     "paths": {
@@ -74,6 +86,7 @@
                     "Analytics"
                 ],
                 "x-launchroom-ability": "read",
+                "x-launchroom-scope": "team",
                 "security": [
                     {
                         "token": []
@@ -102,6 +115,79 @@
                                     "properties": {
                                         "data": {
                                             "$ref": "#/components/schemas/TeamAnalyticsData"
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    },
+                    "401": {
+                        "$ref": "#/components/responses/Unauthenticated"
+                    },
+                    "403": {
+                        "$ref": "#/components/responses/Forbidden"
+                    },
+                    "404": {
+                        "$ref": "#/components/responses/NotFound"
+                    },
+                    "422": {
+                        "$ref": "#/components/responses/Invalid"
+                    },
+                    "429": {
+                        "$ref": "#/components/responses/RateLimited"
+                    }
+                }
+            }
+        },
+        "/app-updates": {
+            "get": {
+                "operationId": "listAppUpdates",
+                "summary": "Image services with a newer release or an update in flight",
+                "description": "Updates in flight first, then majors and versions more than a year old. `project` narrows to one project. A scoped token sees its own project or service only. Services built from a repository never appear: they update with a deploy.\n\nRequires the `read` ability.",
+                "tags": [
+                    "App updates"
+                ],
+                "x-launchroom-ability": "read",
+                "x-launchroom-scope": "service",
+                "security": [
+                    {
+                        "token": []
+                    }
+                ],
+                "parameters": [
+                    {
+                        "name": "project",
+                        "in": "query",
+                        "description": "A project id (`prj_…`) of the token's team.",
+                        "schema": {
+                            "type": [
+                                "string",
+                                "null"
+                            ],
+                            "maxLength": 64
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "required": [
+                                        "data",
+                                        "meta"
+                                    ],
+                                    "properties": {
+                                        "data": {
+                                            "type": "array",
+                                            "items": {
+                                                "$ref": "#/components/schemas/AppUpdateResource"
+                                            }
+                                        },
+                                        "meta": {
+                                            "$ref": "#/components/schemas/ListMeta"
                                         }
                                     }
                                 }
@@ -220,6 +306,299 @@
                 }
             }
         },
+        "/command-runs/{commandRun}": {
+            "get": {
+                "operationId": "getCommandRun",
+                "summary": "A command run and its outcome",
+                "description": "Requires the `run` ability.",
+                "tags": [
+                    "Commands"
+                ],
+                "x-launchroom-ability": "run",
+                "x-launchroom-scope": "service",
+                "security": [
+                    {
+                        "token": []
+                    }
+                ],
+                "parameters": [
+                    {
+                        "name": "commandRun",
+                        "in": "path",
+                        "required": true,
+                        "schema": {
+                            "type": "string",
+                            "pattern": "^run_[0-7][0-9A-HJKMNP-TV-Z]{25}$"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "required": [
+                                        "data"
+                                    ],
+                                    "properties": {
+                                        "data": {
+                                            "$ref": "#/components/schemas/CommandRunData"
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    },
+                    "401": {
+                        "$ref": "#/components/responses/Unauthenticated"
+                    },
+                    "403": {
+                        "$ref": "#/components/responses/Forbidden"
+                    },
+                    "404": {
+                        "$ref": "#/components/responses/NotFound"
+                    },
+                    "422": {
+                        "$ref": "#/components/responses/Invalid"
+                    },
+                    "429": {
+                        "$ref": "#/components/responses/RateLimited"
+                    }
+                }
+            }
+        },
+        "/command-runs/{commandRun}/cancel": {
+            "post": {
+                "operationId": "cancelCommandRun",
+                "summary": "Cancel a queued or running command",
+                "description": "The container gets SIGTERM and 10 seconds. The run reads `cancelled` once the server confirms; an ended run is returned as it is.\n\nRequires the `run` ability.",
+                "tags": [
+                    "Commands"
+                ],
+                "x-launchroom-ability": "run",
+                "x-launchroom-scope": "service",
+                "security": [
+                    {
+                        "token": []
+                    }
+                ],
+                "parameters": [
+                    {
+                        "name": "commandRun",
+                        "in": "path",
+                        "required": true,
+                        "schema": {
+                            "type": "string",
+                            "pattern": "^run_[0-7][0-9A-HJKMNP-TV-Z]{25}$"
+                        }
+                    },
+                    {
+                        "name": "Idempotency-Key",
+                        "in": "header",
+                        "required": false,
+                        "description": "Replays return the first response (24 h); the same key for another request is refused.",
+                        "schema": {
+                            "type": "string",
+                            "pattern": "^[A-Za-z0-9_.:-]{1,255}$"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "required": [
+                                        "data"
+                                    ],
+                                    "properties": {
+                                        "data": {
+                                            "$ref": "#/components/schemas/CommandRunData"
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    },
+                    "401": {
+                        "$ref": "#/components/responses/Unauthenticated"
+                    },
+                    "403": {
+                        "$ref": "#/components/responses/Forbidden"
+                    },
+                    "404": {
+                        "$ref": "#/components/responses/NotFound"
+                    },
+                    "422": {
+                        "$ref": "#/components/responses/Invalid"
+                    },
+                    "429": {
+                        "$ref": "#/components/responses/RateLimited"
+                    }
+                }
+            }
+        },
+        "/command-runs/{commandRun}/output": {
+            "get": {
+                "operationId": "listCommandRunOutput",
+                "summary": "Output lines of a command run after a cursor",
+                "description": "`meta.cursor` is the cursor for the next page, `meta.hasMore` whether more lines are stored, `meta.finished` whether the run ended.\n\nRequires the `run` ability.",
+                "tags": [
+                    "Commands"
+                ],
+                "x-launchroom-ability": "run",
+                "x-launchroom-scope": "service",
+                "security": [
+                    {
+                        "token": []
+                    }
+                ],
+                "parameters": [
+                    {
+                        "name": "commandRun",
+                        "in": "path",
+                        "required": true,
+                        "schema": {
+                            "type": "string",
+                            "pattern": "^run_[0-7][0-9A-HJKMNP-TV-Z]{25}$"
+                        }
+                    },
+                    {
+                        "name": "after",
+                        "in": "query",
+                        "schema": {
+                            "type": "integer",
+                            "minimum": 0,
+                            "default": 0
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "required": [
+                                        "data",
+                                        "meta"
+                                    ],
+                                    "properties": {
+                                        "data": {
+                                            "type": "array",
+                                            "items": {
+                                                "$ref": "#/components/schemas/CommandOutputLineData"
+                                            }
+                                        },
+                                        "meta": {
+                                            "$ref": "#/components/schemas/ListMeta"
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    },
+                    "401": {
+                        "$ref": "#/components/responses/Unauthenticated"
+                    },
+                    "403": {
+                        "$ref": "#/components/responses/Forbidden"
+                    },
+                    "404": {
+                        "$ref": "#/components/responses/NotFound"
+                    },
+                    "422": {
+                        "$ref": "#/components/responses/Invalid"
+                    },
+                    "429": {
+                        "$ref": "#/components/responses/RateLimited"
+                    }
+                }
+            }
+        },
+        "/command-runs/{commandRun}/output/stream": {
+            "get": {
+                "operationId": "streamCommandRunOutput",
+                "summary": "Follow a command run's output (server-sent events)",
+                "description": "Events: `lines` (the event id is the cursor), `status`, `end` (with the exit code), `reconnect`. Resume with `Last-Event-ID`.\n\nRequires the `run` ability.",
+                "tags": [
+                    "Commands"
+                ],
+                "x-launchroom-ability": "run",
+                "x-launchroom-scope": "service",
+                "security": [
+                    {
+                        "token": []
+                    }
+                ],
+                "parameters": [
+                    {
+                        "name": "commandRun",
+                        "in": "path",
+                        "required": true,
+                        "schema": {
+                            "type": "string",
+                            "pattern": "^run_[0-7][0-9A-HJKMNP-TV-Z]{25}$"
+                        }
+                    },
+                    {
+                        "name": "after",
+                        "in": "query",
+                        "schema": {
+                            "type": "integer",
+                            "minimum": 0,
+                            "default": 0
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Server-sent events.",
+                        "content": {
+                            "text/event-stream": {
+                                "schema": {
+                                    "type": "string"
+                                }
+                            }
+                        },
+                        "x-launchroom-events": {
+                            "lines": {
+                                "$ref": "#/components/schemas/CommandLinesEvent"
+                            },
+                            "status": {
+                                "$ref": "#/components/schemas/CommandStatusEvent"
+                            },
+                            "end": {
+                                "$ref": "#/components/schemas/CommandEndEvent"
+                            },
+                            "reconnect": {
+                                "$ref": "#/components/schemas/StreamReconnectEvent"
+                            }
+                        }
+                    },
+                    "401": {
+                        "$ref": "#/components/responses/Unauthenticated"
+                    },
+                    "403": {
+                        "$ref": "#/components/responses/Forbidden"
+                    },
+                    "404": {
+                        "$ref": "#/components/responses/NotFound"
+                    },
+                    "422": {
+                        "$ref": "#/components/responses/Invalid"
+                    },
+                    "429": {
+                        "$ref": "#/components/responses/RateLimited"
+                    }
+                }
+            }
+        },
         "/deployments/{deployment}": {
             "get": {
                 "operationId": "getDeployment",
@@ -229,6 +608,7 @@
                     "Deployments"
                 ],
                 "x-launchroom-ability": "read",
+                "x-launchroom-scope": "service",
                 "security": [
                     {
                         "token": []
@@ -291,6 +671,7 @@
                     "Deployments"
                 ],
                 "x-launchroom-ability": "deploy",
+                "x-launchroom-scope": "service",
                 "security": [
                     {
                         "token": []
@@ -354,6 +735,175 @@
                 }
             }
         },
+        "/deployments/{deployment}/failure": {
+            "get": {
+                "operationId": "getDeploymentFailure",
+                "summary": "Why a deployment failed, and how to fix it",
+                "description": "The explanation the dashboard shows: the known failure in plain words, the build's hint codes, the failing step with its last lines (secrets masked) and the fixes. `rule_violation` when the deployment did not fail.\n\nRequires the `read` ability.",
+                "tags": [
+                    "Deployments"
+                ],
+                "x-launchroom-ability": "read",
+                "x-launchroom-scope": "service",
+                "security": [
+                    {
+                        "token": []
+                    }
+                ],
+                "parameters": [
+                    {
+                        "name": "deployment",
+                        "in": "path",
+                        "required": true,
+                        "schema": {
+                            "type": "string",
+                            "pattern": "^dpl_[0-7][0-9A-HJKMNP-TV-Z]{25}$"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "required": [
+                                        "data"
+                                    ],
+                                    "properties": {
+                                        "data": {
+                                            "$ref": "#/components/schemas/ApiFailureReportData"
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    },
+                    "401": {
+                        "$ref": "#/components/responses/Unauthenticated"
+                    },
+                    "403": {
+                        "$ref": "#/components/responses/Forbidden"
+                    },
+                    "404": {
+                        "$ref": "#/components/responses/NotFound"
+                    },
+                    "422": {
+                        "$ref": "#/components/responses/Invalid"
+                    },
+                    "429": {
+                        "$ref": "#/components/responses/RateLimited"
+                    }
+                }
+            }
+        },
+        "/deployments/{deployment}/fixes/{code}": {
+            "post": {
+                "operationId": "applyDeploymentFix",
+                "summary": "Apply the fix suggested for a failed deployment",
+                "description": "Only the one-click fix listed in `getDeploymentFailure` (`fixes[].oneClick`). It stages the setting and deploys it when nothing else is staged; with other staged changes it only stages (`outcome: staged`). `free_disk` frees space on the server and deploys nothing. Needs the `deploy` ability too, and the role to change the service's settings.\n\nRequires the `deploy` and `fix` abilities.",
+                "tags": [
+                    "Deployments"
+                ],
+                "x-launchroom-ability": "fix",
+                "x-launchroom-scope": "service",
+                "x-launchroom-abilities": [
+                    "deploy",
+                    "fix"
+                ],
+                "security": [
+                    {
+                        "token": []
+                    }
+                ],
+                "parameters": [
+                    {
+                        "name": "deployment",
+                        "in": "path",
+                        "required": true,
+                        "schema": {
+                            "type": "string",
+                            "pattern": "^dpl_[0-7][0-9A-HJKMNP-TV-Z]{25}$"
+                        }
+                    },
+                    {
+                        "name": "code",
+                        "in": "path",
+                        "required": true,
+                        "schema": {
+                            "type": "string",
+                            "enum": [
+                                "set_port",
+                                "raise_health_timeout",
+                                "add_variable",
+                                "generate_dockerfile",
+                                "use_tcp_healthcheck",
+                                "accept_4xx",
+                                "add_capabilities",
+                                "fix_volume_owner",
+                                "free_disk"
+                            ]
+                        }
+                    },
+                    {
+                        "name": "Idempotency-Key",
+                        "in": "header",
+                        "required": false,
+                        "description": "Replays return the first response (24 h); the same key for another request is refused.",
+                        "schema": {
+                            "type": "string",
+                            "pattern": "^[A-Za-z0-9_.:-]{1,255}$"
+                        }
+                    }
+                ],
+                "requestBody": {
+                    "required": true,
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "$ref": "#/components/schemas/ApplyFailureFixInput"
+                            }
+                        }
+                    }
+                },
+                "responses": {
+                    "202": {
+                        "description": "OK",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "required": [
+                                        "data"
+                                    ],
+                                    "properties": {
+                                        "data": {
+                                            "$ref": "#/components/schemas/ApiFailureFixResultData"
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    },
+                    "401": {
+                        "$ref": "#/components/responses/Unauthenticated"
+                    },
+                    "403": {
+                        "$ref": "#/components/responses/Forbidden"
+                    },
+                    "404": {
+                        "$ref": "#/components/responses/NotFound"
+                    },
+                    "422": {
+                        "$ref": "#/components/responses/Invalid"
+                    },
+                    "429": {
+                        "$ref": "#/components/responses/RateLimited"
+                    }
+                }
+            }
+        },
         "/deployments/{deployment}/logs": {
             "get": {
                 "operationId": "listDeploymentLogs",
@@ -363,6 +913,7 @@
                     "Logs"
                 ],
                 "x-launchroom-ability": "read",
+                "x-launchroom-scope": "service",
                 "security": [
                     {
                         "token": []
@@ -441,6 +992,7 @@
                     "Logs"
                 ],
                 "x-launchroom-ability": "read",
+                "x-launchroom-scope": "service",
                 "security": [
                     {
                         "token": []
@@ -518,6 +1070,7 @@
                     "Deployments"
                 ],
                 "x-launchroom-ability": "deploy",
+                "x-launchroom-scope": "service",
                 "security": [
                     {
                         "token": []
@@ -590,6 +1143,7 @@
                     "Deployments"
                 ],
                 "x-launchroom-ability": "deploy",
+                "x-launchroom-scope": "service",
                 "security": [
                     {
                         "token": []
@@ -653,6 +1207,79 @@
                 }
             }
         },
+        "/deployments/{deployment}/skip-checks": {
+            "post": {
+                "operationId": "skipDeploymentChecks",
+                "summary": "Deploy a push now without waiting for its checks",
+                "description": "Only while `checks.state` is `waiting` (deploy after checks pass). Audited.\n\nRequires the `deploy` ability.",
+                "tags": [
+                    "Deployments"
+                ],
+                "x-launchroom-ability": "deploy",
+                "x-launchroom-scope": "service",
+                "security": [
+                    {
+                        "token": []
+                    }
+                ],
+                "parameters": [
+                    {
+                        "name": "deployment",
+                        "in": "path",
+                        "required": true,
+                        "schema": {
+                            "type": "string",
+                            "pattern": "^dpl_[0-7][0-9A-HJKMNP-TV-Z]{25}$"
+                        }
+                    },
+                    {
+                        "name": "Idempotency-Key",
+                        "in": "header",
+                        "required": false,
+                        "description": "Replays return the first response (24 h); the same key for another request is refused.",
+                        "schema": {
+                            "type": "string",
+                            "pattern": "^[A-Za-z0-9_.:-]{1,255}$"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "required": [
+                                        "data"
+                                    ],
+                                    "properties": {
+                                        "data": {
+                                            "$ref": "#/components/schemas/DeploymentResource"
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    },
+                    "401": {
+                        "$ref": "#/components/responses/Unauthenticated"
+                    },
+                    "403": {
+                        "$ref": "#/components/responses/Forbidden"
+                    },
+                    "404": {
+                        "$ref": "#/components/responses/NotFound"
+                    },
+                    "422": {
+                        "$ref": "#/components/responses/Invalid"
+                    },
+                    "429": {
+                        "$ref": "#/components/responses/RateLimited"
+                    }
+                }
+            }
+        },
         "/downloads/{token}": {
             "get": {
                 "operationId": "download",
@@ -662,6 +1289,7 @@
                     "Data"
                 ],
                 "x-launchroom-ability": "data:transfer",
+                "x-launchroom-scope": "own",
                 "security": [
                     {
                         "token": []
@@ -709,6 +1337,7 @@
                     "Environments"
                 ],
                 "x-launchroom-ability": "read",
+                "x-launchroom-scope": "service",
                 "security": [
                     {
                         "token": []
@@ -771,6 +1400,7 @@
                     "Analytics"
                 ],
                 "x-launchroom-ability": "read",
+                "x-launchroom-scope": "project",
                 "security": [
                     {
                         "token": []
@@ -832,6 +1462,79 @@
                 }
             }
         },
+        "/environments/{environment}/auto-deploy/resume": {
+            "post": {
+                "operationId": "resumeAutoDeploy",
+                "summary": "Resume auto-deploy after a rollback",
+                "description": "A production rollback pauses auto-deploy (docs/04 §8): new pushes don't go live until it is resumed. Nothing is deployed right away.\n\nRequires the `deploy` ability.",
+                "tags": [
+                    "Environments"
+                ],
+                "x-launchroom-ability": "deploy",
+                "x-launchroom-scope": "project",
+                "security": [
+                    {
+                        "token": []
+                    }
+                ],
+                "parameters": [
+                    {
+                        "name": "environment",
+                        "in": "path",
+                        "required": true,
+                        "schema": {
+                            "type": "string",
+                            "pattern": "^env_[0-7][0-9A-HJKMNP-TV-Z]{25}$"
+                        }
+                    },
+                    {
+                        "name": "Idempotency-Key",
+                        "in": "header",
+                        "required": false,
+                        "description": "Replays return the first response (24 h); the same key for another request is refused.",
+                        "schema": {
+                            "type": "string",
+                            "pattern": "^[A-Za-z0-9_.:-]{1,255}$"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "required": [
+                                        "data"
+                                    ],
+                                    "properties": {
+                                        "data": {
+                                            "$ref": "#/components/schemas/EnvironmentResource"
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    },
+                    "401": {
+                        "$ref": "#/components/responses/Unauthenticated"
+                    },
+                    "403": {
+                        "$ref": "#/components/responses/Forbidden"
+                    },
+                    "404": {
+                        "$ref": "#/components/responses/NotFound"
+                    },
+                    "422": {
+                        "$ref": "#/components/responses/Invalid"
+                    },
+                    "429": {
+                        "$ref": "#/components/responses/RateLimited"
+                    }
+                }
+            }
+        },
         "/environments/{environment}/config": {
             "get": {
                 "operationId": "exportConfig",
@@ -841,6 +1544,7 @@
                     "Config"
                 ],
                 "x-launchroom-ability": "env:read",
+                "x-launchroom-scope": "project",
                 "security": [
                     {
                         "token": []
@@ -915,6 +1619,7 @@
                     "Config"
                 ],
                 "x-launchroom-ability": "read",
+                "x-launchroom-scope": "project",
                 "security": [
                     {
                         "token": []
@@ -987,6 +1692,7 @@
                     "Config"
                 ],
                 "x-launchroom-ability": "read",
+                "x-launchroom-scope": "project",
                 "security": [
                     {
                         "token": []
@@ -1049,6 +1755,7 @@
                     "Config"
                 ],
                 "x-launchroom-ability": "read",
+                "x-launchroom-scope": "project",
                 "security": [
                     {
                         "token": []
@@ -1121,6 +1828,7 @@
                     "Deployments"
                 ],
                 "x-launchroom-ability": "deploy",
+                "x-launchroom-scope": "project",
                 "security": [
                     {
                         "token": []
@@ -1203,6 +1911,7 @@
                     "Deployments"
                 ],
                 "x-launchroom-ability": "read",
+                "x-launchroom-scope": "service",
                 "security": [
                     {
                         "token": []
@@ -1303,6 +2012,7 @@
                     "Deployments"
                 ],
                 "x-launchroom-ability": "deploy",
+                "x-launchroom-scope": "service",
                 "security": [
                     {
                         "token": []
@@ -1385,6 +2095,7 @@
                     "Domains"
                 ],
                 "x-launchroom-ability": "domains:write",
+                "x-launchroom-scope": "service",
                 "security": [
                     {
                         "token": []
@@ -1451,6 +2162,7 @@
                     "Logs"
                 ],
                 "x-launchroom-ability": "read",
+                "x-launchroom-scope": "service",
                 "security": [
                     {
                         "token": []
@@ -1594,6 +2306,7 @@
                     "Logs"
                 ],
                 "x-launchroom-ability": "read",
+                "x-launchroom-scope": "service",
                 "security": [
                     {
                         "token": []
@@ -1730,6 +2443,7 @@
                     "Services"
                 ],
                 "x-launchroom-ability": "read",
+                "x-launchroom-scope": "service",
                 "security": [
                     {
                         "token": []
@@ -1799,6 +2513,7 @@
                     "Services"
                 ],
                 "x-launchroom-ability": "read",
+                "x-launchroom-scope": "service",
                 "security": [
                     {
                         "token": []
@@ -1870,6 +2585,7 @@
                     "Analytics"
                 ],
                 "x-launchroom-ability": "read",
+                "x-launchroom-scope": "service",
                 "security": [
                     {
                         "token": []
@@ -1940,6 +2656,269 @@
                 }
             }
         },
+        "/environments/{environment}/services/{service}/command-runs": {
+            "get": {
+                "operationId": "listCommandRuns",
+                "summary": "Command runs of a service, newest first",
+                "description": "Requires the `run` ability.",
+                "tags": [
+                    "Commands"
+                ],
+                "x-launchroom-ability": "run",
+                "x-launchroom-scope": "service",
+                "security": [
+                    {
+                        "token": []
+                    }
+                ],
+                "parameters": [
+                    {
+                        "name": "environment",
+                        "in": "path",
+                        "required": true,
+                        "schema": {
+                            "type": "string",
+                            "pattern": "^env_[0-7][0-9A-HJKMNP-TV-Z]{25}$"
+                        }
+                    },
+                    {
+                        "name": "service",
+                        "in": "path",
+                        "required": true,
+                        "schema": {
+                            "type": "string",
+                            "pattern": "^svc_[0-7][0-9A-HJKMNP-TV-Z]{25}$"
+                        }
+                    },
+                    {
+                        "name": "limit",
+                        "in": "query",
+                        "schema": {
+                            "type": "integer",
+                            "minimum": 1,
+                            "maximum": 100,
+                            "default": 20
+                        }
+                    },
+                    {
+                        "name": "cursor",
+                        "in": "query",
+                        "schema": {
+                            "type": [
+                                "string",
+                                "null"
+                            ],
+                            "maxLength": 200,
+                            "pattern": "^[A-Za-z0-9_-]+$"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "required": [
+                                        "data",
+                                        "meta"
+                                    ],
+                                    "properties": {
+                                        "data": {
+                                            "type": "array",
+                                            "items": {
+                                                "$ref": "#/components/schemas/CommandRunData"
+                                            }
+                                        },
+                                        "meta": {
+                                            "$ref": "#/components/schemas/ListMeta"
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    },
+                    "401": {
+                        "$ref": "#/components/responses/Unauthenticated"
+                    },
+                    "403": {
+                        "$ref": "#/components/responses/Forbidden"
+                    },
+                    "404": {
+                        "$ref": "#/components/responses/NotFound"
+                    },
+                    "422": {
+                        "$ref": "#/components/responses/Invalid"
+                    },
+                    "429": {
+                        "$ref": "#/components/responses/RateLimited"
+                    }
+                }
+            },
+            "post": {
+                "operationId": "createCommandRun",
+                "summary": "Run a one-off command in the live version of a service",
+                "description": "A new container from the live deployment's image, with the service's variables, network and volumes. `argv` runs without a shell; `name` runs a listed command. Follow it with GET /command-runs/{run}/output/stream.\n\nRequires the `run` ability.",
+                "tags": [
+                    "Commands"
+                ],
+                "x-launchroom-ability": "run",
+                "x-launchroom-scope": "service",
+                "security": [
+                    {
+                        "token": []
+                    }
+                ],
+                "parameters": [
+                    {
+                        "name": "environment",
+                        "in": "path",
+                        "required": true,
+                        "schema": {
+                            "type": "string",
+                            "pattern": "^env_[0-7][0-9A-HJKMNP-TV-Z]{25}$"
+                        }
+                    },
+                    {
+                        "name": "service",
+                        "in": "path",
+                        "required": true,
+                        "schema": {
+                            "type": "string",
+                            "pattern": "^svc_[0-7][0-9A-HJKMNP-TV-Z]{25}$"
+                        }
+                    },
+                    {
+                        "name": "Idempotency-Key",
+                        "in": "header",
+                        "required": false,
+                        "description": "Replays return the first response (24 h); the same key for another request is refused.",
+                        "schema": {
+                            "type": "string",
+                            "pattern": "^[A-Za-z0-9_.:-]{1,255}$"
+                        }
+                    }
+                ],
+                "requestBody": {
+                    "required": true,
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "$ref": "#/components/schemas/StartCommandRunInput"
+                            }
+                        }
+                    }
+                },
+                "responses": {
+                    "201": {
+                        "description": "OK",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "required": [
+                                        "data"
+                                    ],
+                                    "properties": {
+                                        "data": {
+                                            "$ref": "#/components/schemas/CommandRunData"
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    },
+                    "401": {
+                        "$ref": "#/components/responses/Unauthenticated"
+                    },
+                    "403": {
+                        "$ref": "#/components/responses/Forbidden"
+                    },
+                    "404": {
+                        "$ref": "#/components/responses/NotFound"
+                    },
+                    "422": {
+                        "$ref": "#/components/responses/Invalid"
+                    },
+                    "429": {
+                        "$ref": "#/components/responses/RateLimited"
+                    }
+                }
+            }
+        },
+        "/environments/{environment}/services/{service}/commands": {
+            "get": {
+                "operationId": "listCommands",
+                "summary": "The commands a service lists",
+                "description": "The framework's standard commands from the live build, then the ones launchroom.json names (`deploy.commands`). Run one with `POST …/command-runs {\"name\": \"migrate\"}`.\n\nRequires the `run` ability.",
+                "tags": [
+                    "Commands"
+                ],
+                "x-launchroom-ability": "run",
+                "x-launchroom-scope": "service",
+                "security": [
+                    {
+                        "token": []
+                    }
+                ],
+                "parameters": [
+                    {
+                        "name": "environment",
+                        "in": "path",
+                        "required": true,
+                        "schema": {
+                            "type": "string",
+                            "pattern": "^env_[0-7][0-9A-HJKMNP-TV-Z]{25}$"
+                        }
+                    },
+                    {
+                        "name": "service",
+                        "in": "path",
+                        "required": true,
+                        "schema": {
+                            "type": "string",
+                            "pattern": "^svc_[0-7][0-9A-HJKMNP-TV-Z]{25}$"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "required": [
+                                        "data"
+                                    ],
+                                    "properties": {
+                                        "data": {
+                                            "$ref": "#/components/schemas/CommandCatalogueData"
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    },
+                    "401": {
+                        "$ref": "#/components/responses/Unauthenticated"
+                    },
+                    "403": {
+                        "$ref": "#/components/responses/Forbidden"
+                    },
+                    "404": {
+                        "$ref": "#/components/responses/NotFound"
+                    },
+                    "422": {
+                        "$ref": "#/components/responses/Invalid"
+                    },
+                    "429": {
+                        "$ref": "#/components/responses/RateLimited"
+                    }
+                }
+            }
+        },
         "/environments/{environment}/services/{service}/deploy": {
             "post": {
                 "operationId": "deployService",
@@ -1949,6 +2928,7 @@
                     "Services"
                 ],
                 "x-launchroom-ability": "deploy",
+                "x-launchroom-scope": "service",
                 "security": [
                     {
                         "token": []
@@ -2030,6 +3010,7 @@
                     "Domains"
                 ],
                 "x-launchroom-ability": "read",
+                "x-launchroom-scope": "service",
                 "security": [
                     {
                         "token": []
@@ -2106,6 +3087,7 @@
                     "Domains"
                 ],
                 "x-launchroom-ability": "domains:write",
+                "x-launchroom-scope": "service",
                 "security": [
                     {
                         "token": []
@@ -2197,6 +3179,7 @@
                     "Variables"
                 ],
                 "x-launchroom-ability": "env:read",
+                "x-launchroom-scope": "service",
                 "security": [
                     {
                         "token": []
@@ -2276,6 +3259,7 @@
                     "Data"
                 ],
                 "x-launchroom-ability": "data:transfer",
+                "x-launchroom-scope": "service",
                 "security": [
                     {
                         "token": []
@@ -2367,6 +3351,7 @@
                     "Data"
                 ],
                 "x-launchroom-ability": "data:transfer",
+                "x-launchroom-scope": "service",
                 "security": [
                     {
                         "token": []
@@ -2458,6 +3443,7 @@
                     "Security"
                 ],
                 "x-launchroom-ability": "read",
+                "x-launchroom-scope": "service",
                 "security": [
                     {
                         "token": []
@@ -2529,6 +3515,7 @@
                     "Services"
                 ],
                 "x-launchroom-ability": "deploy",
+                "x-launchroom-scope": "service",
                 "security": [
                     {
                         "token": []
@@ -2620,6 +3607,7 @@
                     "Services"
                 ],
                 "x-launchroom-ability": "deploy",
+                "x-launchroom-scope": "service",
                 "security": [
                     {
                         "token": []
@@ -2711,6 +3699,7 @@
                     "Services"
                 ],
                 "x-launchroom-ability": "deploy",
+                "x-launchroom-scope": "service",
                 "security": [
                     {
                         "token": []
@@ -2802,6 +3791,7 @@
                     "Data"
                 ],
                 "x-launchroom-ability": "data:transfer",
+                "x-launchroom-scope": "service",
                 "security": [
                     {
                         "token": []
@@ -2884,6 +3874,102 @@
                 }
             }
         },
+        "/environments/{environment}/services/{service}/update": {
+            "post": {
+                "operationId": "applyAppUpdate",
+                "summary": "Update an image service to a newer release",
+                "description": "Backs up the service's data first when backup storage is set up, then changes the image to `tag` (pinned to the digest the check saw) and deploys it, then watches it like any deploy and rolls back if it fails. `tag` must be one of the service's `candidates`; a `major` needs `releaseNotesRead: true`. Refused (422) while other changes are staged, a deployment runs, the service is stopped or held. The other environments of the project get the new image as a staged change. Needs `update` and `deploy`.\n\nRequires the `deploy` and `update` abilities.",
+                "tags": [
+                    "App updates"
+                ],
+                "x-launchroom-ability": "update",
+                "x-launchroom-scope": "service",
+                "x-launchroom-abilities": [
+                    "deploy",
+                    "update"
+                ],
+                "security": [
+                    {
+                        "token": []
+                    }
+                ],
+                "parameters": [
+                    {
+                        "name": "environment",
+                        "in": "path",
+                        "required": true,
+                        "schema": {
+                            "type": "string",
+                            "pattern": "^env_[0-7][0-9A-HJKMNP-TV-Z]{25}$"
+                        }
+                    },
+                    {
+                        "name": "service",
+                        "in": "path",
+                        "required": true,
+                        "schema": {
+                            "type": "string",
+                            "pattern": "^svc_[0-7][0-9A-HJKMNP-TV-Z]{25}$"
+                        }
+                    },
+                    {
+                        "name": "Idempotency-Key",
+                        "in": "header",
+                        "required": false,
+                        "description": "Replays return the first response (24 h); the same key for another request is refused.",
+                        "schema": {
+                            "type": "string",
+                            "pattern": "^[A-Za-z0-9_.:-]{1,255}$"
+                        }
+                    }
+                ],
+                "requestBody": {
+                    "required": true,
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "$ref": "#/components/schemas/StartAppUpdateData"
+                            }
+                        }
+                    }
+                },
+                "responses": {
+                    "202": {
+                        "description": "OK",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "required": [
+                                        "data"
+                                    ],
+                                    "properties": {
+                                        "data": {
+                                            "$ref": "#/components/schemas/AppUpdateResource"
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    },
+                    "401": {
+                        "$ref": "#/components/responses/Unauthenticated"
+                    },
+                    "403": {
+                        "$ref": "#/components/responses/Forbidden"
+                    },
+                    "404": {
+                        "$ref": "#/components/responses/NotFound"
+                    },
+                    "422": {
+                        "$ref": "#/components/responses/Invalid"
+                    },
+                    "429": {
+                        "$ref": "#/components/responses/RateLimited"
+                    }
+                }
+            }
+        },
         "/environments/{environment}/services/{service}/variables": {
             "get": {
                 "operationId": "listVariables",
@@ -2893,6 +3979,7 @@
                     "Variables"
                 ],
                 "x-launchroom-ability": "env:read",
+                "x-launchroom-scope": "service",
                 "security": [
                     {
                         "token": []
@@ -2969,6 +4056,7 @@
                     "Variables"
                 ],
                 "x-launchroom-ability": "env:write",
+                "x-launchroom-scope": "service",
                 "security": [
                     {
                         "token": []
@@ -3060,6 +4148,7 @@
                     "Variables"
                 ],
                 "x-launchroom-ability": "env:write",
+                "x-launchroom-scope": "service",
                 "security": [
                     {
                         "token": []
@@ -3124,6 +4213,7 @@
                     "Variables"
                 ],
                 "x-launchroom-ability": "env:write",
+                "x-launchroom-scope": "service",
                 "security": [
                     {
                         "token": []
@@ -3215,6 +4305,7 @@
                     "Variables"
                 ],
                 "x-launchroom-ability": "env:read",
+                "x-launchroom-scope": "service",
                 "security": [
                     {
                         "token": []
@@ -3286,6 +4377,7 @@
                     "Data"
                 ],
                 "x-launchroom-ability": "data:transfer",
+                "x-launchroom-scope": "service",
                 "security": [
                     {
                         "token": []
@@ -3348,6 +4440,7 @@
                     "Data"
                 ],
                 "x-launchroom-ability": "data:transfer",
+                "x-launchroom-scope": "service",
                 "security": [
                     {
                         "token": []
@@ -3420,6 +4513,7 @@
                     "Data"
                 ],
                 "x-launchroom-ability": "data:transfer",
+                "x-launchroom-scope": "service",
                 "security": [
                     {
                         "token": []
@@ -3480,6 +4574,7 @@
                 "tags": [
                     "Account"
                 ],
+                "x-launchroom-scope": "own",
                 "security": [
                     {
                         "token": []
@@ -3553,6 +4648,7 @@
                     "Projects"
                 ],
                 "x-launchroom-ability": "read",
+                "x-launchroom-scope": "service",
                 "security": [
                     {
                         "token": []
@@ -3611,6 +4707,7 @@
                     "Projects"
                 ],
                 "x-launchroom-ability": "read",
+                "x-launchroom-scope": "service",
                 "security": [
                     {
                         "token": []
@@ -3673,6 +4770,7 @@
                     "Environments"
                 ],
                 "x-launchroom-ability": "read",
+                "x-launchroom-scope": "service",
                 "security": [
                     {
                         "token": []
@@ -3733,6 +4831,97 @@
                 }
             }
         },
+        "/projects/{project}/previews": {
+            "get": {
+                "operationId": "listPreviews",
+                "summary": "Previews of a project, open ones first",
+                "description": "`pr` narrows to one pull request. A preview has settled for a commit when every deployment in `deployments` is `finished` and built from `headSha`.\n\nRequires the `read` ability.",
+                "tags": [
+                    "Previews"
+                ],
+                "x-launchroom-ability": "read",
+                "x-launchroom-scope": "project",
+                "security": [
+                    {
+                        "token": []
+                    }
+                ],
+                "parameters": [
+                    {
+                        "name": "project",
+                        "in": "path",
+                        "required": true,
+                        "schema": {
+                            "type": "string",
+                            "pattern": "^prj_[0-7][0-9A-HJKMNP-TV-Z]{25}$"
+                        }
+                    },
+                    {
+                        "name": "pr",
+                        "in": "query",
+                        "description": "The pull or merge request number.",
+                        "schema": {
+                            "type": [
+                                "integer",
+                                "null"
+                            ],
+                            "minimum": 1,
+                            "maximum": 2147483647
+                        }
+                    },
+                    {
+                        "name": "open",
+                        "in": "query",
+                        "schema": {
+                            "type": "boolean",
+                            "default": false
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "required": [
+                                        "data",
+                                        "meta"
+                                    ],
+                                    "properties": {
+                                        "data": {
+                                            "type": "array",
+                                            "items": {
+                                                "$ref": "#/components/schemas/PreviewResource"
+                                            }
+                                        },
+                                        "meta": {
+                                            "$ref": "#/components/schemas/ListMeta"
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    },
+                    "401": {
+                        "$ref": "#/components/responses/Unauthenticated"
+                    },
+                    "403": {
+                        "$ref": "#/components/responses/Forbidden"
+                    },
+                    "404": {
+                        "$ref": "#/components/responses/NotFound"
+                    },
+                    "422": {
+                        "$ref": "#/components/responses/Invalid"
+                    },
+                    "429": {
+                        "$ref": "#/components/responses/RateLimited"
+                    }
+                }
+            }
+        },
         "/security/findings": {
             "get": {
                 "operationId": "listSecurityFindings",
@@ -3742,6 +4931,7 @@
                     "Security"
                 ],
                 "x-launchroom-ability": "read",
+                "x-launchroom-scope": "team",
                 "security": [
                     {
                         "token": []
@@ -3873,6 +5063,7 @@
                     "Security"
                 ],
                 "x-launchroom-ability": "read",
+                "x-launchroom-scope": "service",
                 "security": [
                     {
                         "token": []
@@ -3935,6 +5126,7 @@
                     "Security"
                 ],
                 "x-launchroom-ability": "read",
+                "x-launchroom-scope": "team",
                 "security": [
                     {
                         "token": []
@@ -3997,6 +5189,7 @@
                     "Security"
                 ],
                 "x-launchroom-ability": "read",
+                "x-launchroom-scope": "team",
                 "security": [
                     {
                         "token": []
@@ -4058,6 +5251,7 @@
                     "Servers"
                 ],
                 "x-launchroom-ability": "read",
+                "x-launchroom-scope": "team",
                 "security": [
                     {
                         "token": []
@@ -4116,6 +5310,7 @@
                     "Servers"
                 ],
                 "x-launchroom-ability": "read",
+                "x-launchroom-scope": "team",
                 "security": [
                     {
                         "token": []
@@ -4169,6 +5364,68 @@
                 }
             }
         },
+        "/traces/decode": {
+            "post": {
+                "operationId": "decodeTrace",
+                "summary": "Decode a ray (the X-Launchroom-Ray response header)",
+                "description": "`value` is the header value or the whole header line. A ray that isn't from one of the team's services, or that the token's owner may not see, is one `rule_violation` answer, whatever the reason; a ray from a newer launchroom says so.\n\nRequires the `read` ability.",
+                "tags": [
+                    "Traces"
+                ],
+                "x-launchroom-ability": "read",
+                "x-launchroom-scope": "team",
+                "security": [
+                    {
+                        "token": []
+                    }
+                ],
+                "requestBody": {
+                    "required": true,
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "$ref": "#/components/schemas/DecodeTraceInput"
+                            }
+                        }
+                    }
+                },
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "required": [
+                                        "data"
+                                    ],
+                                    "properties": {
+                                        "data": {
+                                            "$ref": "#/components/schemas/ApiTraceData"
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    },
+                    "401": {
+                        "$ref": "#/components/responses/Unauthenticated"
+                    },
+                    "403": {
+                        "$ref": "#/components/responses/Forbidden"
+                    },
+                    "404": {
+                        "$ref": "#/components/responses/NotFound"
+                    },
+                    "422": {
+                        "$ref": "#/components/responses/Invalid"
+                    },
+                    "429": {
+                        "$ref": "#/components/responses/RateLimited"
+                    }
+                }
+            }
+        },
         "/transfers/{transfer}": {
             "delete": {
                 "operationId": "deleteTransfer",
@@ -4178,6 +5435,7 @@
                     "Data"
                 ],
                 "x-launchroom-ability": "data:transfer",
+                "x-launchroom-scope": "service",
                 "security": [
                     {
                         "token": []
@@ -4233,6 +5491,7 @@
                     "Data"
                 ],
                 "x-launchroom-ability": "data:transfer",
+                "x-launchroom-scope": "service",
                 "security": [
                     {
                         "token": []
@@ -4295,6 +5554,7 @@
                     "Data"
                 ],
                 "x-launchroom-ability": "data:transfer",
+                "x-launchroom-scope": "service",
                 "security": [
                     {
                         "token": []
@@ -4366,6 +5626,7 @@
                     "Data"
                 ],
                 "x-launchroom-ability": "data:transfer",
+                "x-launchroom-scope": "service",
                 "security": [
                     {
                         "token": []
@@ -4770,11 +6031,12 @@
             "AnalyticsRange": {
                 "type": "string",
                 "enum": [
+                    "1h",
                     "24h",
                     "7d",
                     "30d"
                 ],
-                "description": "Time ranges of the request analytics: the last 24 hours and 7 days in hourly buckets, the last 30 days in daily buckets (from the daily rollups)."
+                "description": "Time ranges of the request analytics: the last hour in 10-minute buckets (the finest analytics and firewall rows), the last 24 hours and 7 days in hourly buckets, the last 30 days in daily buckets (from the daily rollups)."
             },
             "AnalyticsReferrerData": {
                 "type": "object",
@@ -4944,9 +6206,12 @@
                     "env:write",
                     "secrets:read",
                     "domains:write",
-                    "data:transfer"
+                    "data:transfer",
+                    "run",
+                    "fix",
+                    "update"
                 ],
-                "description": "What an API token may do. The single list: routes declare one (RequireTokenAbility) and self::grants() narrows the owner's role inside User::hasTeamPermission(), so a token never exceeds its owner and never reaches a permission no ability maps to (servers, members, team, exec, exposure; backups only through the opt-in `data:transfer` on the transfer endpoints). Values are stored on tokens: never rename one."
+                "description": "What an API token may do. The single list: routes declare one (RequireTokenAbility) and self::grants() narrows the owner's role inside User::hasTeamPermission(), so a token never exceeds its owner and never reaches a permission no ability maps to (servers, members, team, exposure; backups only through the opt-in `data:transfer` on the transfer endpoints; exec only through the opt-in `run` on the command endpoints, D105, and never a console or SSH; image changes only through `update` on the app-update endpoint, D106). Values are stored on tokens: never rename one."
             },
             "ApiCommitData": {
                 "type": "object",
@@ -4987,6 +6252,7 @@
             },
             "ApiFailureData": {
                 "type": "object",
+                "description": "Why a deployment failed, in short: the failure class, its title and general hint (DeploymentFailureData) and the raw message. The full explanation (cause, the failing step's last lines, fixes) is `GET /deployments/{deployment}/failure`.",
                 "properties": {
                     "class": {
                         "oneOf": [
@@ -5003,11 +6269,293 @@
                             "string",
                             "null"
                         ]
+                    },
+                    "title": {
+                        "description": "\"Build failed\", \"Health check timed out\", …",
+                        "type": [
+                            "string",
+                            "null"
+                        ]
+                    },
+                    "hint": {
+                        "description": "What to do next, for any failure of this class.",
+                        "type": [
+                            "string",
+                            "null"
+                        ]
                     }
                 },
                 "required": [
                     "class",
                     "message"
+                ],
+                "additionalProperties": false
+            },
+            "ApiFailureExplanationData": {
+                "type": "object",
+                "description": "A known failure in plain words (FailureCatalogue): `key` names it (stable, e.g. `port_mismatch`, `pnpm_outdated_lockfile`).",
+                "properties": {
+                    "key": {
+                        "type": "string"
+                    },
+                    "title": {
+                        "type": "string"
+                    },
+                    "cause": {
+                        "description": "Why it happened.",
+                        "type": "string"
+                    },
+                    "fix": {
+                        "description": "How to fix it.",
+                        "type": "string"
+                    },
+                    "answer": {
+                        "description": "The start of the app's answer to the health check, masked, when it says what is wrong.",
+                        "type": [
+                            "string",
+                            "null"
+                        ]
+                    }
+                },
+                "required": [
+                    "key",
+                    "title",
+                    "cause",
+                    "fix",
+                    "answer"
+                ],
+                "additionalProperties": false
+            },
+            "ApiFailureFixData": {
+                "type": "object",
+                "description": "A fix for an explained failure. `oneClick` fixes are applied with `POST /deployments/{deployment}/fixes/{code}` (or `command`, the CLI's line for it); the others need input only a person gives and say where (`command` when the CLI can do it, else `dashboardUrl`).",
+                "properties": {
+                    "code": {
+                        "$ref": "#/components/schemas/FailureFixAction"
+                    },
+                    "label": {
+                        "description": "What the fix does, as the dashboard's button says it.",
+                        "type": "string"
+                    },
+                    "oneClick": {
+                        "type": "boolean"
+                    },
+                    "command": {
+                        "description": "The launchroom CLI command that applies it, when there is one.",
+                        "type": [
+                            "string",
+                            "null"
+                        ]
+                    },
+                    "dashboardUrl": {
+                        "description": "Where the dashboard applies it.",
+                        "type": "string"
+                    },
+                    "port": {
+                        "description": "`set_port`: the port the app listens on.",
+                        "type": [
+                            "integer",
+                            "null"
+                        ]
+                    },
+                    "seconds": {
+                        "description": "`raise_health_timeout`: the start period it suggests, in seconds.",
+                        "type": [
+                            "integer",
+                            "null"
+                        ]
+                    },
+                    "server": {
+                        "description": "`free_disk`: the server to free space on.",
+                        "type": [
+                            "string",
+                            "null"
+                        ]
+                    },
+                    "variable": {
+                        "description": "`add_variable`: the variable to set.",
+                        "type": [
+                            "string",
+                            "null"
+                        ]
+                    }
+                },
+                "required": [
+                    "code",
+                    "label",
+                    "oneClick",
+                    "command",
+                    "dashboardUrl"
+                ],
+                "additionalProperties": false
+            },
+            "ApiFailureFixResultData": {
+                "type": "object",
+                "description": "What applying a fix did: `deploying` (staged and deployed, `deployment` is the new one), `staged` (other changes were staged too: review and deploy them together), `freeing_disk` (deploy again once the server has freed space).",
+                "properties": {
+                    "outcome": {
+                        "$ref": "#/components/schemas/FailureFixOutcome"
+                    },
+                    "message": {
+                        "type": "string"
+                    },
+                    "deployment": {
+                        "oneOf": [
+                            {
+                                "$ref": "#/components/schemas/DeploymentResource"
+                            },
+                            {
+                                "type": "null"
+                            }
+                        ]
+                    }
+                },
+                "required": [
+                    "outcome",
+                    "message",
+                    "deployment"
+                ],
+                "additionalProperties": false
+            },
+            "ApiFailureHintData": {
+                "type": "object",
+                "description": "A known build problem the server recognised in the build output (`code`, e.g. `pnpm-outdated-lockfile`), with its message.",
+                "properties": {
+                    "code": {
+                        "type": "string"
+                    },
+                    "message": {
+                        "type": "string"
+                    }
+                },
+                "required": [
+                    "code",
+                    "message"
+                ],
+                "additionalProperties": false
+            },
+            "ApiFailureReportData": {
+                "type": "object",
+                "description": "A failed deployment explained like its page in the dashboard: the outcome, the catalogue's explanation when the failure is a known one, the build's hint codes, the failing step with its last log lines (masked when they were stored, ANSI removed) and the fixes, each with how to apply it.",
+                "properties": {
+                    "deploymentId": {
+                        "type": "string"
+                    },
+                    "class": {
+                        "$ref": "#/components/schemas/DeploymentFailureClass"
+                    },
+                    "title": {
+                        "description": "The outcome in a few words (\"Build failed\", \"Health check failed\").",
+                        "type": "string"
+                    },
+                    "message": {
+                        "description": "The raw failure message.",
+                        "type": [
+                            "string",
+                            "null"
+                        ]
+                    },
+                    "hint": {
+                        "description": "What to do next, for any failure of this class (used when there is no explanation).",
+                        "type": "string"
+                    },
+                    "explanation": {
+                        "oneOf": [
+                            {
+                                "$ref": "#/components/schemas/ApiFailureExplanationData"
+                            },
+                            {
+                                "type": "null"
+                            }
+                        ]
+                    },
+                    "hints": {
+                        "type": "array",
+                        "items": {
+                            "$ref": "#/components/schemas/ApiFailureHintData"
+                        }
+                    },
+                    "failingStep": {
+                        "description": "The step that failed (null when no step was recorded as failed).",
+                        "oneOf": [
+                            {
+                                "$ref": "#/components/schemas/DeploymentStepName"
+                            },
+                            {
+                                "type": "null"
+                            }
+                        ]
+                    },
+                    "excerpt": {
+                        "description": "The failing step's last lines, in order; numbers match the deployment's log.",
+                        "type": "array",
+                        "items": {
+                            "$ref": "#/components/schemas/ApiLogExcerptLineData"
+                        }
+                    },
+                    "errorLine": {
+                        "description": "The first line of the failing step that reads like an error (also in the excerpt).",
+                        "type": [
+                            "integer",
+                            "null"
+                        ]
+                    },
+                    "fixes": {
+                        "type": "array",
+                        "items": {
+                            "$ref": "#/components/schemas/ApiFailureFixData"
+                        }
+                    },
+                    "servingCommit": {
+                        "description": "The commit still serving while this deployment failed, if any.",
+                        "type": [
+                            "string",
+                            "null"
+                        ]
+                    },
+                    "dashboardUrl": {
+                        "type": "string"
+                    }
+                },
+                "required": [
+                    "deploymentId",
+                    "class",
+                    "title",
+                    "message",
+                    "hint",
+                    "explanation",
+                    "hints",
+                    "failingStep",
+                    "excerpt",
+                    "errorLine",
+                    "fixes",
+                    "servingCommit",
+                    "dashboardUrl"
+                ],
+                "additionalProperties": false
+            },
+            "ApiLogExcerptLineData": {
+                "type": "object",
+                "description": "One line of a failure's excerpt: `number` is the line's number in the deployment's log (`#L42` on its page), `error` whether it reads like an error. Text is plain (no ANSI escapes).",
+                "properties": {
+                    "number": {
+                        "type": "integer"
+                    },
+                    "stream": {
+                        "type": "string"
+                    },
+                    "text": {
+                        "type": "string"
+                    },
+                    "error": {
+                        "type": "boolean"
+                    }
+                },
+                "required": [
+                    "number",
+                    "stream",
+                    "text",
+                    "error"
                 ],
                 "additionalProperties": false
             },
@@ -5042,9 +6590,10 @@
                 "type": "string",
                 "enum": [
                     "dashboard",
-                    "cli"
+                    "cli",
+                    "robot"
                 ],
-                "description": "Where a token was created: Settings → API tokens, or a CLI sign-in."
+                "description": "Where a token was created: Settings → API tokens, a CLI sign-in, or Settings → Robot tokens."
             },
             "ApiTokenData": {
                 "type": "object",
@@ -5068,6 +6617,10 @@
                         "items": {
                             "$ref": "#/components/schemas/ApiAbility"
                         }
+                    },
+                    "fullAccess": {
+                        "description": "Every ability the holder's role allows, including ones added later (D113); `abilities` is what that is now.",
+                        "type": "boolean"
                     },
                     "client": {
                         "$ref": "#/components/schemas/ApiTokenClient"
@@ -5105,6 +6658,7 @@
                     "name",
                     "hint",
                     "abilities",
+                    "fullAccess",
                     "client",
                     "teamId",
                     "teamName",
@@ -5112,6 +6666,233 @@
                     "lastUsedAt",
                     "lastUsedIp",
                     "createdAt"
+                ],
+                "additionalProperties": false
+            },
+            "ApiTokenScopeData": {
+                "type": "object",
+                "description": "How far a scoped token reaches: one project, or one service of it. `GET /me` answers it so a client (the MCP server, D112) can offer only what the token can use.",
+                "properties": {
+                    "projectId": {
+                        "type": "string"
+                    },
+                    "projectName": {
+                        "type": "string"
+                    },
+                    "serviceId": {
+                        "type": [
+                            "string",
+                            "null"
+                        ]
+                    },
+                    "serviceName": {
+                        "type": [
+                            "string",
+                            "null"
+                        ]
+                    }
+                },
+                "required": [
+                    "projectId",
+                    "projectName",
+                    "serviceId",
+                    "serviceName"
+                ],
+                "additionalProperties": false
+            },
+            "ApiTraceData": {
+                "type": "object",
+                "description": "A decoded ray, as the trace page shows it: the request, where its time went (edge and app), the firewall's decision, the servers on its path, where it ended and the window of the service's logs around it (`logsFrom`/`logsTo`, epoch seconds, for `listEnvironmentLogs` with `q` = `requestId`).",
+                "properties": {
+                    "receivedAt": {
+                        "description": "ISO 8601 UTC with milliseconds.",
+                        "type": "string"
+                    },
+                    "requestId": {
+                        "description": "The UUID the app got as X-Request-Id: search the logs for it.",
+                        "type": "string"
+                    },
+                    "method": {
+                        "type": [
+                            "string",
+                            "null"
+                        ]
+                    },
+                    "path": {
+                        "description": "The normalised path (ids as `:id`), without query string.",
+                        "type": [
+                            "string",
+                            "null"
+                        ]
+                    },
+                    "protocol": {
+                        "type": [
+                            "string",
+                            "null"
+                        ]
+                    },
+                    "status": {
+                        "description": "The status the edge sent.",
+                        "type": "integer"
+                    },
+                    "upstreamStatus": {
+                        "description": "The status the app answered, only when it differs from `status`.",
+                        "type": [
+                            "integer",
+                            "null"
+                        ]
+                    },
+                    "origin": {
+                        "$ref": "#/components/schemas/TraceOrigin"
+                    },
+                    "failure": {
+                        "oneOf": [
+                            {
+                                "$ref": "#/components/schemas/TraceFailure"
+                            },
+                            {
+                                "type": "null"
+                            }
+                        ]
+                    },
+                    "edgeTimeUs": {
+                        "description": "Microseconds from receipt to the response headers.",
+                        "type": [
+                            "integer",
+                            "null"
+                        ]
+                    },
+                    "upstreamTimeUs": {
+                        "description": "Microseconds from the last attempt's dial to the app's response headers.",
+                        "type": [
+                            "integer",
+                            "null"
+                        ]
+                    },
+                    "attempts": {
+                        "type": [
+                            "integer",
+                            "null"
+                        ]
+                    },
+                    "firewall": {
+                        "oneOf": [
+                            {
+                                "$ref": "#/components/schemas/TraceFirewallData"
+                            },
+                            {
+                                "type": "null"
+                            }
+                        ]
+                    },
+                    "edge": {
+                        "$ref": "#/components/schemas/ApiTraceServerData"
+                    },
+                    "upstreamServer": {
+                        "description": "The server the last attempt went to (the edge itself for local replicas).",
+                        "oneOf": [
+                            {
+                                "$ref": "#/components/schemas/ApiTraceServerData"
+                            },
+                            {
+                                "type": "null"
+                            }
+                        ]
+                    },
+                    "sameServer": {
+                        "type": "boolean"
+                    },
+                    "host": {
+                        "description": "The matched route's domain or deployment URL.",
+                        "type": [
+                            "string",
+                            "null"
+                        ]
+                    },
+                    "service": {
+                        "oneOf": [
+                            {
+                                "$ref": "#/components/schemas/SecurityServiceRefData"
+                            },
+                            {
+                                "type": "null"
+                            }
+                        ]
+                    },
+                    "dashboard": {
+                        "description": "The request went to the dashboard itself.",
+                        "type": "boolean"
+                    },
+                    "endsAt": {
+                        "$ref": "#/components/schemas/TraceStop"
+                    },
+                    "summary": {
+                        "description": "One sentence of what happened.",
+                        "type": "string"
+                    },
+                    "logsFrom": {
+                        "type": [
+                            "integer",
+                            "null"
+                        ]
+                    },
+                    "logsTo": {
+                        "type": [
+                            "integer",
+                            "null"
+                        ]
+                    },
+                    "dashboardUrl": {
+                        "description": "The trace page for this ray.",
+                        "type": "string"
+                    }
+                },
+                "required": [
+                    "receivedAt",
+                    "requestId",
+                    "method",
+                    "path",
+                    "protocol",
+                    "status",
+                    "upstreamStatus",
+                    "origin",
+                    "failure",
+                    "edgeTimeUs",
+                    "upstreamTimeUs",
+                    "attempts",
+                    "firewall",
+                    "edge",
+                    "upstreamServer",
+                    "sameServer",
+                    "host",
+                    "service",
+                    "dashboard",
+                    "endsAt",
+                    "summary",
+                    "logsFrom",
+                    "logsTo",
+                    "dashboardUrl"
+                ],
+                "additionalProperties": false
+            },
+            "ApiTraceServerData": {
+                "type": "object",
+                "description": "A server on a traced request's path.",
+                "properties": {
+                    "id": {
+                        "type": "string"
+                    },
+                    "name": {
+                        "type": "string"
+                    },
+                    "status": {
+                        "$ref": "#/components/schemas/ServerStatus"
+                    }
+                },
+                "required": [
+                    "id",
+                    "name",
+                    "status"
                 ],
                 "additionalProperties": false
             },
@@ -5130,6 +6911,320 @@
                     "email"
                 ],
                 "additionalProperties": false
+            },
+            "AppUpdateResource": {
+                "type": "object",
+                "description": "Updates of one image service in one environment: what runs, the newer releases launchroom found (`candidates`, biggest change first) and the update running now or that ended within a day (`run`). Apply one with `POST /environments/{environment}/services/{service}/update` and a candidate's `tag`; a `major` needs `releaseNotesRead`.",
+                "properties": {
+                    "serviceId": {
+                        "type": "string"
+                    },
+                    "serviceName": {
+                        "type": "string"
+                    },
+                    "projectId": {
+                        "type": "string"
+                    },
+                    "projectName": {
+                        "type": "string"
+                    },
+                    "environmentId": {
+                        "type": "string"
+                    },
+                    "environmentName": {
+                        "type": "string"
+                    },
+                    "production": {
+                        "type": "boolean"
+                    },
+                    "status": {
+                        "$ref": "#/components/schemas/UpdateCheckStatus"
+                    },
+                    "reason": {
+                        "type": [
+                            "string",
+                            "null"
+                        ]
+                    },
+                    "running": {
+                        "description": "`v6.2.0`, or the tag when it isn't a version.",
+                        "type": [
+                            "string",
+                            "null"
+                        ]
+                    },
+                    "moving": {
+                        "description": "The running tag moves (`latest`, `6`).",
+                        "type": "boolean"
+                    },
+                    "runningPublishedAt": {
+                        "type": [
+                            "string",
+                            "null"
+                        ]
+                    },
+                    "image": {
+                        "type": [
+                            "string",
+                            "null"
+                        ]
+                    },
+                    "candidates": {
+                        "type": "array",
+                        "items": {
+                            "$ref": "#/components/schemas/UpdateCandidateData"
+                        }
+                    },
+                    "recommended": {
+                        "description": "The candidate the dashboard offers first: the newest patch or minor.",
+                        "oneOf": [
+                            {
+                                "$ref": "#/components/schemas/UpdateCandidateData"
+                            },
+                            {
+                                "type": "null"
+                            }
+                        ]
+                    },
+                    "major": {
+                        "oneOf": [
+                            {
+                                "$ref": "#/components/schemas/UpdateCandidateData"
+                            },
+                            {
+                                "type": "null"
+                            }
+                        ]
+                    },
+                    "releaseNotesUrl": {
+                        "type": [
+                            "string",
+                            "null"
+                        ]
+                    },
+                    "checkedAt": {
+                        "type": [
+                            "string",
+                            "null"
+                        ]
+                    },
+                    "run": {
+                        "oneOf": [
+                            {
+                                "$ref": "#/components/schemas/AppUpdateRunData"
+                            },
+                            {
+                                "type": "null"
+                            }
+                        ]
+                    },
+                    "canUpdate": {
+                        "description": "This token may start an update (change the service and deploy).",
+                        "type": "boolean"
+                    },
+                    "blocker": {
+                        "description": "Why an update can't start right now (staged changes, a deployment in progress…).",
+                        "type": [
+                            "string",
+                            "null"
+                        ]
+                    },
+                    "backups": {
+                        "type": "array",
+                        "items": {
+                            "type": "string"
+                        }
+                    },
+                    "keepsData": {
+                        "type": "boolean"
+                    },
+                    "backupStorage": {
+                        "type": "boolean"
+                    },
+                    "autoUpdate": {
+                        "$ref": "#/components/schemas/AutoUpdateMode"
+                    },
+                    "dashboardUrl": {
+                        "type": "string"
+                    }
+                },
+                "required": [
+                    "serviceId",
+                    "serviceName",
+                    "projectId",
+                    "projectName",
+                    "environmentId",
+                    "environmentName",
+                    "production",
+                    "status",
+                    "reason",
+                    "running",
+                    "moving",
+                    "runningPublishedAt",
+                    "image",
+                    "candidates",
+                    "recommended",
+                    "major",
+                    "releaseNotesUrl",
+                    "checkedAt",
+                    "run",
+                    "canUpdate",
+                    "blocker",
+                    "backups",
+                    "keepsData",
+                    "backupStorage",
+                    "autoUpdate",
+                    "dashboardUrl"
+                ],
+                "additionalProperties": false
+            },
+            "AppUpdateRunData": {
+                "type": "object",
+                "description": "One update as the service shows it: its step, what is backed up, the deployment and, when it ended badly, what happened.",
+                "properties": {
+                    "id": {
+                        "type": "string"
+                    },
+                    "status": {
+                        "$ref": "#/components/schemas/AppUpdateStatus"
+                    },
+                    "automatic": {
+                        "type": "boolean"
+                    },
+                    "kind": {
+                        "$ref": "#/components/schemas/UpdateKind"
+                    },
+                    "fromVersion": {
+                        "type": "string"
+                    },
+                    "toVersion": {
+                        "type": "string"
+                    },
+                    "actor": {
+                        "type": [
+                            "string",
+                            "null"
+                        ]
+                    },
+                    "deploymentId": {
+                        "type": [
+                            "string",
+                            "null"
+                        ]
+                    },
+                    "deploymentHref": {
+                        "type": [
+                            "string",
+                            "null"
+                        ]
+                    },
+                    "message": {
+                        "type": [
+                            "string",
+                            "null"
+                        ]
+                    },
+                    "backupNote": {
+                        "type": [
+                            "string",
+                            "null"
+                        ]
+                    },
+                    "backingUp": {
+                        "type": "array",
+                        "items": {
+                            "type": "string"
+                        }
+                    },
+                    "startedAt": {
+                        "type": "string"
+                    },
+                    "finishedAt": {
+                        "type": [
+                            "string",
+                            "null"
+                        ]
+                    },
+                    "watchUntil": {
+                        "description": "While watching: when the probation ends.",
+                        "type": [
+                            "string",
+                            "null"
+                        ]
+                    }
+                },
+                "required": [
+                    "id",
+                    "status",
+                    "automatic",
+                    "kind",
+                    "fromVersion",
+                    "toVersion",
+                    "actor",
+                    "deploymentId",
+                    "deploymentHref",
+                    "message",
+                    "backupNote",
+                    "backingUp",
+                    "startedAt",
+                    "finishedAt",
+                    "watchUntil"
+                ],
+                "additionalProperties": false
+            },
+            "AppUpdateStatus": {
+                "type": "string",
+                "enum": [
+                    "backing_up",
+                    "deploying",
+                    "watching",
+                    "succeeded",
+                    "failed",
+                    "rolled_back",
+                    "cancelled"
+                ],
+                "description": "One update of an image service: backing_up → deploying → watching → succeeded; a failed backup or deployment ends as failed, a probation rollback as rolled_back, and a backup that is still running can be cancelled.",
+                "x-launchroom-tones": {
+                    "backing_up": "progress",
+                    "deploying": "progress",
+                    "watching": "progress",
+                    "succeeded": "active",
+                    "failed": "failed",
+                    "rolled_back": "failed",
+                    "cancelled": "idle"
+                }
+            },
+            "ApplyFailureFixInput": {
+                "type": "object",
+                "description": "`POST /deployments/{deployment}/fixes/{code}`: values that override the fix's suggestion. Without them the suggested port or start period is used.",
+                "properties": {
+                    "port": {
+                        "type": [
+                            "integer",
+                            "null"
+                        ],
+                        "minimum": 1,
+                        "maximum": 65535
+                    },
+                    "seconds": {
+                        "type": [
+                            "integer",
+                            "null"
+                        ],
+                        "minimum": 1,
+                        "maximum": 3600
+                    }
+                },
+                "additionalProperties": false
+            },
+            "AutoUpdateMode": {
+                "type": "string",
+                "enum": [
+                    "off",
+                    "patch",
+                    "minor"
+                ],
+                "description": "Which updates launchroom installs by itself in a service's maintenance window. Majors never: they can change settings and data. Stored on `service_instances.auto_update`; never rename a value."
             },
             "CertStatus": {
                 "type": "string",
@@ -5206,6 +7301,28 @@
                     "removed",
                     "changed"
                 ]
+            },
+            "CheckGateState": {
+                "type": "string",
+                "enum": [
+                    "waiting",
+                    "passed",
+                    "none",
+                    "unsupported",
+                    "skipped",
+                    "failed",
+                    "timed_out"
+                ],
+                "description": "Where a push deployment stands with its commit's CI checks. Only `waiting` holds the deployment in the queue; every other state is final: `passed`, `none` (no check appeared within the grace period), `unsupported` (the git server has no checks) and `skipped` (Deploy now) let it start, `failed` and `timed_out` cancel it.",
+                "x-launchroom-tones": {
+                    "waiting": "progress",
+                    "passed": "active",
+                    "none": "idle",
+                    "unsupported": "idle",
+                    "skipped": "idle",
+                    "failed": "failed",
+                    "timed_out": "warning"
+                }
             },
             "ChunkReceiptData": {
                 "type": "object",
@@ -5293,6 +7410,10 @@
                             "$ref": "#/components/schemas/ApiAbility"
                         }
                     },
+                    "fullAccess": {
+                        "description": "Every ability the role allows, including ones added later (D113); `abilities` is what that is now.",
+                        "type": "boolean"
+                    },
                     "user": {
                         "$ref": "#/components/schemas/ApiUserData"
                     }
@@ -5302,9 +7423,367 @@
                     "expiresAt",
                     "team",
                     "abilities",
+                    "fullAccess",
                     "user"
                 ],
                 "additionalProperties": false
+            },
+            "CommandCatalogueData": {
+                "type": "object",
+                "description": "The commands a service lists (D105): its framework's, from the live deployment's build, then the ones launchroom.json names.",
+                "properties": {
+                    "framework": {
+                        "description": "The framework's display name (\"Laravel\"); null without one.",
+                        "type": [
+                            "string",
+                            "null"
+                        ]
+                    },
+                    "commands": {
+                        "type": "array",
+                        "items": {
+                            "$ref": "#/components/schemas/CommandData"
+                        }
+                    },
+                    "awaitingBuild": {
+                        "description": "The live build predates framework commands: they show up after the next build.",
+                        "type": "boolean",
+                        "default": false
+                    }
+                },
+                "required": [
+                    "framework",
+                    "commands"
+                ],
+                "additionalProperties": false
+            },
+            "CommandData": {
+                "type": "object",
+                "description": "One command of a service's catalogue (D105): a framework command from the live build, or one the team named in launchroom.json. `name` is what `launchroom exec <name>` and `POST …/command-runs {\"name\"}` take.",
+                "properties": {
+                    "name": {
+                        "type": "string"
+                    },
+                    "label": {
+                        "type": "string"
+                    },
+                    "description": {
+                        "type": [
+                            "string",
+                            "null"
+                        ]
+                    },
+                    "argv": {
+                        "type": "array",
+                        "items": {
+                            "type": "string"
+                        }
+                    },
+                    "danger": {
+                        "description": "It changes data: the dashboard asks before it runs.",
+                        "type": "boolean"
+                    },
+                    "source": {
+                        "$ref": "#/components/schemas/CommandSource"
+                    }
+                },
+                "required": [
+                    "name",
+                    "label",
+                    "description",
+                    "argv",
+                    "danger",
+                    "source"
+                ],
+                "additionalProperties": false
+            },
+            "CommandEndEvent": {
+                "type": "object",
+                "description": "`end` of a command's output stream: the run ended (the stream closes). `exitCode` is the container's, when it exited.",
+                "properties": {
+                    "status": {
+                        "$ref": "#/components/schemas/CommandRunStatus"
+                    },
+                    "exitCode": {
+                        "type": [
+                            "integer",
+                            "null"
+                        ]
+                    },
+                    "error": {
+                        "type": [
+                            "string",
+                            "null"
+                        ]
+                    }
+                },
+                "required": [
+                    "status",
+                    "exitCode",
+                    "error"
+                ],
+                "additionalProperties": false
+            },
+            "CommandLinesEvent": {
+                "type": "object",
+                "description": "`lines` of a command's output stream (D105); the event id is `cursor`.",
+                "properties": {
+                    "lines": {
+                        "type": "array",
+                        "items": {
+                            "$ref": "#/components/schemas/CommandOutputLineData"
+                        }
+                    },
+                    "cursor": {
+                        "type": "integer"
+                    }
+                },
+                "required": [
+                    "lines",
+                    "cursor"
+                ],
+                "additionalProperties": false
+            },
+            "CommandOutputLineData": {
+                "type": "object",
+                "description": "One line of a command's output (D105). `number` is stable for the run; `stream` is stdout, stderr or system (launchroom's own lines: pulling the image, the exit code). Stored masked; raw text, never HTML.",
+                "properties": {
+                    "number": {
+                        "type": "integer"
+                    },
+                    "time": {
+                        "type": "string"
+                    },
+                    "stream": {
+                        "type": "string"
+                    },
+                    "text": {
+                        "type": "string"
+                    }
+                },
+                "required": [
+                    "number",
+                    "time",
+                    "stream",
+                    "text"
+                ],
+                "additionalProperties": false
+            },
+            "CommandRunData": {
+                "type": "object",
+                "description": "One one-off command (D105), for the Commands tab, the API, the CLI and MCP. `exitCode` is the container's exit code once it exited; `error` says why it didn't run to its end. Never an env value.",
+                "properties": {
+                    "id": {
+                        "type": "string"
+                    },
+                    "status": {
+                        "$ref": "#/components/schemas/CommandRunStatus"
+                    },
+                    "finished": {
+                        "description": "True once the run ended (succeeded, failed, timed out, cancelled or couldn't run).",
+                        "type": "boolean"
+                    },
+                    "argv": {
+                        "type": "array",
+                        "items": {
+                            "type": "string"
+                        }
+                    },
+                    "name": {
+                        "description": "The listed command it came from (`migrate`), else null.",
+                        "type": [
+                            "string",
+                            "null"
+                        ]
+                    },
+                    "exitCode": {
+                        "type": [
+                            "integer",
+                            "null"
+                        ]
+                    },
+                    "error": {
+                        "type": [
+                            "string",
+                            "null"
+                        ]
+                    },
+                    "timeoutSeconds": {
+                        "type": "integer"
+                    },
+                    "outputTruncated": {
+                        "description": "The output passed its limit and the rest wasn't kept.",
+                        "type": "boolean"
+                    },
+                    "service": {
+                        "description": "svc_…",
+                        "type": "string"
+                    },
+                    "environment": {
+                        "description": "env_…",
+                        "type": "string"
+                    },
+                    "deployment": {
+                        "description": "dpl_…: the live deployment whose image ran.",
+                        "type": [
+                            "string",
+                            "null"
+                        ]
+                    },
+                    "server": {
+                        "description": "The server it ran on.",
+                        "type": [
+                            "string",
+                            "null"
+                        ]
+                    },
+                    "ranBy": {
+                        "description": "Who ran it; null once the account is gone.",
+                        "type": [
+                            "string",
+                            "null"
+                        ]
+                    },
+                    "viaApi": {
+                        "description": "It came through an API token (the CLI, CI, MCP).",
+                        "type": "boolean"
+                    },
+                    "cancelledBy": {
+                        "type": [
+                            "string",
+                            "null"
+                        ]
+                    },
+                    "createdAt": {
+                        "type": "string"
+                    },
+                    "startedAt": {
+                        "type": [
+                            "string",
+                            "null"
+                        ]
+                    },
+                    "finishedAt": {
+                        "type": [
+                            "string",
+                            "null"
+                        ]
+                    },
+                    "durationMs": {
+                        "type": [
+                            "integer",
+                            "null"
+                        ]
+                    }
+                },
+                "required": [
+                    "id",
+                    "status",
+                    "finished",
+                    "argv",
+                    "name",
+                    "exitCode",
+                    "error",
+                    "timeoutSeconds",
+                    "outputTruncated",
+                    "service",
+                    "environment",
+                    "deployment",
+                    "server",
+                    "ranBy",
+                    "viaApi",
+                    "cancelledBy",
+                    "createdAt",
+                    "startedAt",
+                    "finishedAt",
+                    "durationMs"
+                ],
+                "additionalProperties": false
+            },
+            "CommandRunStatus": {
+                "type": "string",
+                "enum": [
+                    "queued",
+                    "running",
+                    "succeeded",
+                    "failed",
+                    "timed_out",
+                    "cancelled",
+                    "error"
+                ],
+                "description": "Lifecycle of a one-off command: queued until its server leases the task, running while the container runs, then how it ended. `failed` is a non-zero exit; `error` means the command never ran to its end for a reason outside it (no server, image pull, launchroomd restarted).",
+                "x-launchroom-tones": {
+                    "queued": "progress",
+                    "running": "progress",
+                    "succeeded": "active",
+                    "failed": "failed",
+                    "timed_out": "failed",
+                    "cancelled": "idle",
+                    "error": "failed"
+                }
+            },
+            "CommandSource": {
+                "type": "string",
+                "enum": [
+                    "framework",
+                    "config"
+                ],
+                "description": "Where a listed command comes from (D105): the build's framework presets or the team's launchroom.json (`deploy.commands`)."
+            },
+            "CommandStatusEvent": {
+                "type": "object",
+                "description": "`status` of a command's output stream: sent when the status changes.",
+                "properties": {
+                    "status": {
+                        "$ref": "#/components/schemas/CommandRunStatus"
+                    },
+                    "finished": {
+                        "type": "boolean"
+                    }
+                },
+                "required": [
+                    "status",
+                    "finished"
+                ],
+                "additionalProperties": false
+            },
+            "CommitCheckData": {
+                "type": "object",
+                "description": "One CI check on a commit (a GitHub check run or commit status, a GitLab job or external status, a Gitea status; D111). `url` is the provider's page for it, when it gave an http(s) one.",
+                "properties": {
+                    "name": {
+                        "type": "string",
+                        "maxLength": 255
+                    },
+                    "state": {
+                        "$ref": "#/components/schemas/CommitCheckState"
+                    },
+                    "url": {
+                        "type": [
+                            "string",
+                            "null"
+                        ]
+                    }
+                },
+                "required": [
+                    "name",
+                    "state"
+                ],
+                "additionalProperties": false
+            },
+            "CommitCheckState": {
+                "type": "string",
+                "enum": [
+                    "pending",
+                    "passed",
+                    "failed"
+                ],
+                "description": "One CI check on a commit, as launchroom reads it from the git provider: each provider's states map onto these three.",
+                "x-launchroom-tones": {
+                    "pending": "progress",
+                    "passed": "active",
+                    "failed": "failed"
+                }
             },
             "ConfigCheckData": {
                 "type": "object",
@@ -5681,6 +8160,20 @@
                 ],
                 "description": "What an import or export reads or writes: a managed database or a service volume."
             },
+            "DecodeTraceInput": {
+                "type": "object",
+                "description": "`POST /traces/decode`: the `X-Launchroom-Ray` value or its header line. Its shape is TraceCodec's to judge, so every unreadable value gets the same answer.",
+                "properties": {
+                    "value": {
+                        "type": "string",
+                        "maxLength": 4096
+                    }
+                },
+                "required": [
+                    "value"
+                ],
+                "additionalProperties": false
+            },
             "DeployEnvironmentInput": {
                 "type": "object",
                 "description": "Apply the staged changes (web review sheet and `POST /environments/{environment}/deploy`). `stage`: build and start, route only on Promote.",
@@ -5761,6 +8254,56 @@
                     "serviceId",
                     "at",
                     "status"
+                ],
+                "additionalProperties": false
+            },
+            "DeploymentChecksData": {
+                "type": "object",
+                "description": "`deployments.checks`: a push deployment of an environment that deploys after checks pass. The state changes only through self::settle(), which follows CheckGateState's transition table. Also the API's `DeploymentResource.checks`.",
+                "properties": {
+                    "state": {
+                        "$ref": "#/components/schemas/CheckGateState"
+                    },
+                    "since": {
+                        "description": "When the deployment started waiting (ISO 8601).",
+                        "type": "string"
+                    },
+                    "deadline": {
+                        "description": "When it gives up (ISO 8601).",
+                        "type": "string"
+                    },
+                    "checks": {
+                        "type": "array",
+                        "items": {
+                            "$ref": "#/components/schemas/CommitCheckData"
+                        }
+                    },
+                    "skippedBy": {
+                        "description": "Who chose Deploy now (`skipped`).",
+                        "type": [
+                            "string",
+                            "null"
+                        ]
+                    },
+                    "problem": {
+                        "description": "Why the last read failed while waiting (\"GitHub didn't answer\"); cleared by the next good read.",
+                        "type": [
+                            "string",
+                            "null"
+                        ]
+                    },
+                    "checkedAt": {
+                        "description": "When the checks were last read (ISO 8601).",
+                        "type": [
+                            "string",
+                            "null"
+                        ]
+                    }
+                },
+                "required": [
+                    "state",
+                    "since",
+                    "deadline"
                 ],
                 "additionalProperties": false
             },
@@ -5875,6 +8418,17 @@
                     },
                     "dashboardUrl": {
                         "type": "string"
+                    },
+                    "checks": {
+                        "description": "A push that waits (or waited) for its commit's CI checks; null when it didn't wait. While `checks.state` is `waiting` the deployment stays `queued`.",
+                        "oneOf": [
+                            {
+                                "$ref": "#/components/schemas/DeploymentChecksData"
+                            },
+                            {
+                                "type": "null"
+                            }
+                        ]
                     }
                 },
                 "required": [
@@ -5941,6 +8495,19 @@
                 ],
                 "additionalProperties": false
             },
+            "DeploymentStepName": {
+                "type": "string",
+                "enum": [
+                    "plan",
+                    "build",
+                    "release",
+                    "rollout",
+                    "health",
+                    "route",
+                    "cleanup"
+                ],
+                "description": "Timeline steps of a deployment."
+            },
             "DeploymentTrigger": {
                 "type": "string",
                 "enum": [
@@ -5953,7 +8520,8 @@
                     "config",
                     "api",
                     "restart",
-                    "start"
+                    "start",
+                    "update"
                 ]
             },
             "DomainKind": {
@@ -6236,6 +8804,30 @@
                     "snapshot"
                 ],
                 "description": "What an export reads: the data as it is now, or a stored backup."
+            },
+            "FailureFixAction": {
+                "type": "string",
+                "enum": [
+                    "set_port",
+                    "raise_health_timeout",
+                    "add_variable",
+                    "generate_dockerfile",
+                    "use_tcp_healthcheck",
+                    "accept_4xx",
+                    "add_capabilities",
+                    "fix_volume_owner",
+                    "free_disk"
+                ],
+                "description": "The one-click fix an explained deployment failure offers (App\\Support\\Deployments\\Failures\\FailureCatalogue, direction.md §9). `set_port` and `raise_health_timeout` stage the setting and redeploy; `add_variable` opens the variable sheet with the name filled in; `generate_dockerfile` opens the guided sheet in Settings → Build."
+            },
+            "FailureFixOutcome": {
+                "type": "string",
+                "enum": [
+                    "deploying",
+                    "staged",
+                    "freeing_disk"
+                ],
+                "description": "What applying a failure fix did (ApiFailureFixResultData)."
             },
             "FindingCardData": {
                 "type": "object",
@@ -7323,7 +9915,7 @@
             },
             "MeData": {
                 "type": "object",
-                "description": "`GET /api/v1/me`: the token, its owner and its team.",
+                "description": "`GET /api/v1/me`: the token, its owner and its team, and its scope when it is limited to one project or service (null: every project).",
                 "properties": {
                     "token": {
                         "$ref": "#/components/schemas/ApiTokenData"
@@ -7333,12 +9925,23 @@
                     },
                     "team": {
                         "$ref": "#/components/schemas/ApiTeamData"
+                    },
+                    "scope": {
+                        "oneOf": [
+                            {
+                                "$ref": "#/components/schemas/ApiTokenScopeData"
+                            },
+                            {
+                                "type": "null"
+                            }
+                        ]
                     }
                 },
                 "required": [
                     "token",
                     "user",
-                    "team"
+                    "team",
+                    "scope"
                 ],
                 "additionalProperties": false
             },
@@ -7359,6 +9962,156 @@
                 "required": [
                     "uid",
                     "gid"
+                ],
+                "additionalProperties": false
+            },
+            "PreviewHealth": {
+                "type": "string",
+                "enum": [
+                    "none",
+                    "building",
+                    "live",
+                    "failed",
+                    "stopped"
+                ],
+                "description": "A preview's current deployments in one word (PreviewList, the API's PreviewResource)."
+            },
+            "PreviewResource": {
+                "type": "object",
+                "description": "A pull request's preview. `health` sums up its current deployments: `none` (no environment), `building`, `live` (every service live), `failed` (one failed), `stopped` (nothing deployed). `deployments` are the current deployment of each service; a preview has settled for `headSha` when each of them is `finished` and built from it.",
+                "properties": {
+                    "id": {
+                        "type": "string"
+                    },
+                    "number": {
+                        "type": "integer"
+                    },
+                    "title": {
+                        "type": "string"
+                    },
+                    "author": {
+                        "type": "string"
+                    },
+                    "repository": {
+                        "type": "string"
+                    },
+                    "pullRequestUrl": {
+                        "type": [
+                            "string",
+                            "null"
+                        ]
+                    },
+                    "headRef": {
+                        "type": "string"
+                    },
+                    "baseRef": {
+                        "type": "string"
+                    },
+                    "headSha": {
+                        "type": "string"
+                    },
+                    "isFork": {
+                        "type": "boolean"
+                    },
+                    "status": {
+                        "$ref": "#/components/schemas/PreviewStatus"
+                    },
+                    "statusReason": {
+                        "type": [
+                            "string",
+                            "null"
+                        ]
+                    },
+                    "health": {
+                        "$ref": "#/components/schemas/PreviewHealth"
+                    },
+                    "environmentId": {
+                        "type": [
+                            "string",
+                            "null"
+                        ]
+                    },
+                    "urls": {
+                        "type": "array",
+                        "items": {
+                            "$ref": "#/components/schemas/PreviewUrlData"
+                        }
+                    },
+                    "deployments": {
+                        "type": "array",
+                        "items": {
+                            "$ref": "#/components/schemas/DeploymentResource"
+                        }
+                    },
+                    "expiresAt": {
+                        "type": [
+                            "string",
+                            "null"
+                        ]
+                    },
+                    "dashboardUrl": {
+                        "type": "string"
+                    }
+                },
+                "required": [
+                    "id",
+                    "number",
+                    "title",
+                    "author",
+                    "repository",
+                    "pullRequestUrl",
+                    "headRef",
+                    "baseRef",
+                    "headSha",
+                    "isFork",
+                    "status",
+                    "statusReason",
+                    "health",
+                    "environmentId",
+                    "urls",
+                    "deployments",
+                    "expiresAt",
+                    "dashboardUrl"
+                ],
+                "additionalProperties": false
+            },
+            "PreviewStatus": {
+                "type": "string",
+                "enum": [
+                    "skipped",
+                    "awaiting_approval",
+                    "queued",
+                    "preparing",
+                    "running",
+                    "failed",
+                    "closed",
+                    "expired"
+                ],
+                "description": "Lifecycle of a pull request's preview. skipped / awaiting_approval / queued → preparing → running → closed | expired - skipped: filtered out (target branch, label, `[skip preview]`, fork policy off); re-evaluated on the next PR event. - awaiting_approval: a fork PR whose author lacks write access. - queued: allowed, but the project has `max_concurrent` previews running. - preparing: the environment exists; its databases start (and are cloned and sanitized when configured) before the apps deploy. - running: the apps' deployments were created (their own statuses tell the rest); synchronize events deploy new commits here. - failed: preparation failed (e.g. the clone's restore); the environment stays for inspection until the PR closes or the preview expires. - closed / expired: torn down (environment deleted). A reopened PR starts over. A preview holds a slot of `max_concurrent` while it has an environment (`environment_id`), whatever its status (e.g. awaiting approval of a fork's new commit while the approved one keeps running).",
+                "x-launchroom-tones": {
+                    "skipped": "idle",
+                    "awaiting_approval": "staged",
+                    "queued": "progress",
+                    "preparing": "progress",
+                    "running": "active",
+                    "failed": "failed",
+                    "closed": "idle",
+                    "expired": "idle"
+                }
+            },
+            "PreviewUrlData": {
+                "type": "object",
+                "properties": {
+                    "service": {
+                        "type": "string"
+                    },
+                    "url": {
+                        "type": "string"
+                    }
+                },
+                "required": [
+                    "service",
+                    "url"
                 ],
                 "additionalProperties": false
             },
@@ -7802,6 +10555,25 @@
                 ],
                 "description": "Severity of an advisory group: the GHSA label, else the highest CVSS v3 base score, else unknown."
             },
+            "StartAppUpdateData": {
+                "type": "object",
+                "description": "Update a service to one of its available releases. The tag must be a candidate of the service's latest check; a major needs the release notes read.",
+                "properties": {
+                    "tag": {
+                        "type": "string",
+                        "maxLength": 128,
+                        "pattern": "^[A-Za-z0-9_][A-Za-z0-9_.-]{0,127}$"
+                    },
+                    "releaseNotesRead": {
+                        "type": "boolean",
+                        "default": false
+                    }
+                },
+                "required": [
+                    "tag"
+                ],
+                "additionalProperties": false
+            },
             "StartCliSessionInput": {
                 "type": "object",
                 "description": "`POST /cli/sessions`: what the CLI says about itself; shown to the person approving (display only, never trusted).",
@@ -7827,6 +10599,40 @@
                         ],
                         "maxLength": 64,
                         "pattern": "^[A-Za-z0-9.+_-]+$"
+                    }
+                },
+                "additionalProperties": false
+            },
+            "StartCommandRunInput": {
+                "type": "object",
+                "description": "Run a one-off command (D105): an `argv` or the `name` of a listed command, not both. The timeout defaults to 10 minutes.",
+                "properties": {
+                    "argv": {
+                        "description": "The program and its arguments, e.g. [\"php\", \"artisan\", \"migrate:status\"].",
+                        "type": [
+                            "array",
+                            "null"
+                        ],
+                        "items": {
+                            "type": "string"
+                        }
+                    },
+                    "name": {
+                        "description": "A command of the service's catalogue (`GET …/commands`), e.g. \"migrate\".",
+                        "type": [
+                            "string",
+                            "null"
+                        ],
+                        "pattern": "^[a-z0-9][a-z0-9-]{0,62}$"
+                    },
+                    "timeoutSeconds": {
+                        "description": "Seconds before the command is stopped (10 to 3600).",
+                        "type": [
+                            "integer",
+                            "null"
+                        ],
+                        "minimum": 10,
+                        "maximum": 3600
                     }
                 },
                 "additionalProperties": false
@@ -7987,6 +10793,79 @@
                 ],
                 "description": "Team membership roles and the role matrix. This is the only place that maps roles to permissions."
             },
+            "TraceFailure": {
+                "type": "string",
+                "enum": [
+                    "refused",
+                    "timeout",
+                    "no_healthy_upstream",
+                    "transport",
+                    "client_closed"
+                ],
+                "description": "Why the edge couldn't get an answer from the app: the byte value of the trace's `failure` field."
+            },
+            "TraceFirewallData": {
+                "type": "object",
+                "description": "What the web firewall decided about a traced request.",
+                "properties": {
+                    "mode": {
+                        "$ref": "#/components/schemas/WafMode"
+                    },
+                    "outcome": {
+                        "$ref": "#/components/schemas/TraceFirewallOutcome"
+                    },
+                    "score": {
+                        "description": "Inbound anomaly score, capped at 255.",
+                        "type": "integer"
+                    },
+                    "rules": {
+                        "type": "array",
+                        "items": {
+                            "$ref": "#/components/schemas/WafRuleData"
+                        }
+                    }
+                },
+                "required": [
+                    "mode",
+                    "outcome",
+                    "score",
+                    "rules"
+                ],
+                "additionalProperties": false
+            },
+            "TraceFirewallOutcome": {
+                "type": "string",
+                "enum": [
+                    "clean",
+                    "detected",
+                    "blocked"
+                ],
+                "description": "What the web firewall decided about a traced request."
+            },
+            "TraceOrigin": {
+                "type": "string",
+                "enum": [
+                    "app",
+                    "firewall",
+                    "upstream_failure",
+                    "stopped",
+                    "redirect",
+                    "no_route",
+                    "access_refused",
+                    "edge"
+                ],
+                "description": "Who produced the response of a traced request: the byte value of the trace's `origin` field."
+            },
+            "TraceStop": {
+                "type": "string",
+                "enum": [
+                    "edge",
+                    "firewall",
+                    "app_server",
+                    "service"
+                ],
+                "description": "Where a traced request ended on its path: the edge answered itself, the firewall gate on the edge refused it, the way to the app server failed, or the service answered."
+            },
             "TransferData": {
                 "type": "object",
                 "description": "A transfer as the UI, the API and the CLI see it. Never carries keys, digests of chunks or link tokens.",
@@ -8139,6 +11018,74 @@
                 ],
                 "additionalProperties": false
             },
+            "UpdateCandidateData": {
+                "type": "object",
+                "description": "A newer release of a running image, stored in `app_update_checks.candidates` and shown on the service. `digest` is what an update pins; `firstSeenAt` starts the automatic-update settle time.",
+                "properties": {
+                    "kind": {
+                        "$ref": "#/components/schemas/UpdateKind"
+                    },
+                    "tag": {
+                        "description": "The tag to run (`v6.3.0`, `6.72.0-alpine`; for a build, the running tag).",
+                        "type": "string"
+                    },
+                    "version": {
+                        "description": "For people: `v6.3.0`, or for a moving tag the version it names now, else the tag.",
+                        "type": "string"
+                    },
+                    "digest": {
+                        "type": [
+                            "string",
+                            "null"
+                        ]
+                    },
+                    "publishedAt": {
+                        "type": [
+                            "string",
+                            "null"
+                        ]
+                    },
+                    "firstSeenAt": {
+                        "type": "string"
+                    },
+                    "curatedBy": {
+                        "description": "The template that pins this version (tested by launchroom).",
+                        "type": [
+                            "string",
+                            "null"
+                        ]
+                    }
+                },
+                "required": [
+                    "kind",
+                    "tag",
+                    "version",
+                    "digest",
+                    "publishedAt",
+                    "firstSeenAt"
+                ],
+                "additionalProperties": false
+            },
+            "UpdateCheckStatus": {
+                "type": "string",
+                "enum": [
+                    "current",
+                    "available",
+                    "unknown",
+                    "failed"
+                ],
+                "description": "The outcome of the latest version check of a service instance."
+            },
+            "UpdateKind": {
+                "type": "string",
+                "enum": [
+                    "major",
+                    "minor",
+                    "patch",
+                    "build"
+                ],
+                "description": "What an available release changes: the first number (major), the second (minor), a later one (patch), or nothing but the image behind the same tag (build)."
+            },
             "UpdateVariableInput": {
                 "type": "object",
                 "description": "Change a variable in this environment only. Omitted fields stay.",
@@ -8272,6 +11219,36 @@
                     "label",
                     "blocked",
                     "detected"
+                ],
+                "additionalProperties": false
+            },
+            "WafMode": {
+                "type": "string",
+                "enum": [
+                    "off",
+                    "log",
+                    "block"
+                ],
+                "description": "The web firewall of a service instance. Off sends nothing (RouteSpec.waf omitted); log and block are the protocol's modes."
+            },
+            "WafRuleData": {
+                "type": "object",
+                "description": "A CRS rule id with its message and category.",
+                "properties": {
+                    "id": {
+                        "type": "integer"
+                    },
+                    "message": {
+                        "type": "string"
+                    },
+                    "category": {
+                        "type": "string"
+                    }
+                },
+                "required": [
+                    "id",
+                    "message",
+                    "category"
                 ],
                 "additionalProperties": false
             },

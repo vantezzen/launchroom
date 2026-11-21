@@ -36,3 +36,39 @@ export function useMeasuredWidth<T extends HTMLElement>(): [
 
     return [ref, width];
 }
+
+/** Height of an element, kept current with a ResizeObserver (0 until measured). */
+export function useMeasuredHeight<T extends HTMLElement>(): [
+    (node: T | null) => void,
+    number,
+] {
+    const [height, setHeight] = useState(0);
+    const [node, setNode] = useState<T | null>(null);
+
+    const ref = useCallback((element: T | null) => setNode(element), []);
+
+    useLayoutEffect(() => {
+        if (!node) {
+            return;
+        }
+
+        setHeight(node.getBoundingClientRect().height);
+
+        if (typeof ResizeObserver === 'undefined') {
+            return;
+        }
+
+        const observer = new ResizeObserver((entries) => {
+            const entry = entries[0];
+
+            if (entry) {
+                setHeight(entry.contentRect.height);
+            }
+        });
+        observer.observe(node);
+
+        return () => observer.disconnect();
+    }, [node]);
+
+    return [ref, height];
+}

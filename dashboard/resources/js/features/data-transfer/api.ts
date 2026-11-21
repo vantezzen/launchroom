@@ -8,3 +8,11 @@ export type Inspection = Omit<
 > & {
     status: 'pending' | 'done' | 'failed';
 };
+export type CopyRun = App.Data.Transfers.CopyRunData;
+export type CopyStep = App.Data.Transfers.CopyStepData;
+export type CopyOptions = App.Data.Transfers.CopyOptionsData;
+export type CopySource = App.Data.Transfers.CopySourceData;
+export type CopyInspection = {
+    target: Inspection;
+    source: Inspection | null;
+};

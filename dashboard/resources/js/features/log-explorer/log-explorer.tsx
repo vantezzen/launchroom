@@ -12,7 +12,10 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useIsMobile } from '@/hooks/use-mobile';
 import { schedulePoll } from '@/hooks/use-live-props';
 import { Histogram } from '@/components/charts/histogram';
-import { TimeRangeSelect } from '@/components/charts/time-range-select';
+import {
+    RangeSelect,
+    TimeRangeSelect,
+} from '@/components/charts/time-range-select';
 import { EmptyState } from '@/components/patterns/empty-state';
 import { MetaLine } from '@/components/patterns/meta-line';
 import { SidePanel } from '@/components/patterns/sheet';
@@ -32,7 +35,6 @@ import {
     DEFAULT_RANGE,
     formatWindow,
     RANGE_SETS,
-    rangeOptions,
     rangeWords,
     readScope,
     replaceQuery as updateUrl,
@@ -55,6 +57,11 @@ import { stop as stopTailRoute } from '@/routes/projects/logs/tail';
 import { TracePastePopover } from '@/features/request-trace/trace-paste';
 import { downloadLines } from '@/features/log-explorer/download';
 import { bucketEntries, countFacets } from '@/features/log-explorer/facets';
+import {
+    bucketsExtent,
+    histogramZoom,
+    linesExtent,
+} from '@/features/log-explorer/zoom';
 import { FilterRail } from '@/features/log-explorer/filter-rail';
 import { LogDetail, LogMessagePane } from '@/features/log-explorer/log-detail';
 import { LogTable } from '@/features/log-explorer/log-table';
@@ -77,7 +84,6 @@ type Entry = App.Data.Logs.LogEntryData;
 type Range = (typeof RANGE_SETS.logs)[number];
 type Scope = 'environment' | 'project' | 'team';
 
-const RANGES = rangeOptions(RANGE_SETS.logs);
 /**
  * Build output (plan, build, release) belongs to its deployment's Steps,
  * not here (docs/08 §12): the explorer asks for everything else, which is
@@ -491,30 +497,87 @@ export function LogExplorer({
     );
     const from = page ? Date.parse(page.from) : Date.now() - 3600_000;
     const to = live ? Date.now() : page ? Date.parse(page.to) : Date.now();
+    // The histogram counts every level: the level filter narrows the list.
+    const counted = useMemo(
+        () =>
+            rows.filter((row) =>
+                matchesQuery(row, {
+                    ...parsed,
+                    filters: parsed.filters.filter((f) => f.key !== 'level'),
+                }),
+            ),
+        [rows, parsed],
+    );
+    // "Show the whole range" after an automatic zoom, for this search only.
+    const [wholeRangeFor, setWholeRangeFor] = useState<string | null>(null);
+    const zoom = useMemo(() => {
+        if (live || span || !page || wholeRangeFor === firstUrl) {
+            return null;
+        }
+
+        const range = { from, to };
+
+        // Every line is loaded: zoom to them with finer buckets.
+        if (!page.truncated) {
+            const window = histogramZoom(
+                linesExtent(counted.map((row) => Date.parse(row.time))),
+                range,
+            );
+
+            return window
+                ? {
+                      ...window,
+                      buckets: bucketEntries(
+                          counted,
+                          window.from,
+                          window.to,
+                          window.count,
+                      ),
+                  }
+                : null;
+        }
+
+        // Only the newest lines are loaded: trim the server's counts to the
+        // part with lines, when that still leaves a readable chart.
+        const window = histogramZoom(bucketsExtent(page.buckets), range);
+        const kept = window
+            ? page.buckets.filter(
+                  (bucket) =>
+                      bucket.end > window.from && bucket.start < window.to,
+              )
+            : [];
+
+        return window && kept.length >= 6
+            ? {
+                  from: kept[0].start,
+                  to: kept[kept.length - 1].end,
+                  buckets: kept,
+              }
+            : null;
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [counted, page, live, span, wholeRangeFor, firstUrl]);
     const buckets = useMemo(
         () =>
-            // The server counted every matching line of the range.
-            !live && page && page.buckets.length > 0
-                ? page.buckets
-                : rows.length === 0 && !page
-                  ? []
-                  : bucketEntries(
-                        rows.filter((row) =>
-                            matchesQuery(row, {
-                                ...parsed,
-                                filters: parsed.filters.filter(
-                                    (f) => f.key !== 'level',
-                                ),
-                            }),
-                        ),
-                        from,
-                        to,
-                        60,
-                    ),
+            zoom
+                ? zoom.buckets
+                : // The server counted every matching line of the range.
+                  !live && page && page.buckets.length > 0
+                  ? page.buckets
+                  : rows.length === 0 && !page
+                    ? []
+                    : bucketEntries(counted, from, to, 60),
         // eslint-disable-next-line react-hooks/exhaustive-deps
-        [rows, parsed, page, live],
+        [counted, page, live, zoom],
     );
-    const markers = useMemo(() => deployMarkers(page?.markers), [page]);
+    const markers = useMemo(() => {
+        const all = deployMarkers(page?.markers);
+
+        return zoom
+            ? all.filter(
+                  (marker) => marker.t >= zoom.from && marker.t <= zoom.to,
+              )
+            : all;
+    }, [page, zoom]);
     const selected = visible.find((row) => row.id === selectedId) ?? null;
     const index = selected ? visible.indexOf(selected) : -1;
     // Phones get the details in a sheet; elsewhere they open in place.
@@ -815,11 +878,10 @@ export function LogExplorer({
                     {/* A picked window (drag on the histogram, a chart, an
                         alert) replaces the range until it is cleared. */}
                     {!span && (
-                        <TimeRangeSelect<Range>
+                        <RangeSelect
+                            page="logs"
                             value={range}
                             onChange={changeRange}
-                            options={RANGES}
-                            label="Time range"
                         />
                     )}
                     {canLive && (
@@ -910,7 +972,9 @@ export function LogExplorer({
                         label={
                             span
                                 ? `Log lines from ${formatWindow(span)}`
-                                : `Log lines over the ${rangeWords(range)}`
+                                : zoom
+                                  ? `Log lines from ${formatWindow(zoom)}, the part of the ${rangeWords(range)} with lines`
+                                  : `Log lines over the ${rangeWords(range)}`
                         }
                         markers={markers}
                         height={64}
@@ -940,6 +1004,21 @@ export function LogExplorer({
                             {!live && page?.truncated && 'newest 5,000 shown'}
                             {scope === 'project' && 'all environments'}
                             {scope === 'team' && 'all projects'}
+                            {zoom && (
+                                <span>
+                                    chart zoomed to {formatWindow(zoom)}, where
+                                    the lines are{' '}
+                                    <button
+                                        type="button"
+                                        onClick={() =>
+                                            setWholeRangeFor(firstUrl)
+                                        }
+                                        className="rounded-sm text-foreground underline decoration-border-strong underline-offset-4 hover:decoration-foreground focus-visible:outline-2 focus-visible:outline-(--signal)"
+                                    >
+                                        Show the {rangeWords(range)}
+                                    </button>
+                                </span>
+                            )}
                             {live &&
                                 (following === null
                                     ? 'starting live logs…'

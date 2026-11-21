@@ -20,6 +20,10 @@ const (
 	maxSummaryText  = 1024
 	maxBuildEnvRefs = 1024
 	maxGenerated    = 8
+	maxCommands     = 16
+	// Lengths of a CommandSuggestion's texts.
+	maxCommandLabel       = 64
+	maxCommandDescription = 200
 	// Lengths of a generated secret (characters for alnum, else bytes).
 	minGeneratedLength = 16
 	maxGeneratedLength = 128
@@ -60,6 +64,22 @@ type ProcessSuggestion struct {
 	// on SIGTERM (queue workers: 60s), a default for the service's stop
 	// timeout (1s to 5m). Omitted: launchroom's default.
 	StopTimeout Duration `json:"stopTimeout,omitzero"`
+}
+
+// CommandSuggestion is a standard one-off command of the detected framework
+// (D105): shown in the dashboard's Commands tab, run as a run_once task in
+// the live deployment's image. Only commands that run without input.
+type CommandSuggestion struct {
+	// Name is a stable id per framework ("migrate", "migrate-status").
+	Name Slug `json:"name"`
+	// Label is a short title ("Run migrations").
+	Label string `json:"label" jsonschema:"minLength=1,maxLength=64"`
+	// Description is one sentence about what the command does.
+	Description string `json:"description" jsonschema:"maxLength=200"`
+	// Args is the argv to run in the image (never a shell string).
+	Args []string `json:"args" jsonschema:"minItems=1,maxItems=64"`
+	// Danger: the command changes data or state, so the dashboard asks to confirm.
+	Danger bool `json:"danger,omitzero"`
 }
 
 // GeneratedSecret is a runtime secret the app can't start without (Laravel's
@@ -112,6 +132,8 @@ type BuildSummary struct {
 	Processes []ProcessSuggestion `json:"processes,omitzero" jsonschema:"nullable,maxItems=16"`
 	// ReleaseCommand runs once per deploy before rollout (argv), e.g. migrations.
 	ReleaseCommand []string `json:"releaseCommand,omitzero" jsonschema:"nullable,minItems=1,maxItems=64"`
+	// Commands are the framework's standard one-off commands (D105, unique names).
+	Commands []CommandSuggestion `json:"commands,omitzero" jsonschema:"nullable,maxItems=16"`
 	// HealthPath is the suggested HTTP health check path.
 	HealthPath HTTPPath `json:"healthPath,omitzero"`
 	// GeneratedSecrets are runtime secrets the dashboard creates when the service has none (names and shapes only).
@@ -290,6 +312,23 @@ func (s *BuildSummary) validate(e *errs, p string) {
 		}
 	}
 	checkArgv(e, p+".releaseCommand", s.ReleaseCommand)
+	checkCount(e, p+".commands", len(s.Commands), 0, maxCommands)
+	names := make([]Slug, 0, len(s.Commands))
+	for i, c := range s.Commands {
+		cp := idx(p+".commands", i)
+		e.check(cp+".name", c.Name)
+		names = append(names, c.Name)
+		if c.Label == "" {
+			e.addf(cp+".label", "is required")
+		}
+		checkText(e, cp+".label", c.Label, maxCommandLabel)
+		checkText(e, cp+".description", c.Description, maxCommandDescription)
+		if c.Args == nil {
+			e.addf(cp+".args", "is required")
+		}
+		checkArgv(e, cp+".args", c.Args)
+	}
+	unique(e, p+".commands.name", names)
 	if s.HealthPath != "" {
 		e.check(p+".healthPath", s.HealthPath)
 	}

@@ -10,4 +10,5 @@ enum ServiceActivityTopic: string
     case RemoteAccess = 'remote_access';
     case Backups = 'backups';
     case Imports = 'imports';
+    case Commands = 'commands';
 }

@@ -26,6 +26,7 @@ use App\Models\Environment;
 use App\Models\Placement;
 use App\Models\Service;
 use App\Models\ServiceInstance;
+use App\Models\Transfers\DataCopyRun;
 use App\Models\User;
 use App\Models\Variable;
 use App\Models\Volume;
@@ -110,6 +111,10 @@ final readonly class StartRestore
 
         if (RestoreRun::query()->where('source_service_instance_id', $source->id)->whereIn('status', RestoreRunStatus::nonTerminal())->exists()) {
             throw DomainRuleViolation::conflict('A restore of this service is already in progress.');
+        }
+
+        if ($mode === RestoreMode::InPlace && DataCopyRun::openInto($source->id)) {
+            throw DomainRuleViolation::conflict('A copy from another environment into this service is running. Restore once it has finished.');
         }
 
         $destination = $archive->destination()->firstOrFail();
@@ -213,6 +218,10 @@ final readonly class StartRestore
 
         if (RestoreRun::query()->where('source_service_instance_id', $source->id)->whereIn('status', RestoreRunStatus::nonTerminal())->exists()) {
             throw DomainRuleViolation::conflict('A restore of this service is already in progress.');
+        }
+
+        if ($mode === RestoreMode::InPlace && DataCopyRun::openInto($source->id)) {
+            throw DomainRuleViolation::conflict('A copy from another environment into this service is running. Restore once it has finished.');
         }
 
         $volume = null;

@@ -4,8 +4,10 @@ declare(strict_types=1);
 
 namespace App\Queries;
 
+use App\Data\AppUpdates\UpdateCandidateData;
 use App\Data\Attention\AttentionItemData;
 use App\Data\Canvas\ProjectSummaryData;
+use App\Enums\AppUpdates\UpdateCheckStatus;
 use App\Enums\DeploymentStatus;
 use App\Enums\EnvironmentKind;
 use App\Enums\HealthCheckState;
@@ -14,21 +16,27 @@ use App\Enums\Permission;
 use App\Enums\Previews\PreviewStatus;
 use App\Enums\ServerStatus;
 use App\Enums\StatusTone;
+use App\Models\AppUpdates\AppUpdateCheck;
 use App\Models\Deployment;
 use App\Models\Environment;
 use App\Models\Previews\Preview;
-use App\Models\Security\SecurityFinding;
 use App\Models\Server;
 use App\Models\Team;
 use App\Models\User;
+use App\Queries\Security\FixGroups;
+use App\Support\AppUpdates\UpdateChoice;
+use App\Support\Links;
 use Carbon\CarbonImmutable;
+use Carbon\CarbonInterface;
+use Illuminate\Contracts\Database\Query\Builder;
 
 /**
  * "Needs you" on the projects page (docs/08 §13): what in the team needs
  * the user right now, most urgent first, each with a link to the place that
  * fixes it. Failed services come from the project summaries (no second
  * status pass); then servers that are down, waiting for approval or almost
- * full, known problems live apps log (G12), open security findings that need action, staged changes waiting to
+ * full, known problems live apps log (G12), open security findings that need action, apps more than a
+ * year behind (D106), staged changes waiting to
  * deploy, paused auto-deploy and fork pull requests waiting for approval.
  * Healthy, deploying and idle things never show up here.
  */
@@ -54,6 +62,7 @@ final readonly class TeamAttention
             ...$this->servers($team),
             ...$this->runtimeFindings($team),
             ...$this->security($team),
+            ...$this->outdated($team),
             ...$this->environments($team),
             ...$this->previews($team),
         ];
@@ -75,7 +84,11 @@ final readonly class TeamAttention
         foreach ($summaries as $summary) {
             foreach ($summary->environments as $environment) {
                 foreach ($environment->problems as $problem) {
-                    $failedDeploy = $problem->status->reason->isFailedDeploy();
+                    // The server's own row says it isn't reporting (one thing, one row).
+                    if ($problem->status->reason === NodeStatusReason::ServerUnreachable) {
+                        continue;
+                    }
+
                     $items[] = new AttentionItemData(
                         key: "service:{$environment->id}:{$problem->serviceId}",
                         kind: 'service',
@@ -85,7 +98,7 @@ final readonly class TeamAttention
                         detail: $problem->status->reason === NodeStatusReason::LastDeployFailed ? 'The previous version is still serving.' : null,
                         at: $problem->status->since,
                         href: $problem->href,
-                        action: $failedDeploy ? 'See why' : 'Open',
+                        action: $problem->link,
                     );
                 }
             }
@@ -212,12 +225,8 @@ final readonly class TeamAttention
      */
     private function security(Team $team): array
     {
-        // One per advisory group, like the sidebar badge and the Security hero (docs/22 §9).
-        $count = SecurityFinding::query()
-            ->where('team_id', $team->id)
-            ->actionNeeded()
-            ->distinct()
-            ->count('group_key');
+        // One per package to update, like the sidebar badge and the Security hero (docs/22 §9).
+        $count = FixGroups::count($team->id);
 
         if ($count === 0) {
             return [];
@@ -227,13 +236,60 @@ final readonly class TeamAttention
             key: 'security',
             kind: 'security',
             state: StatusTone::Warning,
-            title: $count === 1 ? '1 vulnerability needs action' : "{$count} vulnerabilities need action",
+            title: $count === 1 ? '1 security fix needed' : "{$count} security fixes needed",
             context: null,
             detail: null,
             at: null,
             href: route('security.index', absolute: false),
             action: 'Review',
         )];
+    }
+
+    /**
+     * Apps that run a version more than a year old while a newer one is
+     * out (D106). Newer releases of current apps stay on their service and
+     * in the App updates list; only an app that fell behind needs you.
+     *
+     * @return list<AttentionItemData>
+     */
+    private function outdated(Team $team): array
+    {
+        $checks = AppUpdateCheck::query()
+            ->where('team_id', $team->id)
+            ->where('status', UpdateCheckStatus::Available->value)
+            ->where('running_published_at', '<=', now()->subYear())
+            ->whereHas('serviceInstance', static fn (Builder $query) => $query->whereNull('removed_at')->whereNull('stopped_at'))
+            ->with(['serviceInstance.service', 'serviceInstance.environment.project'])
+            ->oldest('running_published_at')
+            ->limit(5)
+            ->get();
+        $items = [];
+
+        foreach ($checks as $check) {
+            $instance = $check->serviceInstance;
+            $environment = $instance->environment;
+            $newest = UpdateChoice::newest($check->candidates);
+            $running = UpdateChoice::runningVersion($check->image);
+            $age = $check->running_published_at?->diffForHumans(['parts' => 1, 'syntax' => CarbonInterface::DIFF_ABSOLUTE]);
+
+            if (! $newest instanceof UpdateCandidateData || $running === null || $age === null) {
+                continue;
+            }
+
+            $items[] = new AttentionItemData(
+                key: 'update:'.$instance->public_id,
+                kind: 'update',
+                state: StatusTone::Warning,
+                title: "{$instance->service->name} runs {$running}, published {$age} ago",
+                context: $environment->kind === EnvironmentKind::Production ? $environment->project->name : "{$environment->project->name}, {$environment->name}",
+                detail: "{$newest->version} is available.",
+                at: null,
+                href: Links::serviceSettings($instance, 'source', 'updates'),
+                action: 'Review',
+            );
+        }
+
+        return $items;
     }
 
     /**

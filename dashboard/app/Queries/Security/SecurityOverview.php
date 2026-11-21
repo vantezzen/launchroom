@@ -7,6 +7,8 @@ namespace App\Queries\Security;
 use App\Data\Security\FeedStateData;
 use App\Data\Security\FindingCardData;
 use App\Data\Security\FindingInvestigationData;
+use App\Data\Security\FixGroupData;
+use App\Data\Security\FixGroupServiceData;
 use App\Data\Security\RuntimeCardData;
 use App\Data\Security\SecurityPageData;
 use App\Data\Security\SecurityServiceRefData;
@@ -43,7 +45,7 @@ use Illuminate\Support\Facades\Gate;
 
 /**
  * The Security page (docs/22 §9.2) for the current team: summary tiles,
- * "Action needed" cards, the web firewall section, "Worth knowing" groups
+ * "Action needed" grouped by what to fix (FixGroups), the web firewall section, "Worth knowing" groups
  * and the inventory overview (runtimes, engines, base images).
  */
 final readonly class SecurityOverview
@@ -58,6 +60,7 @@ final readonly class SecurityOverview
 
     public function __construct(
         private WafOverview $waf,
+        private FixGroups $fixGroups,
     ) {}
 
     /**
@@ -89,20 +92,8 @@ final readonly class SecurityOverview
             ->get();
         $refs->load($team->id, array_values(array_unique(array_map(static fn (SecurityFinding $f): int => $f->service_instance_id, $findings->all()))));
         $titles = $this->titles(self::advisoryIds($findings->all()));
-        $investigations = SecurityInvestigation::query()->whereKey($findings->pluck('investigation_id')->filter()->unique()->values()->all())->get()->keyBy('id');
 
-        $cards = [];
-
-        foreach ($findings->where('level', FindingLevel::ActionNeeded) as $finding) {
-            $card = $this->card($finding, $refs, $titles, $investigations->get($finding->investigation_id));
-
-            if ($card instanceof FindingCardData) {
-                $cards[] = [$finding, $card];
-            }
-        }
-
-        usort($cards, static fn (array $a, array $b): int => [$b[0]->known_exploited, $b[0]->severity->rank(), $a[0]->first_seen_at->getTimestamp()]
-            <=> [$a[0]->known_exploited, $a[0]->severity->rank(), $b[0]->first_seen_at->getTimestamp()]);
+        $groups = $this->fixGroups->handle($team->id, $refs, $scope instanceof SecurityScope ? $scoped : null);
 
         [$runtimes, $baseImages] = $this->runtimes($live, $now);
         $routed = $this->routedInstances($team->id);
@@ -123,8 +114,8 @@ final readonly class SecurityOverview
         }
 
         $summary = new SecuritySummaryData(
-            actionNeeded: count($cards),
-            actionNeededServices: count(array_unique(array_map(static fn (array $c): int => $c[0]->service_instance_id, $cards))),
+            actionNeeded: count($groups),
+            actionNeededServices: count(array_unique(array_merge([], ...array_map(static fn (FixGroupData $g): array => array_map(static fn (FixGroupServiceData $s): string => $s->service->id.$s->service->environmentId, $g->services), $groups)))),
             packages: $this->packageCount($live),
             servicesChecked: count(array_filter($live, static fn (array $i): bool => $i['status'] === InventoryStatus::Ready->value)),
             pendingInventories: count(array_filter($live, static fn (array $i): bool => $i['status'] === null || $i['status'] === InventoryStatus::Pending->value)),
@@ -162,7 +153,7 @@ final readonly class SecurityOverview
             canManageSources: $user->is_instance_owner === true,
             canManage: Gate::forUser($user)->allows('manage', [SecurityFinding::class, $team]),
             summary: $summary,
-            actionNeeded: array_map(static fn (array $c): FindingCardData => $c[1], $cards),
+            fixGroups: $groups,
             firewall: $firewall,
             worthKnowing: $this->worthKnowing($findings->where('level', FindingLevel::WorthKnowing)->all(), $refs, $titles, $runtimes, $baseImages),
             runtimes: $runtimes,

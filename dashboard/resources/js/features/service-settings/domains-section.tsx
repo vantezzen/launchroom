@@ -9,6 +9,7 @@ import {
     MoreHorizontal,
     Plus,
     RefreshCw,
+    Trash2,
 } from 'lucide-react';
 import { useEffect, useEffectEvent, useRef, useState } from 'react';
 import type { FormEvent, ReactNode } from 'react';
@@ -23,6 +24,10 @@ import { TimeAgo } from '@/components/time-ago';
 import { Button } from '@/components/ui/button';
 import { CertificateProblem } from '@/features/domains/certificate-problem';
 import {
+    CloudflareRecordHint,
+    ProxyNote,
+} from '@/features/domains/dns-check-result';
+import {
     Dialog,
     DialogContent,
     DialogDescription,
@@ -32,6 +37,7 @@ import {
     DropdownMenu,
     DropdownMenuContent,
     DropdownMenuItem,
+    DropdownMenuSeparator,
     DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
 import { Input } from '@/components/ui/input';
@@ -86,9 +92,8 @@ function dnsStep(domain: Domain): Step {
                     : check.reachedOverHttp
                       ? 'Reaches your servers'
                       : 'Points at your servers',
-                detail: check.proxy
-                    ? `${check.proxy} forwards to your server. Use SSL/TLS Full (strict).`
-                    : when,
+                // The proxy's setup hint sits under the steps (ProxyNote).
+                detail: when,
             };
         case 'proxied':
             return {
@@ -240,7 +245,7 @@ function overall(
  * Where a request goes: DNS → HTTPS → the edge servers. One step per
  * column with an icon, the status word and one quiet line.
  */
-function DomainPath({
+export function DomainPath({
     steps,
 }: {
     steps: { label: string; step: Step; media?: ReactNode }[];
@@ -248,35 +253,90 @@ function DomainPath({
     return (
         <ol className="grid divide-y border-t @xl/settings:grid-cols-3 @xl/settings:divide-x @xl/settings:divide-y-0">
             {steps.map(({ label, step, media }, index) => (
-                <li
+                <DomainPathStep
                     key={label}
-                    data-setting={
-                        label === 'HTTPS' ? 'domain-https' : undefined
-                    }
-                    className="relative grid min-w-0 grid-cols-[4.5rem_minmax(0,1fr)] items-center gap-x-3 gap-y-1 px-5 py-3 @xl/settings:flex @xl/settings:flex-col @xl/settings:items-stretch @xl/settings:gap-1.5 @xl/settings:py-4"
-                >
-                    <span className="type-small text-muted-foreground">
-                        {label}
-                    </span>
-                    <span className="flex min-w-0 items-center gap-2 type-body font-medium">
-                        <StatusIcon state={step.state} />
-                        <span className="truncate">{step.title}</span>
-                    </span>
-                    {media}
-                    {step.detail && (
-                        <span className="col-start-2 truncate type-small text-muted-foreground">
-                            {step.detail}
-                        </span>
-                    )}
-                    {index < steps.length - 1 && (
-                        <ArrowRight
-                            aria-hidden="true"
-                            className="absolute top-1/2 -right-2 z-10 hidden size-4 -translate-y-1/2 rounded-full bg-card text-faint @xl/settings:block"
-                        />
-                    )}
-                </li>
+                    label={label}
+                    step={step}
+                    media={media}
+                    order={index}
+                    last={index === steps.length - 1}
+                />
             ))}
         </ol>
+    );
+}
+
+/**
+ * How often a step turned green while on screen. Derived during render
+ * (React's "adjust state on prop change"), so the first paint never
+ * animates and a step that was already green stays still.
+ */
+function useTurnedGreen(state: StatusState): number {
+    const [seen, setSeen] = useState(state);
+    const [turns, setTurns] = useState(0);
+
+    if (seen !== state) {
+        setSeen(state);
+
+        if (state === 'active') {
+            setTurns(turns + 1);
+        }
+    }
+
+    return turns;
+}
+
+function DomainPathStep({
+    label,
+    step,
+    media,
+    order,
+    last,
+}: {
+    label: string;
+    step: Step;
+    media?: ReactNode;
+    order: number;
+    last: boolean;
+}) {
+    const turns = useTurnedGreen(step.state);
+
+    return (
+        <li
+            data-setting={label === 'HTTPS' ? 'domain-https' : undefined}
+            className="relative grid min-w-0 grid-cols-[4.5rem_minmax(0,1fr)] items-center gap-x-3 gap-y-1 px-5 py-3 @xl/settings:flex @xl/settings:flex-col @xl/settings:items-stretch @xl/settings:gap-1.5 @xl/settings:py-4"
+        >
+            <span className="type-small text-muted-foreground">{label}</span>
+            {/* Re-mounts when the step turns green: the new status settles
+                in (status change, §8), DNS first, then HTTPS, then Traffic. */}
+            <span
+                key={turns}
+                style={
+                    turns > 0
+                        ? { animationDelay: `${order * 120}ms` }
+                        : undefined
+                }
+                className={cn(
+                    'flex min-w-0 items-center gap-2 type-body font-medium',
+                    turns > 0 && 'motion-safe:animate-enter',
+                )}
+            >
+                <StatusIcon state={step.state} />
+                <span className="truncate">{step.title}</span>
+            </span>
+            {media}
+            {step.detail && (
+                <span className="col-start-2 truncate type-small text-muted-foreground">
+                    {step.detail}
+                </span>
+            )}
+            {!last && (
+                <ArrowRight
+                    aria-hidden="true"
+                    className="absolute top-1/2 -right-2 z-10 hidden size-4 -translate-y-1/2 rounded-full bg-card text-faint @xl/settings:block"
+                />
+            )}
+        </li>
     );
 }
 
@@ -459,6 +519,7 @@ export function DnsRecords({ domain }: { domain: Domain }) {
                         />
                     )}
                 </div>
+                <CloudflareRecordHint wildcard={false} />
             </div>
         );
     }
@@ -496,23 +557,27 @@ export function DnsRecords({ domain }: { domain: Domain }) {
                     when they change.
                 </p>
             )}
+            <CloudflareRecordHint wildcard={false} />
         </div>
     );
 }
 
 /**
  * Checks a custom domain's DNS by itself while its setup is on screen
- * (quiet: no toast per check), every 20 s for about five minutes.
+ * (quiet: no toast per check): at once when the last check is older than
+ * the interval, then every 20 s for about five minutes. "Checked 4 seconds
+ * ago" under the records is always the latest answer.
  */
 function useAutoCheck(domain: Domain, route: string[], enabled: boolean) {
     const [checking, setChecking] = useState(false);
-    const count = useRef(0);
+    const [checks, setChecks] = useState(0);
     const { active } = useSettingsPage();
     const on =
         enabled &&
         active &&
         domain.kind === 'custom' &&
         domain.verification?.status !== 'ok';
+    const live = on && checks < AUTO_CHECKS;
     const [project, environment, service] = route;
 
     const check = (quiet: boolean) => {
@@ -532,28 +597,66 @@ function useAutoCheck(domain: Domain, route: string[], enabled: boolean) {
         );
     };
 
-    const autoCheck = useEffectEvent(() => check(true));
+    const autoCheck = useEffectEvent(() => {
+        setChecks((count) => count + 1);
+        check(true);
+    });
+    const stale = useEffectEvent(
+        () =>
+            !domain.verification ||
+            Date.now() - new Date(domain.verification.checkedAt).getTime() >=
+                AUTO_CHECK_MS,
+    );
 
     useEffect(() => {
-        if (!on) {
+        if (!live) {
             return;
         }
 
-        return schedulePoll(() => {
-            if (count.current >= AUTO_CHECKS) {
-                return;
-            }
-
-            count.current++;
+        // An old answer on screen would contradict "checking": ask now.
+        if (stale()) {
             autoCheck();
-        }, AUTO_CHECK_MS);
-    }, [on, domain.id]);
+        }
 
-    return {
-        checking,
-        check: () => check(false),
-        live: on && count.current < AUTO_CHECKS,
-    };
+        return schedulePoll(autoCheck, AUTO_CHECK_MS);
+    }, [live, domain.id]);
+
+    return { checking, check: () => check(false), live };
+}
+
+/**
+ * When the DNS check last answered, ticking ("Checked 4 seconds ago"),
+ * and whether it checks again by itself.
+ */
+export function CheckFreshness({
+    checkedAt,
+    checking,
+    live,
+}: {
+    checkedAt: string | null;
+    checking: boolean;
+    live: boolean;
+}) {
+    if (!checking && checkedAt === null) {
+        return null;
+    }
+
+    return (
+        <p
+            className="flex items-center gap-2 type-small text-muted-foreground"
+            aria-live="polite"
+        >
+            {(checking || live) && <StatusIcon state="progress" />}
+            {checking ? (
+                'Checking DNS now'
+            ) : (
+                <span>
+                    Checked <TimeAgo value={checkedAt} />
+                    {live && ', checking again every 20 seconds'}
+                </span>
+            )}
+        </p>
+    );
 }
 
 function DomainCard({
@@ -564,6 +667,8 @@ function DomainCard({
     context: SettingsContext;
 }) {
     const [busy, setBusy] = useState<'remove' | 'www' | 'hsts' | null>(null);
+    const [removing, setRemoving] = useState(false);
+    const opening = useRef(false);
     const custom = domain.kind === 'custom';
     const editable = custom && context.canUpdate;
     const route = {
@@ -652,31 +757,75 @@ function DomainCard({
                         className="hidden @xl/settings:inline-flex"
                     />
                     {editable && (
-                        <DropdownMenu>
-                            <DropdownMenuTrigger asChild>
-                                <Button
-                                    variant="ghost"
-                                    size="icon-sm"
-                                    aria-label={`Options for ${domain.hostname}`}
-                                >
-                                    <MoreHorizontal />
-                                </Button>
-                            </DropdownMenuTrigger>
-                            <DropdownMenuContent align="end">
-                                <DropdownMenuItem onSelect={() => auto.check()}>
-                                    <RefreshCw /> Check DNS now
-                                </DropdownMenuItem>
-                                <DropdownMenuItem asChild>
-                                    <a
-                                        href={`https://${domain.hostname}`}
-                                        target="_blank"
-                                        rel="noreferrer"
+                        <ConfirmPopover
+                            open={removing}
+                            onOpenChange={setRemoving}
+                            tone="destructive"
+                            title={`Remove ${domain.hostname}?`}
+                            consequence="Traffic to it stops right away and visitors get an error until you add it again. This doesn’t need a deploy."
+                            confirmLabel="Remove domain"
+                            onConfirm={() => {
+                                setBusy('remove');
+                                router.delete(
+                                    domainRoutes.destroy(route).url,
+                                    options,
+                                );
+                            }}
+                        >
+                            <span className="inline-flex">
+                                <DropdownMenu>
+                                    <DropdownMenuTrigger asChild>
+                                        <Button
+                                            variant="ghost"
+                                            size="icon-sm"
+                                            aria-label={`Options for ${domain.hostname}`}
+                                        >
+                                            <MoreHorizontal />
+                                        </Button>
+                                    </DropdownMenuTrigger>
+                                    <DropdownMenuContent
+                                        align="end"
+                                        // The confirm popover takes focus, not the trigger.
+                                        onCloseAutoFocus={(event) => {
+                                            if (opening.current) {
+                                                opening.current = false;
+                                                event.preventDefault();
+                                            }
+                                        }}
                                     >
-                                        <ArrowUpRight /> Open
-                                    </a>
-                                </DropdownMenuItem>
-                            </DropdownMenuContent>
-                        </DropdownMenu>
+                                        <DropdownMenuItem
+                                            onSelect={() => auto.check()}
+                                        >
+                                            <RefreshCw /> Check DNS now
+                                        </DropdownMenuItem>
+                                        <DropdownMenuItem asChild>
+                                            <a
+                                                href={`https://${domain.hostname}`}
+                                                target="_blank"
+                                                rel="noreferrer"
+                                            >
+                                                <ArrowUpRight /> Open
+                                            </a>
+                                        </DropdownMenuItem>
+                                        {domain.canDelete && (
+                                            <>
+                                                <DropdownMenuSeparator />
+                                                <DropdownMenuItem
+                                                    variant="destructive"
+                                                    disabled={busy !== null}
+                                                    onSelect={() => {
+                                                        opening.current = true;
+                                                        setRemoving(true);
+                                                    }}
+                                                >
+                                                    <Trash2 /> Remove domain…
+                                                </DropdownMenuItem>
+                                            </>
+                                        )}
+                                    </DropdownMenuContent>
+                                </DropdownMenu>
+                            </span>
+                        </ConfirmPopover>
                     )}
                 </div>
             </div>
@@ -688,6 +837,12 @@ function DomainCard({
                     { label: 'Traffic', step: edge },
                 ]}
             />
+
+            {domain.verification?.proxy && (
+                <div className="border-t px-5 py-4">
+                    <ProxyNote proxy={domain.verification.proxy} />
+                </div>
+            )}
 
             {!needsDns && (
                 <CertificateProblem
@@ -726,29 +881,15 @@ function DomainCard({
                         )}
                     </div>
                     <DnsRecords domain={domain} />
-                    {auto.live && (
-                        <p
-                            className="flex items-center gap-2 type-small text-muted-foreground"
-                            aria-live="polite"
-                        >
-                            <StatusIcon state="progress" />
-                            Checking every 20 seconds
-                            {domain.verification && (
-                                <>
-                                    , last check{' '}
-                                    <TimeAgo
-                                        value={domain.verification.checkedAt}
-                                    />
-                                </>
-                            )}
-                        </p>
-                    )}
+                    <CheckFreshness
+                        checkedAt={domain.verification?.checkedAt ?? null}
+                        checking={auto.checking}
+                        live={auto.live}
+                    />
                 </div>
             )}
 
-            {(domain.canRedirectWww ||
-                domain.canSetHsts ||
-                (editable && domain.canDelete)) && (
+            {(domain.canRedirectWww || domain.canSetHsts) && (
                 <div className="flex flex-col divide-y border-t">
                     {domain.canRedirectWww && (
                         <ToggleRow
@@ -792,35 +933,6 @@ function DomainCard({
                                 );
                             }}
                         />
-                    )}
-                    {editable && domain.canDelete && (
-                        <div className="flex items-center justify-between gap-4 px-5 py-3">
-                            <span className="type-small text-muted-foreground">
-                                Traffic to this domain stops as soon as you
-                                remove it.
-                            </span>
-                            <ConfirmPopover
-                                tone="destructive"
-                                title={`Remove ${domain.hostname}?`}
-                                consequence="Visitors get an error until you add it again. This doesn’t need a deploy."
-                                confirmLabel="Remove domain"
-                                onConfirm={() => {
-                                    setBusy('remove');
-                                    router.delete(
-                                        domainRoutes.destroy(route).url,
-                                        options,
-                                    );
-                                }}
-                            >
-                                <Button
-                                    variant="destructive"
-                                    size="sm"
-                                    disabled={busy !== null}
-                                >
-                                    Remove
-                                </Button>
-                            </ConfirmPopover>
-                        </div>
                     )}
                 </div>
             )}

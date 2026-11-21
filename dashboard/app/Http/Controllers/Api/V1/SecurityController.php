@@ -12,6 +12,7 @@ use App\Data\Api\WafSummaryResource;
 use App\Data\Security\FindingCardData;
 use App\Data\Security\FindingDetailData;
 use App\Data\Security\InventorySearchData;
+use App\Enums\Security\FindingLevel;
 use App\Http\Api\ApiOperation;
 use App\Http\Api\ApiResponse;
 use App\Http\Api\Cursor;
@@ -50,7 +51,7 @@ final class SecurityController extends Controller
         $findings = SecurityFinding::query()
             ->where('team_id', $team->id)
             ->where('status', $query->status)
-            ->when($query->level !== null, static fn ($q) => $q->where('level', $query->level))
+            ->when($query->level instanceof FindingLevel, static fn ($q) => $q->where('level', $query->level))
             ->when($query->project !== null, static fn ($q) => $q->whereHas('project', static fn (Builder $p) => $p->where('public_id', $query->project)))
             ->when($query->service !== null, static fn ($q) => $q->whereHas('serviceInstance.service', static fn (Builder $s) => $s->where('public_id', $query->service)))
             ->when(Cursor::decode($query->cursor), static fn ($q, int $cursor) => $q->before($cursor))

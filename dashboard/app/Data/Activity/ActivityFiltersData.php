@@ -16,9 +16,9 @@ use Spatie\LaravelData\Data;
 final class ActivityFiltersData extends Data
 {
     public const array GROUPS = [
-        'deploys' => ['deploy', 'rollback', 'redeploy'],
+        'deploys' => ['deploy', 'rollback', 'redeploy', 'update'],
         'promotions' => ['promotion', 'created'],
-        'changes' => ['service', 'project'],
+        'changes' => ['service', 'project', 'copy'],
         'team' => ['server', 'member'],
         'alerts' => ['alert'],
     ];

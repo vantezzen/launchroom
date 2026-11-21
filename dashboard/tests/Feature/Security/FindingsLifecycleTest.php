@@ -19,6 +19,7 @@ use App\Enums\TeamRole;
 use App\Models\Alerts\Alert;
 use App\Models\Security\SecurityFinding;
 use App\Models\Team;
+use App\Support\Security\FixGroup;
 use Carbon\CarbonImmutable;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Http;
@@ -29,8 +30,8 @@ use Tests\Support\Security;
 /*
 | Findings lifecycle (docs/22 §5.5) and the `vulnerability` alert (§10):
 | open, resolve on a new deployment, reopen on a rollback, dismiss and
-| reopen automatically when it gets more urgent; one alert per service,
-| repeated for a new advisory, resolved with the last urgent finding.
+| reopen automatically when it gets more urgent; one alert per package
+| (D107), repeated for a new advisory, resolved with the last urgent finding.
 */
 
 beforeEach(function (): void {
@@ -70,7 +71,7 @@ test('a matched advisory opens an "Action needed" finding, investigates it and a
         ->and($finding->notified_at)->not->toBeNull();
 
     $alert = vulnerabilityAlert();
-    expect($alert?->subject_key)->toBe('security:'.$this->instance->public_id)
+    expect($alert?->subject_key)->toBe('security:'.FixGroup::key('npm', 'lodash'))
         ->and($alert?->title)->toBe('api uses lodash 4.17.20, which has a critical vulnerability')
         ->and($alert?->severity)->toBe(AlertSeverity::Critical)
         ->and($alert?->facts)->toMatchArray(['Advisory' => 'GHSA-35jh-r3h4-6jhm', 'Package' => 'lodash 4.17.20', 'Fixed in' => '4.17.21'])
@@ -182,10 +183,11 @@ test('dismissing the last urgent finding resolves the alert', function (): void 
     expect(vulnerabilityAlert())->toBeNull();
 });
 
-test('a second advisory of the same service notifies again after the repeat window', function (): void {
+test('a second advisory of the same package notifies again after the repeat window, in the same alert', function (): void {
     ($this->evaluate)();
     $alert = vulnerabilityAlert();
     $notified = $alert?->notified_at;
+    $occurrence = $alert?->occurrence;
 
     Security::advisory('GHSA-aaaa-bbbb-cccc', ['affected' => [['ecosystem' => 'npm', 'name' => 'lodash', 'fixed' => ['4.17.22']]]]);
     Security::match('npm', 'lodash', '4.17.20', ['GHSA-35jh-r3h4-6jhm', 'GHSA-aaaa-bbbb-cccc']);
@@ -195,7 +197,10 @@ test('a second advisory of the same service notifies again after the repeat wind
     $alert = vulnerabilityAlert();
     expect(SecurityFinding::query()->count())->toBe(2)
         ->and(Alert::query()->where('rule', AlertRule::Vulnerability->value)->count())->toBe(1)
-        ->and($alert?->occurrence)->toBe('GHSA-aaaa-bbbb-cccc')
+        ->and($alert?->occurrence)->not->toBe($occurrence)
+        ->and($alert?->title)->toBe('api uses lodash 4.17.20, which has 2 vulnerabilities, including a critical one')
+        ->and($alert?->facts)->toMatchArray(['Advisories' => '2', 'Fixed in' => '4.17.22'])
+        ->and($alert?->href)->toBe('/security#'.FixGroup::key('npm', 'lodash'))
         ->and($alert?->notified_at?->greaterThan($notified))->toBeTrue();
 });
 

@@ -19,7 +19,9 @@ final class ServiceProblemData extends Data
         public NodeStatusData $status,
         /** "api failed to deploy", "web crashed". */
         public string $sentence,
-        /** The failed deployment, else the service panel. */
+        /** The failed deployment, the service's logs, the servers page, else the service panel. */
         public string $href,
+        /** What `href` opens, as a link's words: "See why", "View logs", "Open servers", "Open". */
+        public string $link = 'Open',
     ) {}
 }

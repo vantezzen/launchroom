@@ -30,7 +30,8 @@ func moduleOf(dotted string) (module, attr string) {
 }
 
 func (django) Propose(f Facts, i Info) Proposal {
-	p := Proposal{Framework: "django", Port: 8000, HealthPath: "/"}
+	// manage.py is at the app's root (Match), the image's working directory.
+	p := Proposal{Framework: "django", Port: 8000, HealthPath: "/", Commands: djangoCommands()}
 	d := f.Django
 	project := d.Project
 	var start string

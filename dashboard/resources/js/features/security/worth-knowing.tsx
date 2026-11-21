@@ -1,5 +1,6 @@
-import { ChevronRight } from 'lucide-react';
-import { useState } from 'react';
+import { ChevronDown, ChevronRight } from 'lucide-react';
+import { useEffect, useState } from 'react';
+import { Button } from '@/components/ui/button';
 import { Section } from '@/components/patterns/section';
 import { SheetSection, SidePanel } from '@/components/patterns/sheet';
 import { cn } from '@/lib/utils';
@@ -10,9 +11,15 @@ import { plural } from '@/lib/format';
 type Group = App.Data.Security.WorthKnowingGroupData;
 type Item = App.Data.Security.WorthKnowingItemData;
 
+const ANCHOR = '#worth-knowing';
+
 /**
- * "Worth knowing" (docs/22 §9.2 part 4): one quiet row per reason with its
- * count; a row opens the list in a sheet. Never notifies.
+ * "Worth knowing" (docs/22 §9.2 part 4): collapsed to one line with the
+ * total by default (D107), so it never competes with what needs action;
+ * open, one quiet row per reason with its count, and a row opens the list
+ * in a sheet. Notices (packages that couldn't be read, sources failing)
+ * stay visible while collapsed. Never notifies. The hero's "worth knowing"
+ * link (`#worth-knowing`) opens it.
  */
 export function WorthKnowing({
     groups,
@@ -24,59 +31,113 @@ export function WorthKnowing({
     onOpen: (href: string) => void;
 }) {
     const [open, setOpen] = useState<string | null>(null);
+    const [expanded, setExpanded] = useState(
+        () => typeof window !== 'undefined' && window.location.hash === ANCHOR,
+    );
     const group = groups.find((g) => g.reason === open) ?? null;
+    const total = groups.reduce((sum, g) => sum + g.count, 0);
+
+    useEffect(() => {
+        const follow = () => {
+            if (window.location.hash === ANCHOR) {
+                setExpanded(true);
+            }
+        };
+
+        window.addEventListener('hashchange', follow);
+
+        return () => window.removeEventListener('hashchange', follow);
+    }, []);
 
     if (groups.length === 0 && notices.length === 0) {
         return null;
     }
 
     return (
-        <Section title="Worth knowing">
-            <div className={cn(card, 'overflow-hidden')}>
-                {notices.length > 0 && (
-                    <ul className="flex flex-col gap-1 border-b bg-recessed px-5 py-3">
-                        {notices.map((notice) => (
-                            <li
-                                key={notice}
-                                className="type-small text-muted-foreground"
-                            >
-                                {notice}
-                            </li>
-                        ))}
-                    </ul>
-                )}
-                <ul className="grid grid-cols-1 md:grid-cols-2">
-                    {groups.map((g, index) => (
-                        <li
-                            key={g.reason}
-                            data-worth-group={g.reason}
+        <Section
+            id="worth-knowing"
+            className="scroll-mt-20"
+            title="Worth knowing"
+            description={
+                total > 0
+                    ? `${total.toLocaleString('en')} findings and facts that don’t need action now`
+                    : undefined
+            }
+            actions={
+                groups.length > 0 ? (
+                    <Button
+                        variant="ghost"
+                        size="sm"
+                        aria-expanded={expanded}
+                        data-worth-toggle
+                        onClick={() => setExpanded((value) => !value)}
+                    >
+                        <ChevronDown
+                            aria-hidden="true"
                             className={cn(
-                                'border-border',
-                                index > 0 && 'border-t',
-                                index === 1 && 'md:border-t-0',
-                                index % 2 === 1 && 'md:border-l',
+                                'transition-transform',
+                                !expanded && '-rotate-90',
+                            )}
+                        />
+                        {expanded ? 'Hide' : 'Show'}
+                    </Button>
+                ) : undefined
+            }
+        >
+            {(expanded || notices.length > 0) && (
+                <div className={cn(card, 'overflow-hidden')}>
+                    {notices.length > 0 && (
+                        <ul
+                            className={cn(
+                                'flex flex-col gap-1 bg-recessed px-5 py-3',
+                                expanded && groups.length > 0 && 'border-b',
                             )}
                         >
-                            <button
-                                type="button"
-                                onClick={() => setOpen(g.reason)}
-                                className="flex w-full items-center gap-4 px-5 py-3.5 text-left hover:bg-hover focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-signal"
-                            >
-                                <span className="w-10 shrink-0 text-right type-heading tabular-nums">
-                                    {g.count.toLocaleString('en')}
-                                </span>
-                                <span className="min-w-0 flex-1 truncate type-body text-muted-foreground">
-                                    {g.label}
-                                </span>
-                                <ChevronRight
-                                    aria-hidden="true"
-                                    className="size-4 shrink-0 text-faint"
-                                />
-                            </button>
-                        </li>
-                    ))}
-                </ul>
-            </div>
+                            {notices.map((notice) => (
+                                <li
+                                    key={notice}
+                                    className="type-small text-muted-foreground"
+                                >
+                                    {notice}
+                                </li>
+                            ))}
+                        </ul>
+                    )}
+                    {expanded && (
+                        <ul className="grid grid-cols-1 md:grid-cols-2">
+                            {groups.map((g, index) => (
+                                <li
+                                    key={g.reason}
+                                    data-worth-group={g.reason}
+                                    className={cn(
+                                        'border-border',
+                                        index > 0 && 'border-t',
+                                        index === 1 && 'md:border-t-0',
+                                        index % 2 === 1 && 'md:border-l',
+                                    )}
+                                >
+                                    <button
+                                        type="button"
+                                        onClick={() => setOpen(g.reason)}
+                                        className="flex w-full items-center gap-4 px-5 py-3.5 text-left hover:bg-hover focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-signal"
+                                    >
+                                        <span className="w-10 shrink-0 text-right type-heading tabular-nums">
+                                            {g.count.toLocaleString('en')}
+                                        </span>
+                                        <span className="min-w-0 flex-1 truncate type-body text-muted-foreground">
+                                            {g.label}
+                                        </span>
+                                        <ChevronRight
+                                            aria-hidden="true"
+                                            className="size-4 shrink-0 text-faint"
+                                        />
+                                    </button>
+                                </li>
+                            ))}
+                        </ul>
+                    )}
+                </div>
+            )}
 
             <SidePanel
                 open={group !== null}

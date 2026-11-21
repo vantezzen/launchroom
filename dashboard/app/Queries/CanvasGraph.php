@@ -9,7 +9,6 @@ use App\Data\Canvas\CanvasNodeData;
 use App\Data\Canvas\CanvasPositionData;
 use App\Data\Canvas\CanvasVolumeData;
 use App\Data\Canvas\CanvasVolumeMountData;
-use App\Data\Canvas\DetectedPlanData;
 use App\Data\Canvas\ServiceCapabilitiesData;
 use App\Data\Specs\ChangeItem;
 use App\Data\Specs\EnvironmentSpec;
@@ -21,7 +20,6 @@ use App\Enums\ChangeEffect;
 use App\Enums\DomainKind;
 use App\Models\CanvasLayout;
 use App\Models\Connection;
-use App\Models\Deployment;
 use App\Models\Domain;
 use App\Models\Environment;
 use App\Models\Placement;
@@ -30,8 +28,6 @@ use App\Models\Volume;
 use App\Models\VolumeMount;
 use App\Queries\Backups\BackupStatuses;
 use App\Queries\Backups\LiveVolumeSizes;
-use App\Services\Holds\Holds;
-use App\Support\Canvas\NodeStatus;
 use App\Support\Canvas\ServiceGlyph;
 use App\Support\Changes\ChangeTally;
 use App\Support\Changes\SpecDiff;
@@ -64,8 +60,9 @@ final readonly class CanvasGraph
             ->orderBy('id')
             ->get();
 
-        $latest = self::latestDeployments($instances);
-        $placements = self::activePlacements($instances);
+        $latest = ServiceStatusIndex::latestDeployments($instances);
+        $placements = ServiceStatusIndex::activePlacements($instances);
+        $statuses = ServiceStatusIndex::statuses($instances, $latest, $placements);
         $changes = SpecDiff::between($environment->lastAppliedRevision?->spec, $current ?? $this->currentSpec->get($environment));
         $positions = $environment->canvasLayout instanceof CanvasLayout ? $environment->canvasLayout->positions : [];
         $backups = $this->backups->forEnvironment($environment);
@@ -75,12 +72,11 @@ final readonly class CanvasGraph
         $present = [];
         /** @var array<int, list<int>> $processes app service id => its workers and crons */
         $processes = [];
-        $holds = Holds::blockingDeployments();
 
         foreach ($instances as $instance) {
             $service = $instance->service;
             $deployment = $latest[$instance->id] ?? null;
-            $framework = $this->framework($instance, $instance->activeDeployment ?? $deployment);
+            $framework = ServiceGlyph::framework($instance, $deployment);
             $workloads = $placements[$instance->id] ?? [];
             $position = $positions[$service->public_id] ?? null;
             $domain = self::primaryDomain($instance);
@@ -100,9 +96,9 @@ final readonly class CanvasGraph
                 slug: $service->slug,
                 kind: $service->kind,
                 capabilities: ServiceCapabilitiesData::of($service->kind),
-                logo: ServiceGlyph::logo($service, $framework),
+                logo: ServiceGlyph::forInstance($instance, $deployment),
                 subtitle: ServiceGlyph::subtitle($service, $framework),
-                status: NodeStatus::for($instance, $deployment, $workloads, $holds[$instance->id] ?? null),
+                status: $statuses[$instance->id],
                 domain: $domain,
                 privateAddress: $instance->deploy->port === null ? null : ($service->kind->isWeb() ? 'http://' : '').$service->slug.':'.$instance->deploy->port,
                 replicas: $instance->scaling->replicas,
@@ -127,61 +123,6 @@ final readonly class CanvasGraph
             'edges' => [...$this->processEdges($nodes), ...$this->connectionEdges($environment, $present, $changes, $processes)],
             'volumes' => $this->volumes($environment, $instances, $changes, $positions),
         ];
-    }
-
-    /**
-     * @param  Collection<int, ServiceInstance>  $instances
-     * @return array<int, Deployment>
-     */
-    public static function latestDeployments(Collection $instances): array
-    {
-        if ($instances->isEmpty()) {
-            return [];
-        }
-
-        /** @var array<int, Deployment> $latest */
-        $latest = Deployment::query()
-            ->whereIn('id', Deployment::query()
-                ->selectRaw('max(id)')
-                ->whereIn('service_instance_id', $instances->modelKeys())
-                ->groupBy('service_instance_id'))
-            ->get()
-            ->keyBy('service_instance_id')
-            ->all();
-
-        return $latest;
-    }
-
-    /**
-     * @param  Collection<int, ServiceInstance>  $instances
-     * @return array<int, list<Placement>>
-     */
-    public static function activePlacements(Collection $instances): array
-    {
-        $active = $instances->pluck('active_deployment_id')->filter()->values()->all();
-
-        if ($active === []) {
-            return [];
-        }
-
-        $grouped = [];
-
-        foreach (Placement::query()->whereIn('deployment_id', $active)->with('server:id,name')->orderBy('slot')->get() as $placement) {
-            $grouped[$placement->service_instance_id][] = $placement;
-        }
-
-        return $grouped;
-    }
-
-    /**
-     * The detected framework ("Next.js"): from the build of the deployment,
-     * else from the instance's plan preview.
-     */
-    private function framework(ServiceInstance $instance, ?Deployment $deployment): ?string
-    {
-        $framework = $deployment?->plan?->framework() ?? $instance->plan?->summary?->framework;
-
-        return $framework !== null && $framework !== '' ? DetectedPlanData::frameworkLabel($framework) : null;
     }
 
     public static function primaryDomain(ServiceInstance $instance): ?string

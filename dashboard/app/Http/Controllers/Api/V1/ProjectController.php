@@ -27,8 +27,11 @@ final class ProjectController extends Controller
         $team = $this->team($user);
         Gate::authorize('viewAny', [Project::class, $team]);
 
+        $scope = $this->token($user)->loadMissing('project:id,public_id')->project?->public_id;
         $projects = Project::query()
             ->where('team_id', $team->id)
+            // A scoped token lists its own project only (docs/16 §1.4).
+            ->when($scope !== null, static fn ($query) => $query->where('public_id', $scope))
             ->with('environments')
             ->orderBy('name')
             ->get();

@@ -104,7 +104,7 @@ Service → Backups → **Restore…** on a snapshot row (time, origin, id, size
 - **Restore into this service** (destructive, type-to-confirm): takes a safety snapshot first, stops dependents, restores (drop and recreate the DB from the dump, or restore files into the volume), then restarts. Volumes: the service itself is stopped while its volume is replaced and starts again afterwards (§9.12), and so are the services that share the volume (D73; volume imports hold them the same way). A `pause` backup pauses every container that mounts the volume, whichever service it belongs to. Databases: the services connected to it in that environment are stopped first and start again afterwards, also when the restore fails (§9.5). A restore wins over a deployment of a service it holds: one that has started is cancelled with the reason, a new one waits in the queue until the restore ended ([04](04-build-and-deploy.md) §6).
 - **After a restore as a new service**: for a day after it finished, a card on top of the service's Backups settings page says the copy is ready (restored to when) with two rows: **Look at its data** (the copy's Data tab; Settings for volumes) and **Swap it in for …** (§9.16). Dismissing it is remembered in that browser.
 
-Downloading a backup and restoring into another environment are not implemented; see the [roadmap backlog](12-roadmap.md#backlog).
+Downloading a backup is §12.5. Filling another environment with this data (refresh staging from production) is a copy, §14.
 
 ### 5.2 Main server died (full disaster recovery)
 
@@ -741,3 +741,64 @@ Settings → **Move launchroom** (instance owners; changes are authorized). The 
 - `make test-move` (`deploy/test/e2e-move.sh`, [11](11-installation-and-dev.md) §2.4a): both moves against fresh dind VPSes; in the control-plane move a service that fails on the new server is left stopped (`StopMoveItem`), a leftover row of a removed container on the old server doesn't stop the hand-over, and the new machine's installer is interrupted after the restore and finished with `./launchroom move continue`.
 - **Verified (2026-10-21, `make test-move` PASS):** the control plane with Postgres, an app and its volume moved from VPS A to B: rows and a file written right before the move and a dashboard change right before the hand-over arrived; apps and data in 49 s (longest stop 31 s), the hand-over 34 s; B serves the dashboard at the same domain and the app through its edge; A is frozen and decommissioned. A regular server moved C → D in 42 s with its data, then was retired.
 - **Verified in dev** (real launchroomd on the fake servers): server-2 → server-3 moved 3 apps without downtime and two Postgres databases, a MongoDB and two volume services (Uptime Kuma, Meilisearch) with their data; one app failed to rebuild (a dev git fixture's missing commit) and stayed on server-2 with Retry offered.
+
+## 14. Copy data between environments (D110)
+
+The most common day-2 request of a small team: "put production's data into staging", or into a preview to reproduce a bug. A **copy** fills one environment's database (or a volume) with the data of the same service in another environment of the project.
+
+### 14.1 What and where
+
+- **Entry point** (who may: docs/09 R46): the target's Backups settings page, Move data section: **Copy from another environment…** (databases) and **Copy from…** per volume (services with volumes). The user is where the data lands, and the page already holds import, export and restore of that service.
+- **Source**: the same service (`service_id`) in another environment of the project: production, a persistent environment or a preview. The source is matched, never typed. A volume is matched by its mount path. Environments without that service, or whose copy is refused, are listed disabled with the reason.
+- **Source point**: *Latest backup* (default when there is one: no load on the source), *A specific backup* (the source's succeeded backups of that subject, newest 20) or *Fresh copy now* (a dump or tarball of the live source; the source keeps running, the same argv as a backup: `pg_dump` / `mysqldump --single-transaction` / `mongodump`, a volume read like its backup with its consistency setting).
+- **Supported**: Postgres, MySQL and MariaDB, MongoDB (everything the import of §12.3 takes) and volumes. Redis, Valkey and ClickHouse have no import (§12) and say so: "Copying Redis data isn’t supported yet. Restore a backup into it instead." Point-in-time positions (§10) are not offered as a source point; a specific backup is.
+- **Not a copy**: data masking (anonymising personal data on the way) is a later item ([roadmap](12-roadmap.md#backlog)). Until then the dialog says plainly that the copy holds production's personal data when the source is production, and previews keep their sanitize command (§6).
+
+### 14.2 How it runs
+
+A copy is an export of the source (§12.2) chained into an import of the target (§12.3), the same pair a server move uses (§13.2), orchestrated by a `data_copy_runs` row (`cpy_…`):
+
+```
+exporting → importing → succeeded
+    │           │   └──→ failed     (the import failed; the safety snapshot is offered)
+    │           └──────→ cancelled  (only before the import task starts)
+    ├──→ failed (the export failed; the target is unchanged)
+    └──→ cancelled (the export task is cancelled; the target is unchanged)
+```
+
+1. **Copy the source**: `StartExport` with the source point (live, or a backup snapshot read by any online server of the team). Audited as an export of the source like a download.
+2. **Safety snapshot of the target**: once the export is ready the import run starts with `replace` and `stopDependents`, which takes its safety snapshot (`TakeSafetySnapshot`, `pre_restore`) first. It follows the dump on purpose: the target keeps serving while the source is dumped, a failed dump leaves it untouched, and the snapshot holds everything written up to the moment of the replacement.
+3. **Stop apps**: the services connected to the target database (and their workers and crons), or the services using the volume, are held (§12.5).
+4. **Load the data**: the `db_import` / `volume_import` task reads the export's chunks (`DaemonTransfers::readable`), checks format and versions from the file and replaces the data.
+5. **Start apps again**: the hold ends with the task, also when it failed.
+
+`AdvanceCopies` moves runs forward from the transfers tick and right after an export or import run finished (`ExportRunFinished`, `ImportRunFinished`). The export's file is kept for a day while the copy needs it and expires when the copy ends. A copy's export and import runs belong to the copy: the Move data lists show the copy once, not its parts, and its export isn't listed as a download. One copy per target at a time; a copy refuses while an import or restore of the target runs, and an import or restore refuses while a copy into it runs.
+
+**Cancel** (`CancelCopy`): while exporting the export task is cancelled (`TaskCancellation`); while the import waits for its safety snapshot or for the apps to stop, the import is cancelled (`CancelImport`) and the apps start again. Once the import task runs it can't be stopped halfway (409, the same as an import).
+
+**Failure**: an export failure leaves the target unchanged ("Copying the data out of production failed: … staging is unchanged."). An import failure says what launchroomd said and, when a safety snapshot was taken, offers **Restore the snapshot from before** (the restore dialog in place, preselected, `backups.manage`). Without a destination there is no snapshot, and the dialog said so before the copy started.
+
+### 14.3 Checks before it starts (`CopyPlanner`)
+
+- Source and target are different instances of the same service in the same project and team; both are current (not removed) and not stopped; the target runs on a server with `dataTransfer` (live sources too).
+- **Engine and versions**: the source's engine must import into the target's (`ImportTarget::import()`, same family; MariaDB into MySQL works with launchroomd's warning). A source whose major version is newer than the target's is refused, naming both: "production runs PostgreSQL 18 and staging runs PostgreSQL 17. A dump can’t go into an older major version. Pick 18 for staging’s postgres first." launchroomd checks the file again (§12.3).
+- **Fork previews** (`secrets_withheld`) never receive data, as they never receive secrets or clones (docs/09 R20).
+- **Sizes**: a backup point shows the backup's size; a fresh copy shows the source's size from an inspection (§12.2, `db_import` mode `inspect` on the source: read-only). The target's inspection says whether it holds data and how much.
+- **How long the target stops**: only during steps 3–5. The dialog shows an estimate from the size (30 s plus 1 minute per 1.5 GB of dump, rounded up to minutes), labelled as an estimate, and names the apps that stop.
+
+### 14.4 Confirmation and permissions
+
+- When the target holds data (or the inspection didn't answer: fail closed) the user types the **target environment's name**. "What will happen" lists the safety snapshot (or that there is none), the apps that stop, the replacement and the restart.
+- **Production as the target** needs `backups.manage` and an extra explicit checkbox ("Replace production’s data with staging’s") before the typed name.
+- **Production as the source** needs `backups.manage`: its data is the team's most sensitive, and taking it into another environment widens who and what can read it (every app and member of the target environment). This matches downloading it (§12.5).
+- **Between other environments** (staging into a preview, a persistent environment into another) `projects.manage` and `deployments.create` are enough (developers): they could already remove and recreate those databases.
+- Cancelling needs the same permission as starting. Everyone who can view the service sees its copies. Web only for now; the API and CLI follow (D110).
+- **Audit**: `data.copy_started` (source and target environment, service, subject, volume, point, snapshot prefix), `data.copy_finished` (outcome, size, duration), `data.copy_cancelled`; the source's `data.export_started` and the target's import events are written as for any export and import. **Activity**: "mara copied postgres from production to staging" (kind `copy`, under Changes), with the outcome.
+
+### 14.5 Previews (D14)
+
+"Clone from another database" (§6) stays what it is: an automatic restore of the source's latest backup into the preview's new, empty database (no safety snapshot, no holds, no load on the source). It shares the copy's rules: the version check of §14.3 (a clone from a newer major fails with the same sentence) and the production rule (production data needs an owner's or admin's opt-in). A copy into an existing preview's database uses §14.2 like any other environment.
+
+### 14.6 Tests
+
+- Pest `tests/Feature/Transfers/DataCopyTest.php`: plans and refusals (no matching service, versions, engines without import, fork previews, stopped services, busy target), the run from export to import with a safety snapshot, failures at each step with the target unchanged or the snapshot offered, cancel in each state, audit and activity entries, the Move data lists. The permission matrix (production source and target, other environments, viewer, other team) is in the same file. Verified in dev with real launchroomd: production's postgres of apps-laravel13-react copied live into its PR #1 preview (dump, safety snapshot, laravel13-react held, load, started again); `dev/screenshots/data/flow-*`.

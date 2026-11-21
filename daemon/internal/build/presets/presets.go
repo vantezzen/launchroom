@@ -20,6 +20,9 @@ type Info struct {
 	// Dockerfile is set when the app builds from its own Dockerfile and only
 	// the runtime decisions apply (ResolveRuntime). Provider is empty then.
 	Dockerfile bool
+	// PruneDeps says the Railpack plan prunes devDependencies from the
+	// runtime image (RAILPACK_PRUNE_DEPS).
+	PruneDeps bool
 }
 
 // PlanPatch is how a preset changes the Railpack plan. The build package
@@ -95,6 +98,9 @@ type Proposal struct {
 	HealthPath string
 	Decisions  []Decision
 	Warnings   []Warning
+	// Commands are the framework's standard one-off commands (D105). They
+	// are not decisions: removing a decision doesn't change them.
+	Commands []state.CommandSuggestion
 }
 
 // Preset is one framework preset. Match and Propose must be pure.
@@ -147,6 +153,8 @@ type Result struct {
 	Framework string
 	Effect
 	Warnings []state.BuildWarning
+	// Commands are the framework's standard one-off commands (D105).
+	Commands []state.CommandSuggestion
 }
 
 // Resolve picks the preset (forced by name, "none" to disable, "" to detect),
@@ -194,6 +202,7 @@ func resolve(f Facts, i Info, forced string, disabled []string, runtimeOnly bool
 		Applied:   state.AppliedPreset{Name: state.Slug(p.Name()), Version: p.Version(), Decisions: []state.PresetDecision{}},
 		Framework: prop.Framework,
 		Effect:    Effect{Port: prop.Port, HealthPath: prop.HealthPath},
+		Commands:  prop.Commands,
 	}
 	if runtimeOnly {
 		r.Applied.Scope = state.PresetScopeRuntime
@@ -210,6 +219,10 @@ func resolve(f Facts, i Info, forced string, disabled []string, runtimeOnly bool
 		}
 		r.Applied.Decisions = append(r.Applied.Decisions, state.PresetDecision{ID: state.Slug(d.ID), Title: d.Title, Detail: d.Detail})
 		merge(&r.Effect, d.Effect)
+	}
+	// A plan that keeps only some paths (Next.js standalone) drops node_modules.
+	if isJavaScript(p) && r.Plan.DeployOnly == nil {
+		r.Commands = append(r.Commands, jsCommands(f, i)...)
 	}
 	for _, w := range prop.Warnings {
 		if !slices.Contains(disabled, w.Code) && (!runtimeOnly || w.Runtime) {

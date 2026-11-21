@@ -41,6 +41,14 @@ const PUBLIC_ROUTES = [
     'GET up/version',
     // Readiness for launchroomd's watchdog and the doctor (database and cache answer; constant body).
     'GET up/ready',
+    // Unknown pages, any method: always a 404, the error page in the shell (docs/08 §24).
+    'GET {fallbackPlaceholder}',
+    'POST {fallbackPlaceholder}',
+    'PUT {fallbackPlaceholder}',
+    'PATCH {fallbackPlaceholder}',
+    'DELETE {fallbackPlaceholder}',
+    'OPTIONS {fallbackPlaceholder}',
+    'QUERY {fallbackPlaceholder}',
     // WebAuthn discovery document (static links only).
     'GET .well-known/passkey-endpoints',
 

@@ -262,6 +262,28 @@ test('the 30-day range reads daily rows before yesterday', function (): void {
         ->and($response->json('pathRequests'))->toBe(100);
 });
 
+test('the hour range reads the finest rows in 10-minute buckets', function (): void {
+    // Now is 12:00:30: the six buckets start at 11:10 and end with 12:00.
+    requestRow($this, 1, '2026-10-20 11:12:00+00');
+    requestRow($this, 1, '2026-10-20 11:59:00+00', ['requests' => 40, 'status_2xx' => 40, 'status_3xx' => 0, 'status_4xx' => 0, 'status_5xx' => 0]);
+    requestRow($this, 1, '2026-10-20 10:30:00+00'); // the hour before: the comparison
+    analyticsRow($this, 10, '2026-10-20 11:50:00+00');
+
+    $response = $this->actingAs(memberOf($this->team, TeamRole::Viewer))
+        ->getJson("/p/{$this->project->public_id}/-/analytics?range=1h")
+        ->assertOk();
+
+    expect($response->json('range'))->toBe('1h')
+        ->and($response->json('bucketSeconds'))->toBe(600)
+        ->and($response->json('timestamps'))->toHaveCount(6)
+        ->and($response->json('timestamps.0'))->toBe('2026-10-20T11:10:00+00:00')
+        ->and($response->json('status2xx.0'))->toBe(90)
+        ->and($response->json('status2xx.4'))->toBe(40)
+        ->and($response->json('totals.requests'))->toBe(140)
+        ->and($response->json('totals.previousRequests'))->toBe(100)
+        ->and($response->json('pathRequests'))->toBe(100);
+});
+
 test('the service filter narrows to one service and is scoped to the project', function (): void {
     $api = Projects::image($this->project, 'api');
     $apiInstance = $api->instances()->where('environment_id', $this->environment->id)->sole();

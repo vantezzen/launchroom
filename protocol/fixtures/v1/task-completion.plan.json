@@ -30,6 +30,10 @@
         { "name": "scheduler", "args": ["php", "artisan", "schedule:work"] }
       ],
       "releaseCommand": ["php", "artisan", "migrate", "--force"],
+      "commands": [
+        { "name": "migrate-status", "label": "Show migration status", "description": "Lists every migration and whether it has run.", "args": ["php", "artisan", "migrate:status"] },
+        { "name": "migrate", "label": "Run migrations", "description": "Runs the migrations that haven't run yet.", "args": ["php", "artisan", "migrate", "--force"], "danger": true }
+      ],
       "healthPath": "/up",
       "generatedSecrets": [{ "name": "APP_KEY", "length": 32, "encoding": "alnum" }],
       "phpExtensions": [

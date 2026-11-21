@@ -87,7 +87,8 @@ The result is one of **Points at your servers**, **Reached through a proxy (Clou
 failed check. Behind Cloudflare, set SSL/TLS to Full (strict); see
 [Behind a proxy](/docs/troubleshooting/dns-and-tls#behind-a-proxy). launchroom checks:
 
-- when you add the domain, then every 20 seconds for five minutes while the card is open
+- when you add the domain, when you open its card and the last answer is older than 20 seconds, then every 20 seconds
+  for five minutes while the card is open (the line under the records says when it last checked)
 - when you press **Check DNS now**
 - in the background every 5 minutes until the domain points at your servers, then every 6 hours
 

@@ -130,3 +130,19 @@ test('the dev approve command refuses outside local', function (): void {
 
     $this->artisan('launchroom:dev:cli-approve', ['code' => $session['userCode']])->assertFailed();
 });
+
+test('launchroom login --abilities preselects known abilities on the approval page', function (): void {
+    $world = DeploymentUi::make(false);
+    $session = startCliLogin();
+
+    $this->actingAs($world->member(TeamRole::Developer))
+        ->get('/cli/login?code='.$session['userCode'].'&abilities=read,deploy,run,nonsense,deploy,'.str_repeat('x', 300))
+        ->assertOk()
+        ->assertInertia(fn (AssertableInertia $page): AssertableInertia => $page
+            ->component('cli/login')
+            ->where('suggestedAbilities', ['read', 'deploy', 'run']));
+
+    $this->actingAs($world->member(TeamRole::Developer))
+        ->get('/cli/login?code='.$session['userCode'])
+        ->assertInertia(fn (AssertableInertia $page): AssertableInertia => $page->where('suggestedAbilities', []));
+});

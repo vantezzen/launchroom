@@ -57,7 +57,13 @@ final readonly class ImportTarget
 
     public static function accepts(DatabaseEngine $engine): bool
     {
-        return self::driver($engine)->importFormat() instanceof DumpImport;
+        return self::importFor($engine) instanceof DumpImport;
+    }
+
+    /** How $engine takes an import, or null when it takes none. */
+    public static function importFor(DatabaseEngine $engine): ?DumpImport
+    {
+        return self::driver($engine)->importFormat();
     }
 
     /**

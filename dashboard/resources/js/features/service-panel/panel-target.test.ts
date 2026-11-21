@@ -12,6 +12,8 @@ function status(state: App.Enums.StatusTone): Node['status'] {
         since: null,
         deploymentId: null,
         detail: null,
+        cause: null,
+        remedy: null,
     };
 }
 
@@ -34,12 +36,14 @@ function panel(overrides: Partial<Panel> = {}): Panel {
         canDelete: true,
         canConsole: true,
         canData: false,
+        canCommands: false,
         actionNeeded: 2,
         actionNeededFinding: null,
         controls: null,
         origin: null,
         cronRuns: [],
         runtime: null,
+        update: null,
         ...overrides,
     };
 }

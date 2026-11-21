@@ -69,6 +69,25 @@ enum RouteFamily
     }
 
     /**
+     * The route pattern of the dashboard's fallback route: every path except
+     * those of the machine-facing families, which stay unmatched.
+     */
+    public static function browserFallbackPattern(): string
+    {
+        $excluded = [];
+
+        foreach (self::PATHS as $patterns) {
+            foreach ($patterns as $pattern) {
+                $excluded[] = str_ends_with($pattern, '/*')
+                    ? preg_quote(substr($pattern, 0, -1), '#')
+                    : preg_quote($pattern, '#').'$';
+            }
+        }
+
+        return '(?!(?:'.implode('|', $excluded).')).+';
+    }
+
+    /**
      * Never paused by a control-plane hand-over: servers keep their state and
      * keep reporting, and the hand-over can finish (docs/14 §13.4).
      */

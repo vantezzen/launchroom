@@ -74,7 +74,7 @@ var AllFeatures = []DaemonFeature{
 	FeatureInventory, FeatureContainerInspection, FeatureWaf, FeatureServiceStop, FeaturePhpExtensions,
 	FeatureSharedVolumes,
 	FeatureProbeHost, FeatureLivenessRestart, FeatureVolumeInitOwner, FeatureReleaseMounts, FeatureRecoverySessions,
-	FeatureWatchdog, FeatureCleanupTask, FeatureCertificateRetry, FeatureRequestTrace,
+	FeatureWatchdog, FeatureCleanupTask, FeatureCertificateRetry, FeatureRequestTrace, FeatureCommandRuns,
 }
 
 // ProtocolVocabulary returns the vocabulary of this protocol version;

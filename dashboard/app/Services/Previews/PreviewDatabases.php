@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Services\Previews;
 
 use App\Data\Previews\PreviewDatabaseStateData;
+use App\Data\Services\DatabaseSource;
 use App\Enums\Backups\BackupRunStatus;
 use App\Enums\Backups\RestoreMode;
 use App\Enums\Backups\RestoreRunStatus;
@@ -24,6 +25,7 @@ use App\Models\ServiceInstance;
 use App\Models\Team;
 use App\Services\Backups\DatabaseWorkloads;
 use App\Services\Tasks\RunOnceTasks;
+use App\Services\Transfers\CopyRules;
 use Illuminate\Contracts\Database\Query\Builder;
 
 /**
@@ -170,6 +172,17 @@ final readonly class PreviewDatabases
 
         if ($refusal !== null || ! $run instanceof BackupRun || $run->snapshot_id === null) {
             return $state->changed(['state' => 'failed', 'message' => $refusal ?? 'The source database has no backup to clone.']);
+        }
+
+        // The rule of copies between environments (docs/14 §14.5): never into an older major.
+        $from = DatabaseWorkloads::source($source);
+        $to = DatabaseWorkloads::source($instance);
+        $versions = $from instanceof DatabaseSource && $to instanceof DatabaseSource
+            ? CopyRules::versionRefusal($from, $to, $source->environment->name, 'this preview', $instance->service->name)
+            : null;
+
+        if ($versions !== null) {
+            return $state->changed(['state' => 'failed', 'message' => $versions]);
         }
 
         $restore = new RestoreRun([

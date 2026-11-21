@@ -1,6 +1,7 @@
 package commands
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"io"
@@ -255,6 +256,9 @@ func (a *App) configDiffCmd() *cobra.Command {
 			}); err != nil {
 				return err
 			}
+			if res.Valid && len(res.Changes) > 0 && !p.JSON {
+				a.noteUnreadConfig(cmd.Context())
+			}
 			return invalid(res)
 		},
 	}
@@ -281,4 +285,24 @@ func orDash(s *string) string {
 		return "—"
 	}
 	return *s
+}
+
+// noteUnreadConfig says when the environment has never read a
+// launchroom.json: on a plain git server (no file API) pushes never read
+// it (docs/18 §3), so the changes only apply when made in the dashboard.
+func (a *App) noteUnreadConfig(ctx context.Context) {
+	s, err := a.session()
+	if err != nil {
+		return
+	}
+	t, err := a.resolve(ctx, s, false)
+	if err != nil {
+		return
+	}
+	status, err := s.Client.ConfigStatus(ctx, t.Environment.ID)
+	if err != nil || status.Status != nil {
+		return
+	}
+	a.Printer.Info(a.Printer.Dim(fmt.Sprintf("%s hasn't read a launchroom.json yet. Pushes read it from GitHub, GitLab, Gitea and Forgejo repositories; "+
+		"a plain git server has no file API, so there a push won't pick it up: make these changes in the dashboard instead.", status.Name)))
 }

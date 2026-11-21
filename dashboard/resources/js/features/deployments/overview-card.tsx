@@ -11,8 +11,6 @@ import { Status } from '@/components/status';
 import { TimeAgo } from '@/components/time-ago';
 import {
     branchName,
-    deploymentStatusState,
-    deploymentWord,
     firstLine,
     isInProgress,
     probationLine,
@@ -24,6 +22,7 @@ import { Link } from '@inertiajs/react';
 import { show as serverPage } from '@/routes/servers';
 import { shortSha } from '@/lib/format';
 import { CopyButton } from '@/components/copy-button';
+import { DeploymentStatus } from './deployment-status';
 
 type Detail = App.Data.Deployments.DeploymentDetailData;
 
@@ -104,10 +103,7 @@ export function OverviewCard({
                             {configOnly ? (
                                 <Status state="failed" label="Not deployed" />
                             ) : (
-                                <Status
-                                    state={deploymentStatusState(deployment)}
-                                    label={deploymentWord(deployment)}
-                                />
+                                <DeploymentStatus deployment={deployment} />
                             )}
                         </span>
                         {probation && (

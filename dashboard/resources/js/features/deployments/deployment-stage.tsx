@@ -151,7 +151,10 @@ function sceneFor(detail: Detail, rows: StepRow[]): ReactNode | null {
                     state="progress"
                     right={<Elapsed since={deployment.queuedAt} />}
                 >
-                    Waiting for a build server
+                    {/* A push held back until its commit's checks pass (D111). */}
+                    {detail.checks?.state === 'waiting'
+                        ? 'Waiting for checks'
+                        : 'Waiting for a build server'}
                 </Caption>
                 <div className="flex h-[132px] items-center justify-center">
                     <span className="flex h-[76px] w-[124px] items-center justify-center rounded-xl border border-dashed border-border-strong text-muted-foreground">

@@ -33,7 +33,7 @@ Sign-in uses a pairing code:
 
 1. The CLI shows a short code (like `WBXH-NDSZ`) and opens your dashboard in the browser.
 2. The dashboard asks **Sign in to the launchroom CLI?** with the same code, the machine's name and where the request came from. Check that the codes match.
-3. Choose the team, the access and how long the session lasts (90 days by default), then **Approve**. Access has the same choices as an API token: **Deploy** (the default), **Read only**, **Everything** or **Custom**.
+3. Choose the team, the access and how long the session lasts (90 days by default), then **Approve**. Access has the same choices as an API token: **Deploy** (the default), **Read only**, **Full access** (everything your role allows, including permissions added later) or **Custom**.
 4. The CLI receives its token and stores it in your system keychain.
 
 The request expires after 10 minutes. **Deny** ends it.
@@ -42,10 +42,12 @@ The request expires after 10 minutes. **Deny** ends it.
 |---|---|
 | `--url URL` | Your dashboard's address. Needed the first time; later sign-ins reuse the last address (or `LAUNCHROOM_URL`) |
 | `--no-browser` | Print the link instead of opening a browser (for remote shells) |
+| `--abilities a,b,…` | Preselect these permissions on the approval page |
+| `--full-access` | Preselect **Full access** on the approval page. Not together with `--abilities` |
 
 The token lives in the macOS Keychain, the Secret Service on Linux or the Windows Credential Manager. Without a keychain (headless Linux, containers) it falls back to `~/.config/launchroom/credentials.json` with mode 0600. Set `LAUNCHROOM_CREDENTIALS_STORE=file` to use the file directly.
 
-`launchroom whoami` shows the user, team, abilities and expiry. `launchroom logout` forgets the token on this machine. Revoke it under **Settings → API tokens** to end it everywhere.
+`launchroom whoami` shows the user, team, abilities (or "Full access" with what it allows today) and expiry. `launchroom logout` forgets the token on this machine. Revoke it under **Settings → API tokens** to end it everywhere.
 
 ## Link a directory
 
@@ -68,6 +70,13 @@ Every command also accepts `--project`, `--environment` and `--service` to overr
 | `launchroom status` | Services of the linked environment with status, active deployment and URL |
 | `launchroom open` | Open the linked environment (or `--service`) in the dashboard |
 | `launchroom deploy` | Deploy and follow until live or failed |
+| `launchroom deployments [ls]` | The service's deployments, newest first (`--all`: every service) |
+| `launchroom rollback [DEPLOYMENT]` | Go back to the version that ran before the live one (or DEPLOYMENT) |
+| `launchroom redeploy [DEPLOYMENT]` | Deploy the live (or DEPLOYMENT's) commit again |
+| `launchroom cancel [DEPLOYMENT]` | Cancel the deployment in progress |
+| `launchroom fix [CODE]` | Why the last deployment failed, and apply the suggested fix |
+| `launchroom preview wait --pr N` | Wait for a pull request's preview, then print its URLs |
+| `launchroom ray [VALUE]` | What happened to a request, from its `X-Launchroom-Ray` header |
 | `launchroom service deploy\|restart\|stop\|start [SERVICE]` | Deploy the latest version, restart, stop or start one service |
 | `launchroom logs` | Recent log lines, or follow them with `-f` |
 | `launchroom env ls` | List variables (secret values are never listed) |
@@ -75,9 +84,13 @@ Every command also accepts `--project`, `--environment` and `--service` to overr
 | `launchroom env rm KEY…` | Remove variables (staged) |
 | `launchroom env pull [FILE]` | Write the service's variables to a `.env` file |
 | `launchroom run -- CMD ARGS…` | Run a local command with the variables injected |
+| `launchroom exec -- CMD ARGS…` | Run a command once in the service's live version on your server, and stream its output |
+| `launchroom exec NAME` | Run one of the service's listed commands (`--list` shows them) |
 | `launchroom config pull [FILE]` | Write the environment as `launchroom.json` |
 | `launchroom config validate [FILE]` | Check `launchroom.json` |
 | `launchroom config diff [FILE]` | Show the staged changes `launchroom.json` would produce |
+| `launchroom updates [ls]` | Image services with a newer release, or an update in flight |
+| `launchroom updates apply [SERVICE]` | Update an image service to its recommended release (or `--to TAG`) |
 | `launchroom db import SERVICE FILE` | Upload a dump and import it into a database |
 | `launchroom db export SERVICE` | Download a database's data (or `--backup` a backup) |
 | `launchroom volume export SERVICE VOLUME` | Download a volume's files as a `.tar.gz` |
@@ -104,6 +117,43 @@ launchroom deploy --staged --message "Raise memory"   # apply staged changes
 
 `deploy` builds from your repository, not from local files. Push first, then deploy.
 
+When the environment waits for CI checks before a push deploys, `deploy` says "Waiting for checks" with how many are still running, and follows the deployment once they passed.
+
+### When a deployment fails
+
+`deploy`, `redeploy`, `rollback`, `fix`, `service deploy|restart|start` and `preview wait` explain a failed deployment the way its page in the dashboard does: what failed, why, the failing step's last lines (the first error line marked with `›`, secrets masked) and the fix, with the command that applies it:
+
+```text
+✕ Health check failed: your app doesn't answer HTTP on its port (web)
+  Something accepts connections on the port, but it doesn't answer like a web server.
+  Switch the health check to TCP, which only checks that the port accepts connections.
+
+  Last lines of the health step
+   4 › error: connection reset by peer
+   …
+  20   probe attempt 20
+
+  Fix   Check over TCP and redeploy
+        launchroom fix use_tcp_healthcheck --deployment dpl_…
+  More  https://launchroom.example.com/p/…
+```
+
+`launchroom fix` shows that explanation again for the linked service's latest deployment (or `--deployment`). `launchroom fix CODE` applies the suggested fix, redeploys and follows it; `--port` and `--seconds` replace a suggested port or start period. With other staged changes the fix is only staged. Applying a fix needs the token permission **Apply suggested fixes** next to **Deploy**. With `--json`, a failed deployment carries its `failureReport`. More in [Debug a failed deploy](/docs/projects/debug-a-failed-deploy).
+
+### Deployments, rollback and cancel
+
+```sh
+launchroom deployments                  # the linked service's deployments
+launchroom deployments --all --limit 50 # every service of the environment
+launchroom rollback --yes               # back to the version before the live one
+launchroom rollback dpl_… --yes         # back to one deployment
+launchroom rollback --resume            # let pushes go live again
+launchroom redeploy                     # the live commit again
+launchroom cancel                       # stop the deployment in progress
+```
+
+`rollback` starts the earlier image again, without a rebuild. Database migrations are not reverted. It asks first on a terminal; in scripts pass `--yes` (without a terminal and without it, exit 2). After a rollback in production, new pushes don't go live until auto-deploy is resumed with `launchroom rollback --resume` or **Resume** in the dashboard. More in [Roll back](/docs/projects/rollback).
+
 ## Stop, start and restart
 
 ```sh
@@ -127,6 +177,8 @@ launchroom logs                         # the last hour of the linked environmen
 launchroom logs --service api -f        # follow one service live
 launchroom logs --since 24h --source build
 launchroom logs --deployment dpl_…      # one deployment's log
+launchroom logs -q timeout --level error           # errors that mention timeout
+launchroom logs --from 09:00 --to 09:30 -q checkout # an absolute window
 ```
 
 | Option | Values |
@@ -135,6 +187,9 @@ launchroom logs --deployment dpl_…      # one deployment's log
 | `--since` | `15m`, `1h` (default), `24h`, `7d`, `30d` |
 | `--source` | `all` (default), `build`, `runtime` |
 | `--deployment` | One deployment's log |
+| `-q`, `--grep` | Only lines with this text. The log explorer's search works too: `service:api -level:debug "connection refused"` |
+| `--level` | `error`, `warning`, `info` or `debug` |
+| `--from`, `--to` | An absolute window instead of `--since`: RFC 3339, `15:04` (today) or `30m`, `2h`, `3d` ago. `--to` defaults to now. Not with `-f` |
 
 With `--json`, every line is one JSON object (JSON Lines).
 
@@ -148,7 +203,7 @@ launchroom env rm FEATURE_X
 launchroom deploy --staged
 ```
 
-`env set` and `env rm` stage changes in the linked environment. `deploy --staged` applies them, the same as **Review & apply** in the dashboard.
+`env set` and `env rm` stage changes in the linked environment. `deploy --staged` applies them, the same as **Review & apply** in the dashboard. `env set … --apply` deploys the staged changes right away and follows them (`--json` then prints the deployments).
 
 ### Pull into .env
 
@@ -170,6 +225,18 @@ launchroom run --no-secrets -- php artisan migrate --pretend
 
 `run` starts the command with the variables added on top of your local environment (launchroom's values win), passes signals through and exits with the command's exit code. Nothing is written to disk.
 
+## Run a command on the server
+
+`launchroom run` runs a program on your machine. `launchroom exec` runs one in a new container of the service's live version, with its variables and volumes, and streams the output back:
+
+```sh
+launchroom exec --service web -- php artisan migrate:status
+launchroom exec migrate --yes
+launchroom exec --list
+```
+
+The arguments after `--` are passed as they are, without a shell. The CLI exits with the command's own exit code, 124 when it ran past `--timeout` (10 minutes by default, at most 1 hour) and 13 when it couldn't run. Ctrl-C cancels it on the server. A listed command that changes data asks first, and needs `--yes` without a terminal. `--detach` starts it and prints its id. The token needs the **Run commands** permission. More in [Run a command](/docs/projects/run-a-command).
+
 ## Config as code
 
 ```sh
@@ -179,7 +246,36 @@ launchroom config validate         # check the file against the dashboard's rule
 launchroom config diff             # list the changes it would stage
 ```
 
-`validate` prints every problem as `file:line:column` with the line and a caret, and exits with code 6 if the file is invalid. See [Config as code](/docs/config-as-code).
+`validate` prints every problem as `file:line:column` with the line and a caret, and exits with code 6 if the file is invalid. `diff` notes when the environment has never read a `launchroom.json`: projects on a plain git server don't read it on push, so make those changes in the dashboard. See [Config as code](/docs/config-as-code).
+
+## Trace a request
+
+```sh
+launchroom ray lr1.AbC…
+curl -si https://shop.example.com/checkout | launchroom ray
+```
+
+Every response through launchroom carries an `X-Launchroom-Ray` header. `ray` takes its value, a header line, or any text that has it on stdin (a whole `curl -i` output works), and prints the status, the request, where its time went (the edge in total, and the app), the firewall's decision and its rules, the servers on its path, where it ended, and the service's log lines that mention the request. `--no-logs` leaves the lines out. A ray that isn't from one of your team's services exits with code 6.
+
+## Previews in CI
+
+```sh
+launchroom preview wait --pr 42 --sha "$HEAD_SHA" --timeout 20m
+```
+
+Waits until every service of pull request 42's preview is live and built from that commit, then prints its URLs on stdout, one per line. A failed deployment prints why (exit 10); a skipped or closed preview exits with 6; `--timeout` (default 20 minutes) passing first exits with 14. In GitHub Actions, pass `${{ github.event.pull_request.head.sha }}`: `GITHUB_SHA` is the merge commit in `pull_request` events. `--json` prints the preview. More in [Wait for a preview in CI](/docs/projects/preview-in-ci).
+
+## Update apps
+
+```sh
+launchroom updates                                   # every image service with a newer release
+launchroom updates --project shop                    # one project's
+launchroom updates apply listmonk                    # to the recommended release
+launchroom updates apply listmonk --to v6.3.0 --wait # a release the last check found, and wait
+launchroom updates apply listmonk --major --release-notes-read
+```
+
+`updates` lists apps from a template or an image whose newer release launchroom found: the version running, the recommended release (the newest patch or minor), a major marked with ⚠, an update in flight, and why one can't start now. `updates apply` updates the way the dashboard does: it backs up the data first when backup storage is set up, deploys the new version and rolls back if it fails. A major release can change settings and data, so it needs `--release-notes-read` (the CLI shows the link to the notes). It asks first on a terminal; add `--yes` in scripts. Updating needs a token with **Update apps** next to Deploy. `--wait` follows the update: exit 0 when the new version is live, 10 when it failed or rolled back, 14 when `--timeout` (default 30 minutes) passes first, while the update carries on. See [Keep apps up to date](/docs/projects/keep-apps-up-to-date).
 
 ## Import and export
 
@@ -202,6 +298,21 @@ These need a token with the `data:transfer` ability and the Owner or Admin role.
 | `--yes` | Don't ask before replacing |
 
 `db export` and `volume export` wait until the file is ready, then download it to `NAME.part` and rename it once the size matches. Without `-o` the file gets the name the dashboard suggests in the current directory. `-o -` writes to stdout. An existing file is only overwritten with `--force`.
+
+## AI agents (MCP)
+
+```sh
+launchroom mcp                                   # the MCP server on stdio; your editor starts it
+launchroom mcp install                           # setup for every supported editor
+launchroom mcp install --client cursor --write   # add it to .cursor/mcp.json (--global: the user-wide file)
+launchroom login --abilities read,deploy,fix,env:read,env:write,run
+```
+
+`launchroom mcp` uses the stored sign-in (or `LAUNCHROOM_URL` and `LAUNCHROOM_TOKEN`) and the link of the folder: `--dir`,
+else the editor's workspace, else the working directory. Clients: `claude-code`, `cursor`, `vscode`, `codex`, `windsurf`,
+`gemini`, `claude-desktop`. `--write` asks before writing (`--yes` without a terminal) and leaves a file it can't read
+as plain JSON alone. `login --abilities` preselects permissions on the approval page. See
+[Use launchroom from your AI coding agent](/docs/projects/ai-agents).
 
 ## In CI
 
@@ -239,7 +350,10 @@ Without a terminal, prompts never appear. Anything ambiguous exits with code 2 i
 | 7 | Rate limited |
 | 10 | The deployment failed |
 | 11 | The import or export failed |
-| 130 | Interrupted |
+| 13 | `exec`: the command couldn't run (no server, the image couldn't be pulled) |
+| 14 | `preview wait`: the timeout passed before the preview went live or failed |
+| 124 | `exec`: the command ran past its time limit |
+| 130 | Interrupted (`exec`: the command was cancelled) |
 
 <Cards>
   <Card title="REST API" href="/docs/reference/api" description="Tokens, abilities and the endpoints behind the CLI." />

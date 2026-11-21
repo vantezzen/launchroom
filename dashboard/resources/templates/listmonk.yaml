@@ -51,6 +51,7 @@ services:
             test: ['CMD', 'wget', '-qO-', 'http://localhost:9000/health']
             start_period: 60s
         x-launchroom:
+            releases: https://github.com/knadh/listmonk/releases
             name: Listmonk
             logo: listmonk
             domain: ${input.domain}

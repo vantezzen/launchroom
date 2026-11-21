@@ -6,6 +6,7 @@ namespace App\Policies;
 
 use App\Enums\Permission;
 use App\Enums\TeamRole;
+use App\Models\ApiToken;
 use App\Models\Membership;
 use App\Models\Team;
 use App\Models\User;
@@ -67,5 +68,27 @@ final class TeamPolicy
     public function manageMembers(User $user, Team $team): bool
     {
         return $user->hasTeamPermission($team, Permission::ManageMembers);
+    }
+
+    /**
+     * Settings → Robot tokens (docs/16 §1.4): every member sees the team's
+     * robots; never through a token, never as a robot.
+     */
+    public function viewRobotTokens(User $user, Team $team): bool
+    {
+        return ! $user->currentApiToken() instanceof ApiToken
+            && ! $user->isRobot()
+            && $user->hasTeamPermission($team, Permission::View);
+    }
+
+    /**
+     * Create, rotate and revoke robot tokens: a robot is a team identity
+     * like a member, so owners and admins (`members.manage`) only.
+     */
+    public function manageRobotTokens(User $user, Team $team): bool
+    {
+        return ! $user->currentApiToken() instanceof ApiToken
+            && ! $user->isRobot()
+            && $user->hasTeamPermission($team, Permission::ManageMembers);
     }
 }

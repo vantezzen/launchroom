@@ -30,6 +30,37 @@ Per environment:
 - A new environment starts manual-only unless a branch is given.
 - Trigger edits apply to the next push at once and also show as staged items with effect "none".
 - A push is matched against **every** environment of the project: each matching environment deploys its own instance of the service, so `develop` → staging and `main` → production work side by side, and two environments tracking the same branch both deploy (`DeployOnGitPush`; `tests/Feature/Environments/GitTriggersTest.php`).
+- **Deploy after checks pass** (`waitForChecks`, `checksTimeoutMinutes`; §2.5): a push deploys here only once the commit's CI checks passed.
+
+### 2.5 Deploy after checks pass (D111)
+
+**What.** A per-environment switch on the triggers (`EnvironmentTriggers.waitForChecks`, off by default; `checksTimeoutMinutes` 5 to 240, default 30), edited in the same dialog as the branch and tags. With it on, a deployment created by a push or tag (`trigger` push/tag, with a commit, of a git-sourced service) is created as usual but **waits in `queued`** until the commit's checks have passed. Manual deploys, redeploys, rollbacks, the API, promotions and previews never wait: someone chose to deploy that version.
+
+**Why queued, not a new status.** Waiting for checks is a reason a queued deployment doesn't start yet, exactly like waiting for an import hold ([04](04-build-and-deploy.md) §6): nothing ran, it is cancellable, a newer push supersedes it (collapse to latest), and every list, filter and the CLI already understand `queued`. A new status would need a transition table edge from and to queued, a tone, a label in every surface and in the CLI's lifecycle for a state that behaves like queued in every way. The status word is "Waiting for checks" wherever a queued deployment's word shows (`DeploymentSummaryData.statusLabel`, the canvas node's label through `NodeStatus`); the detail is `deployments.checks` (`DeploymentChecksData`).
+
+**What counts as a check.** All checks on the commit except launchroom's own reports (check runs of this GitHub App, statuses whose context starts with `launchroom`):
+- GitHub: check runs (`GET /repos/{repo}/commits/{sha}/check-runs`, the latest run per name) and the combined commit status (`GET …/commits/{sha}/status`). A check run passes when it completes `success`, `neutral` or `skipped`; `failure`, `cancelled`, `timed_out`, `action_required`, `startup_failure` and `stale` fail it. A status passes with `success`, fails with `failure`/`error`. Check suites are not counted: GitHub opens a suite for every app with checks access on every push, and apps that never run anything leave theirs queued forever.
+- GitLab: the commit's statuses (`GET /projects/:id/repository/commits/:sha/statuses`, the latest per name): pipeline jobs and external statuses. `success`, `skipped`, `manual` and failed jobs with `allow_failure` pass; `failed` and `canceled` fail; the rest is pending.
+- Gitea/Forgejo: the commit's statuses (`GET /repos/{o}/{r}/commits/{sha}/statuses`, the latest per context): `success` and `warning` pass, `failure` and `error` fail, `pending` waits.
+- A plain git server has no checks: its deployments start at once and say so ("This git server reports no checks").
+
+**Outcomes** (`CheckGateState`):
+- `waiting`: at least one check pending, or none reported yet within the grace period.
+- `passed`: every check passed. The deployment starts.
+- `none`: no check appeared within `launchroom.checks.grace_seconds` (120 s) of the push. The deployment starts and says "No checks reported for this commit". Why not keep waiting: a repository without CI would otherwise never deploy, and two minutes is long after CI usually registers its first job (GitHub Actions within seconds).
+- `failed`: a check failed. The deployment is **cancelled**, not failed, with "Not deployed: the check “test” failed." Nothing was built or run, the old version keeps serving, and CI already reports the failure on the commit; a failed deployment would count as a broken deploy in the service's history, its alerts and the attention chip. The failed checks stay listed with links.
+- `timed_out`: checks still pending after `checksTimeoutMinutes`. Cancelled with "Not deployed: checks were still running after 30 minutes."
+- `unavailable` while waiting: the provider can't be reached or refuses (rate limit, a revoked installation). It keeps waiting and retrying; at the deadline it is cancelled with "launchroom couldn't read the checks from GitHub". Fail closed: the switch promises that unverified code doesn't deploy.
+- `skipped`: someone with Deploy permission chose **Deploy now** on the waiting deployment (`SkipDeploymentChecks`, audited `deployment.checks_skipped`, `POST /api/v1/deployments/{d}/skip-checks`). The deployment records who.
+- A newer push supersedes the waiting deployment (collapse to latest, §2.3). A force-push to another commit deploys that commit; a waiting deployment of a commit no longer on the branch keeps waiting on its own checks (rare: only when the new push deployed nothing).
+
+**Driven by.** GitHub webhooks `check_run`, `check_suite` and `status` (`ProcessWebhookDelivery` → `ReevaluateCommitChecks`), which re-evaluate the waiting deployments of that installation, repository and commit. The evaluation always reads the checks from the API (the payload is only a nudge). Fallback: `launchroom:deployments:check-gates` runs every minute and evaluates every waiting deployment (GitLab and Gitea rely on it, timeouts end there). Each evaluation is `EvaluateDeploymentChecksJob` (unique per deployment, 3 tries, backoff 10/30 s, 30 s timeout): the provider is read before the row lock, the verdict applied under it after re-checking that the deployment still waits.
+
+GitHub Apps created before this change don't subscribe to `check_run`, `check_suite` and `status`: their owner adds the three events in the App's settings on GitHub (the permissions, `checks` and `statuses`, were already granted). Until then the one-minute fallback covers them, so a deployment starts up to a minute after its last check passed.
+
+**UI.** Settings → Environments → Rename and triggers: a switch "Wait for checks to pass" under the branch and tags with one sentence, and "Give up after" (15 min, 30 min, 1 h, 2 h, 4 h) while it is on. The environment row's trigger summary adds "after checks pass". The deployment detail shows a **Checks** card while waiting and after an outcome: one row per check (state icon plus word: Passed, Running, Failed; name; a link to it on the provider), the deadline ("Gives up at 14:32"), and **Deploy now** while waiting. Lists and the canvas say "Waiting for checks".
+
+**API.** `DeploymentResource.checks` (null when the deployment didn't wait): `{state, since, deadline, checks: [{name, state, url}], skippedBy}`. `launchroom deploy` and the GitHub Action show "Waiting for checks" and the pending names.
 
 ### 2.2 Git events
 

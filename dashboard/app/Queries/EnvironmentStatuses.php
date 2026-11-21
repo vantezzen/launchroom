@@ -6,6 +6,7 @@ namespace App\Queries;
 
 use App\Data\Canvas\EnvironmentHealthData;
 use App\Data\Canvas\EnvironmentStatusData;
+use App\Data\Canvas\NodeStatusData;
 use App\Enums\NodeStatusReason;
 use App\Models\Environment;
 
@@ -20,7 +21,14 @@ final readonly class EnvironmentStatuses
 
     public function health(Environment $environment): EnvironmentHealthData
     {
-        $entries = $this->statuses->in([$environment->id])[$environment->id] ?? [];
+        return self::healthOf($this->statuses->in([$environment->id])[$environment->id] ?? []);
+    }
+
+    /**
+     * @param  array<int, array{status: NodeStatusData}>  $entries  service id => ServiceStatusIndex entry
+     */
+    public static function healthOf(array $entries): EnvironmentHealthData
+    {
         $deploying = false;
         $failed = false;
 

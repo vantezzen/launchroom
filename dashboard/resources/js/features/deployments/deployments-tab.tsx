@@ -2,6 +2,7 @@ import { Link, router } from '@inertiajs/react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { MoreHorizontal, RefreshCw, Rocket, ScrollText } from 'lucide-react';
 import { useEffect, useRef, useState } from 'react';
+import type { ReactNode } from 'react';
 import { CommitAvatar } from '@/components/commit-avatar';
 import { Duration, Elapsed } from '@/components/elapsed';
 import { ConfirmPopover } from '@/components/patterns/confirm-popover';
@@ -55,6 +56,14 @@ import {
 import { ChannelEvents } from '@/components/channel-events';
 import { DeployButton } from '@/features/service-lifecycle/deploy-button';
 import { channelName } from '@/lib/realtime';
+import { vocabulary } from '@/lib/vocabulary';
+import { LIFECYCLE_ICON } from '@/features/service-lifecycle/lifecycle';
+import { runRemedy } from '@/features/service-status/remedy';
+import {
+    notServing,
+    notServingSentence,
+} from '@/features/service-status/live-status';
+import { useServiceStatus } from '@/features/service-status/store';
 
 export { serviceDeploymentsKey } from './service-deployments';
 
@@ -137,6 +146,13 @@ export function DeploymentsTab({
 
     const head = data ? listHead(data) : null;
     const live = data?.deployments.find((item) => item.isActive) ?? null;
+    // The live deployment says what the service does (D108): never "Live"
+    // while the header says "Not running".
+    const serviceStatus = notServing(useServiceStatus(environment, service));
+    const runtimeLogs =
+        serviceStatus && head?.isActive
+            ? services.show({ project, environment, service, tab: 'logs' }).url
+            : null;
     const rest =
         data?.deployments.filter((deployment) => deployment.id !== head?.id) ??
         [];
@@ -228,6 +244,24 @@ export function DeploymentsTab({
                                 canDeploy={data.canDeploy}
                                 onAction={setAction}
                                 logo={logo}
+                                serviceStatus={serviceStatus}
+                                remedy={
+                                    data.canDeploy &&
+                                    serviceStatus?.remedy &&
+                                    head.isActive ? (
+                                        <RemedyButton
+                                            remedy={serviceStatus.remedy}
+                                            target={{
+                                                project,
+                                                environment,
+                                                service,
+                                                name: head.serviceName,
+                                                deployment:
+                                                    serviceStatus.deploymentId,
+                                            }}
+                                        />
+                                    ) : null
+                                }
                                 expanded={{
                                     steps:
                                         data.current?.id === head.id
@@ -241,7 +275,12 @@ export function DeploymentsTab({
                         </ol>
                         <div className="flex flex-wrap justify-end gap-2 border-t bg-(--recessed) px-4 py-2.5">
                             <Button variant="outline" size="sm" asChild>
-                                <Link href={deploymentLogsHref(head)}>
+                                {/* Not running: what the container printed says why. */}
+                                <Link
+                                    href={
+                                        runtimeLogs ?? deploymentLogsHref(head)
+                                    }
+                                >
                                     <ScrollText aria-hidden="true" />
                                     View logs
                                 </Link>
@@ -290,6 +329,7 @@ export function DeploymentsTab({
                                             canDeploy={data.canDeploy}
                                             onAction={setAction}
                                             logo={logo}
+                                            serviceStatus={serviceStatus}
                                         />
                                     ),
                                 )}
@@ -327,12 +367,19 @@ export function DeploymentsTab({
 function RowStatus({
     deployment,
     icon = true,
+    serviceStatus = null,
 }: {
     deployment: Summary;
     icon?: boolean;
+    /** The service isn't serving: the live row says so instead of "Live". */
+    serviceStatus?: App.Data.Canvas.NodeStatusData | null;
 }) {
     const running = isInProgress(deployment.status);
-    const state = deploymentStatusState(deployment);
+    const instead =
+        serviceStatus && deployment.isActive && !deployment.stopped
+            ? serviceStatus
+            : null;
+    const state = instead?.state ?? deploymentStatusState(deployment);
 
     return (
         <span className="inline-flex shrink-0 items-center gap-1.5">
@@ -344,7 +391,9 @@ function RowStatus({
                     state === 'progress' && 'text-foreground',
                 )}
             >
-                {running ? deployment.statusLabel : deploymentWord(deployment)}
+                {running
+                    ? deployment.statusLabel
+                    : (instead?.label ?? deploymentWord(deployment))}
             </span>
             {running && (
                 <Elapsed
@@ -370,6 +419,8 @@ function DeploymentRow({
     onAction,
     logo,
     expanded,
+    serviceStatus = null,
+    remedy = null,
 }: {
     deployment: Summary;
     /** The serving deployment: the rollback confirm shows it above the target. */
@@ -377,6 +428,10 @@ function DeploymentRow({
     canDeploy: boolean;
     onAction: (action: PendingAction) => void;
     logo?: string;
+    /** The service's status while its live deployment isn't serving (D108). */
+    serviceStatus?: App.Data.Canvas.NodeStatusData | null;
+    /** The fix for that, under the note (Start, Restart). */
+    remedy?: ReactNode;
     expanded?: {
         steps: App.Data.Deployments.DeploymentStepData[];
         expectsRelease: boolean;
@@ -424,6 +479,7 @@ function DeploymentRow({
                     <RowStatus
                         deployment={deployment}
                         icon={!(expanded && running && !deployment.stopped)}
+                        serviceStatus={serviceStatus}
                     />
                     {sha && <span className="type-mono-small">{sha}</span>}
                     {expanded && branchName(deployment.gitRef)}
@@ -452,6 +508,11 @@ function DeploymentRow({
                 <div className="col-span-2 col-start-2 min-w-0">
                     {deployment.stopped ? (
                         <StoppedNote stopped={deployment.stopped} />
+                    ) : serviceStatus && deployment.isActive ? (
+                        <NotServingNote
+                            status={serviceStatus}
+                            remedy={remedy}
+                        />
                     ) : (
                         <StepTrack
                             rows={stepRows({
@@ -519,6 +580,59 @@ function StepTrack({ rows }: { rows: StepRow[] }) {
                 </li>
             ))}
         </ol>
+    );
+}
+
+/**
+ * "Live deployment, not running: exited 2 hours ago." in place of the step
+ * track while the live deployment's containers don't serve (D108), with
+ * the fix beside it. Above the row's link, so the button stays clickable.
+ */
+export function NotServingNote({
+    status,
+    remedy,
+}: {
+    status: App.Data.Canvas.NodeStatusData;
+    remedy: ReactNode;
+}) {
+    const now = useNow(true, 60_000);
+
+    return (
+        <div className="flex min-w-0 flex-wrap items-center gap-x-3 gap-y-2">
+            <p className="min-w-0 type-small text-muted-foreground">
+                {notServingSentence(status, now)}
+            </p>
+            {remedy && <div className="relative z-10">{remedy}</div>}
+        </div>
+    );
+}
+
+export function RemedyButton({
+    remedy,
+    target,
+}: {
+    remedy: App.Enums.ServiceRemedy;
+    target: Parameters<typeof runRemedy>[1];
+}) {
+    const Icon =
+        remedy === 'restart'
+            ? LIFECYCLE_ICON.restart
+            : remedy === 'retry_deploy'
+              ? LIFECYCLE_ICON.redeploy
+              : LIFECYCLE_ICON.start;
+
+    return (
+        <Button
+            variant="outline"
+            size="sm"
+            onClick={(event) => {
+                event.preventDefault();
+                runRemedy(remedy, target);
+            }}
+        >
+            <Icon aria-hidden="true" />
+            {vocabulary.ServiceRemedy[remedy].label}
+        </Button>
     );
 }
 

@@ -18,7 +18,8 @@ use Spatie\LaravelData\Optional;
 
 /**
  * Renames an environment and/or edits its deploy triggers (docs/06 §2:
- * branch glob, tag glob, or neither for manual only). Triggers apply to the
+ * branch glob, tag glob, or neither for manual only; and whether a push
+ * waits for its commit's checks, §2.5). Triggers apply to the
  * next push at once (they never restart anything); both edits also show in
  * the staged changes (effect "none") like every other intent change. The slug
  * stays: it is part of generated hostnames.
@@ -61,6 +62,8 @@ final readonly class UpdateEnvironment
                 $triggers->tagPattern = $triggers->tagPattern === null || trim($triggers->tagPattern) === '' ? null : trim($triggers->tagPattern);
                 $meta['branch'] = $triggers->branch;
                 $meta['tagPattern'] = $triggers->tagPattern;
+                $meta['waitForChecks'] = $triggers->waitForChecks;
+                $meta['checksTimeoutMinutes'] = $triggers->checksTimeoutMinutes;
                 $environment->triggers = $triggers;
             }
 

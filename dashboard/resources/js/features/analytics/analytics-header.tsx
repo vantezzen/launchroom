@@ -1,7 +1,5 @@
-import { Link } from '@inertiajs/react';
 import { useState } from 'react';
-import type { ReactNode } from 'react';
-import { TimeRangeSelect } from '@/components/charts/time-range-select';
+import { RangeSelect } from '@/components/charts/time-range-select';
 import { PageHeader } from '@/components/patterns/page';
 import { PillTabs } from '@/components/patterns/pill-tabs';
 import {
@@ -15,8 +13,7 @@ import { useLocationSearch } from '@/hooks/use-observe-scope';
 import type { ObserveScopeState } from '@/hooks/use-observe-scope';
 import { analyticsHref } from '@/lib/links';
 import { rangeWords, readScope } from '@/lib/observe-scope';
-import type { ObserveRange, TimeRangeOption } from '@/lib/observe-scope';
-import { index as teamAnalytics } from '@/routes/analytics';
+import type { ObserveRange, RangeOf, RangePage } from '@/lib/observe-scope';
 
 type Service = App.Data.Metrics.MetricsServiceData;
 type View = App.Enums.AnalyticsView;
@@ -54,13 +51,12 @@ export function useAnalyticsService<T extends ObserveRange>(
 
 /**
  * The header both views of the project's Analytics tab share (D75):
- * breadcrumbs (all projects / project / service), the title with what is
- * shown, the Traffic and Resources views as tabs that keep the range and
+ * the title with what is shown (no breadcrumb in the content: the top bar
+ * carries project and environment, direction §3.3), the Traffic and Resources views as tabs that keep the range and
  * the service, and the service and range selects.
  */
-export function AnalyticsHeader<T extends ObserveRange>({
+export function AnalyticsHeader<P extends RangePage>({
     project,
-    projectName,
     environment,
     environmentName,
     view,
@@ -68,21 +64,21 @@ export function AnalyticsHeader<T extends ObserveRange>({
     service,
     onService,
     range,
-    ranges,
+    rangePage,
     onRange,
     snapped,
 }: {
     project: string;
-    projectName: string;
     environment: string;
     environmentName: string;
     view: View;
     services: Service[];
     service: Service | null;
     onService: (id: string | null) => void;
-    range: T;
-    ranges: TimeRangeOption<T>[];
-    onRange: (range: T) => void;
+    range: RangeOf<P>;
+    /** Whose ranges the select offers (Traffic: analytics, Resources: resources). */
+    rangePage: P;
+    onRange: (range: RangeOf<P>) => void;
     snapped: string | null;
 }) {
     // The address bar is the scope: tabs carry what it says right now.
@@ -95,141 +91,73 @@ export function AnalyticsHeader<T extends ObserveRange>({
     };
 
     return (
-        <>
-            <AnalyticsBreadcrumbs
-                projectName={projectName}
-                serviceName={service?.name ?? null}
-                onProject={() => onService(null)}
-            />
-            <PageHeader
-                title="Analytics"
-                description={
-                    <>
-                        {`${service?.name ?? 'All services'} in ${environmentName}, ${rangeWords(range)}. `}
-                        {snapped}
-                    </>
-                }
-                actions={
-                    <>
-                        {services.length > 1 && (
-                            <Select
-                                value={service?.id ?? ALL}
-                                onValueChange={(next) =>
-                                    onService(next === ALL ? null : next)
-                                }
+        <PageHeader
+            title="Analytics"
+            description={
+                <>
+                    {`${service?.name ?? 'All services'} in ${environmentName}, ${rangeWords(range)}. `}
+                    {snapped}
+                </>
+            }
+            actions={
+                <>
+                    {services.length > 1 && (
+                        <Select
+                            value={service?.id ?? ALL}
+                            onValueChange={(next) =>
+                                onService(next === ALL ? null : next)
+                            }
+                        >
+                            <SelectTrigger
+                                size="sm"
+                                className="h-9 w-auto min-w-40 gap-2"
+                                aria-label="Service"
                             >
-                                <SelectTrigger
-                                    size="sm"
-                                    className="h-9 w-auto min-w-40 gap-2"
-                                    aria-label="Service"
-                                >
-                                    <SelectValue />
-                                </SelectTrigger>
-                                <SelectContent>
-                                    <SelectItem value={ALL}>
-                                        All services
+                                <SelectValue />
+                            </SelectTrigger>
+                            <SelectContent>
+                                <SelectItem value={ALL}>
+                                    All services
+                                </SelectItem>
+                                {services.map((s) => (
+                                    <SelectItem key={s.id} value={s.id}>
+                                        {s.name}
                                     </SelectItem>
-                                    {services.map((s) => (
-                                        <SelectItem key={s.id} value={s.id}>
-                                            {s.name}
-                                        </SelectItem>
-                                    ))}
-                                </SelectContent>
-                            </Select>
-                        )}
-                        <TimeRangeSelect
-                            value={range}
-                            onChange={onRange}
-                            options={ranges}
-                        />
-                    </>
-                }
-            >
-                <PillTabs
-                    label="Analytics views"
-                    className="mt-3 -ml-3"
-                    preserve
-                    tabs={[
-                        {
-                            label: 'Traffic',
-                            href: analyticsHref({
-                                ...carried,
-                                view: 'traffic',
-                            }),
-                            active: view === 'traffic',
-                        },
-                        {
-                            label: 'Resources',
-                            href: analyticsHref({
-                                ...carried,
-                                view: 'resources',
-                            }),
-                            active: view === 'resources',
-                        },
-                    ]}
-                />
-            </PageHeader>
-        </>
-    );
-}
-
-/**
- * Where this view sits in the drill-down: Analytics (every project) /
- * project / service. The project crumb clears the service filter.
- */
-function AnalyticsBreadcrumbs({
-    projectName,
-    serviceName,
-    onProject,
-}: {
-    projectName: string;
-    serviceName: string | null;
-    onProject: () => void;
-}) {
-    const crumb =
-        'rounded-sm text-muted-foreground transition-colors duration-fast hover:text-foreground focus-visible:outline-2 focus-visible:outline-(--signal)';
-    let last: ReactNode = (
-        <span aria-current="page" className="text-foreground">
-            {projectName}
-        </span>
-    );
-
-    if (serviceName) {
-        last = (
-            <button type="button" onClick={onProject} className={crumb}>
-                {projectName}
-            </button>
-        );
-    }
-
-    return (
-        <nav aria-label="Analytics" className="-mb-2">
-            <ol className="flex min-w-0 items-center gap-1.5 type-small">
-                <li>
-                    <Link href={teamAnalytics()} className={crumb}>
-                        All projects
-                    </Link>
-                </li>
-                <li aria-hidden="true" className="text-faint">
-                    /
-                </li>
-                <li className="min-w-0 truncate">{last}</li>
-                {serviceName && (
-                    <>
-                        <li aria-hidden="true" className="text-faint">
-                            /
-                        </li>
-                        <li className="min-w-0 truncate">
-                            <span
-                                aria-current="page"
-                                className="text-foreground"
-                            >
-                                {serviceName}
-                            </span>
-                        </li>
-                    </>
-                )}
-            </ol>
-        </nav>
+                                ))}
+                            </SelectContent>
+                        </Select>
+                    )}
+                    <RangeSelect
+                        page={rangePage}
+                        value={range}
+                        onChange={onRange}
+                    />
+                </>
+            }
+        >
+            <PillTabs
+                label="Analytics views"
+                className="mt-3 -ml-3"
+                preserve
+                tabs={[
+                    {
+                        label: 'Traffic',
+                        href: analyticsHref({
+                            ...carried,
+                            view: 'traffic',
+                        }),
+                        active: view === 'traffic',
+                    },
+                    {
+                        label: 'Resources',
+                        href: analyticsHref({
+                            ...carried,
+                            view: 'resources',
+                        }),
+                        active: view === 'resources',
+                    },
+                ]}
+            />
+        </PageHeader>
     );
 }

@@ -1,0 +1,102 @@
+---
+title: Run a command
+description: Run migrations, clear a cache or check something in a service's live version, from the dashboard, the CLI or the API.
+---
+
+Sometimes an app needs a command run once: migrations, a seeder, a cache clear, a search reindex. Open the service on
+the canvas and choose **Commands**. Type the command and press **Run**, or pick one of your framework's commands from the
+list below it.
+
+launchroom starts a new container from the service's live version, on one of your servers. It gets the same variables,
+private network and volumes as the running app, so the command sees the same database. The output streams into the
+dashboard while it runs, and the run is kept with its exit code.
+
+You need the **Console** permission for this. Owners and admins have it; developers get it when an owner or admin turns
+it on for them in **Settings → Members**.
+
+## What you can type
+
+A command is a program and its arguments, like `php artisan migrate:status` or `python manage.py showmigrations`.
+Quotes group words as in a terminal: `php artisan tinker --execute 'echo 1;'`.
+
+There is no shell in between, so pipes (`|`), redirects, `&&`, `;` and `$VARIABLES` don't work. The service's variables
+are already set inside the container. To do several things at once, put them in a script in your repository and run the
+script.
+
+Commands that wait for input, such as `php artisan tinker` without `--execute` or `createsuperuser`, end right away
+because nothing is typed into them. For an interactive shell, use the **Console** tab.
+
+## Framework commands
+
+When launchroom recognises your framework, the tab lists its standard commands:
+
+| Framework | Commands |
+|---|---|
+| Laravel | `about`, `migrate:status`, `migrate --force`, `db:seed --force`, `cache:clear`, `queue:restart`, `queue:retry all` |
+| Symfony | `doctrine:migrations:status`, `doctrine:migrations:migrate`, `cache:pool:clear cache.global_clearer` |
+| Rails | `about`, `db:migrate:status`, `db:migrate`, `db:seed` |
+| Django | `showmigrations`, `migrate --noinput`, `check --deploy`, `clearsessions` |
+| Phoenix | your release's `migrate` |
+| Prisma | `prisma migrate status`, `prisma migrate deploy` |
+| Drizzle | `drizzle-kit migrate` |
+
+Commands that change data are marked **Changes data** and ask before they run. Clicking a command's text puts it into
+the command bar, so you can add arguments first. The list comes from the build, so it appears after the first build with
+this version of launchroom.
+
+## Name your own commands
+
+Commands your team runs often can get a name in [launchroom.json](/docs/config-as-code). They show up under
+**Your commands** and run with `launchroom exec <name>`:
+
+```json title="launchroom.json"
+{
+  "version": 1,
+  "services": {
+    "web": {
+      "kind": "app",
+      "deploy": {
+        "commands": [
+          {
+            "name": "reindex",
+            "command": ["php", "artisan", "scout:import", "App\\Models\\Post"],
+            "description": "Rebuilds the search index from the posts table."
+          },
+          { "name": "prune-uploads", "command": ["php", "artisan", "uploads:prune"], "danger": true }
+        ]
+      }
+    }
+  }
+}
+```
+
+A name uses lowercase letters, digits and dashes. `"danger": true` makes the dashboard ask before it runs. Changing the
+list needs no deployment: it applies with the next push.
+
+## Volumes
+
+A service with a volume runs its commands on the server that holds the volume, with the volume mounted where the app
+mounts it. So migrations of an SQLite app write to the app's database file. The app keeps running while the command
+does. When that server is offline, the command doesn't run, rather than running against an empty copy.
+
+## Limits
+
+- A command stops after 10 minutes. You can choose 1, 10, 30 or 60 minutes next to **Run**, or `--timeout` in the CLI.
+- Output is kept up to 5 MiB. After that the command keeps running, but its output is no longer stored.
+- Three commands can run at once per service, five per person.
+- Runs and their output are kept for 30 days, and at most the last 100 per service.
+- If launchroom restarts on the server while a command runs, the command is stopped and isn't run again, so nothing
+  runs twice by accident.
+
+Every run is in the audit log with who ran which command and its exit code. Variable values never are.
+
+## From the CLI and the API
+
+```sh
+launchroom exec --service web -- php artisan migrate:status
+launchroom exec migrate --yes
+```
+
+`launchroom exec` streams the output and exits with the command's own exit code, so CI can use it. A token needs the
+**Run commands** permission, which is off by default. See the [CLI reference](/docs/reference/cli) and the
+[API reference](/docs/reference/api) (`POST …/command-runs`).

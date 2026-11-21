@@ -45,6 +45,13 @@ final class ApiServiceProvider extends ServiceProvider
             $query->ownedBy($user);
         });
 
+        // Settings → Robot tokens: robot tokens of the user's teams (docs/16 §1.4).
+        TeamScopedBindings::define('robotToken', ApiToken::class, static function (Builder $query, User $user): void {
+            $query->whereIn('team_id', $user->teamIdsQuery())
+                ->where('tokenable_type', (new User)->getMorphClass())
+                ->whereIn('tokenable_id', User::query()->select('id')->whereColumn('users.robot_team_id', 'personal_access_tokens.team_id'));
+        });
+
         $limits = static fn (string $key): int => config()->integer('api.rate_limits.'.$key);
         $byToken = static function (Request $request): string {
             $user = $request->user();

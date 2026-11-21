@@ -120,6 +120,21 @@ final class Preview extends Model
     }
 
     /**
+     * The pull request (GitHub), merge request (GitLab) or pull request
+     * (Gitea/Forgejo) on its forge, when the connection is still there
+     * (load `installation.app` and `gitConnection`).
+     */
+    public function pullRequestUrl(): ?string
+    {
+        return match (true) {
+            $this->provider === GitProviderKind::GitHub && $this->installation !== null => rtrim($this->installation->app->web_url, '/').'/'.$this->repository_name.'/pull/'.$this->pr_number,
+            $this->provider === GitProviderKind::GitLab && $this->gitConnection !== null => $this->gitConnection->origin().'/'.$this->repository_name.'/-/merge_requests/'.$this->pr_number,
+            $this->provider === GitProviderKind::Gitea && $this->gitConnection !== null => $this->gitConnection->origin().'/'.$this->repository_name.'/pulls/'.$this->pr_number,
+            default => null,
+        };
+    }
+
+    /**
      * @return BelongsTo<Project, $this>
      */
     public function project(): BelongsTo

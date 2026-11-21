@@ -29,6 +29,7 @@ const triggerLabels: Record<DeploymentTrigger, string> = {
     api: 'API',
     restart: 'Restart',
     start: 'Start',
+    update: 'Update',
 };
 
 export function triggerLabel(trigger: DeploymentTrigger): string {
@@ -88,6 +89,7 @@ export function startedBy(
         api: 'deployed',
         restart: 'restarted',
         start: 'started',
+        update: 'updated',
     };
 
     // Probation rolled it back (docs/04 §8): no person did.
@@ -181,6 +183,11 @@ export function deploymentWord(
 
     if (deployment.isActive) {
         return 'Live';
+    }
+
+    // A queued push may be waiting for its commit's checks (D111).
+    if (deployment.status === 'queued') {
+        return deployment.statusLabel;
     }
 
     return deploymentStatus[deployment.status].label;

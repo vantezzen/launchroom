@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Data\Canvas;
 
+use App\Data\AppUpdates\ServiceUpdateData;
 use App\Data\Services\CronRunData;
 use App\Enums\ServicePanelTab;
 use App\Enums\ServiceSettingsSection;
@@ -29,6 +30,8 @@ final class ServicePanelData extends Data
         public bool $canConsole = false,
         /** The Data tab is shown (databases.query, databases only). */
         public bool $canData = false,
+        /** The Commands tab is shown (containers.exec, not for databases; D105). */
+        public bool $canCommands = false,
         /** Settings tab: the open page; null = the default. */
         public ?ServiceSettingsSection $section = null,
         /** Open "Action needed" findings of this service instance (docs/22 §9.1): the header chip. */
@@ -44,5 +47,7 @@ final class ServicePanelData extends Data
         /** A cron service's recent runs, newest first (G19); empty for other kinds. */
         #[DataCollectionOf(CronRunData::class)]
         public array $cronRuns = [],
+        /** Newer releases and the running update of an image service (D106). */
+        public ?ServiceUpdateData $update = null,
     ) {}
 }

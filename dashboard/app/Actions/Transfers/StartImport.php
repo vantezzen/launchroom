@@ -21,6 +21,7 @@ use App\Exceptions\DomainRuleViolation;
 use App\Models\Backups\RestoreRun;
 use App\Models\Server;
 use App\Models\ServiceInstance;
+use App\Models\Transfers\DataCopyRun;
 use App\Models\Transfers\DataImportRun;
 use App\Models\Transfers\DataTransfer;
 use App\Models\User;
@@ -214,6 +215,10 @@ final readonly class StartImport
 
         if ($importing || $restoring) {
             throw DomainRuleViolation::conflict('An import or restore of this service is already running.');
+        }
+
+        if (DataCopyRun::openInto($instance->id)) {
+            throw DomainRuleViolation::conflict('A copy from another environment into this service is running. Import once it has finished.');
         }
     }
 }

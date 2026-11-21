@@ -1,4 +1,5 @@
 import {
+    DatabaseBackup,
     DatabaseZap,
     Download,
     FileDown,
@@ -21,8 +22,12 @@ import { Spinner } from '@/components/ui/spinner';
 import { show as showSection } from '@/routes/transfers/services';
 import { link as linkRoute } from '@/routes/transfers/services/exports';
 import { cancel as cancelImportRoute } from '@/routes/transfers/services/imports';
+import { cancel as cancelCopyRoute } from '@/routes/transfers/services/copies';
 import { requestJson } from '@/lib/http';
-import type { ExportRun, ImportRun, ServiceTransfers } from './api';
+import type { CopyRun, ExportRun, ImportRun, ServiceTransfers } from './api';
+import { CopyRunRow } from './copy-run';
+import { CopySheet } from './copy-sheet';
+import type { CopyTarget } from './copy-sheet';
 import { ImportSheet } from './import-sheet';
 import type { ImportTarget } from './import-sheet';
 import { formatBytes, formatMs, listNames } from '@/lib/format';
@@ -71,7 +76,11 @@ function isBusy(data: ServiceTransfers): boolean {
         data.imports.some(
             (run) =>
                 !vocabulary.Transfers.ImportRunStatus[run.status].isTerminal,
-        ) || data.exports.some((run) => run.status === 'preparing')
+        ) ||
+        data.exports.some((run) => run.status === 'preparing') ||
+        data.copies.some(
+            (run) => run.status === 'exporting' || run.status === 'importing',
+        )
     );
 }
 
@@ -102,14 +111,21 @@ export function MoveDataSection({
     serviceInstanceId,
     snapshotDownload,
     onSnapshotDownloadHandled,
+    canRestore = false,
+    onRestoreSnapshot,
 }: {
     environment: string;
     service: string;
     serviceInstanceId: string;
     snapshotDownload: SnapshotDownload | null;
     onSnapshotDownloadHandled: () => void;
+    /** Whether the user may restore into this service (the snapshot after a failed copy). */
+    canRestore?: boolean;
+    /** Opens the restore dialog for a snapshot (a copy's safety snapshot). */
+    onRestoreSnapshot?: (snapshot: string) => void;
 }) {
     const [target, setTarget] = useState<ImportTarget | null>(null);
+    const [copyTarget, setCopyTarget] = useState<CopyTarget | null>(null);
     const [busy, setBusy] = useState<string | null>(null);
     const queryClient = useQueryClient();
     const key = useMemo(
@@ -161,6 +177,32 @@ export function MoveDataSection({
                 error instanceof Error
                     ? error.message
                     : 'The import couldn’t be cancelled.',
+            );
+            void load();
+        } finally {
+            setBusy(null);
+        }
+    };
+
+    const cancelCopy = async (run: CopyRun) => {
+        setBusy(`cancel-copy:${run.id}`);
+        try {
+            setData(
+                await requestJson<ServiceTransfers>(
+                    'post',
+                    cancelCopyRoute({
+                        serviceInstance: serviceInstanceId,
+                        copy: run.id,
+                    }).url,
+                    {},
+                ),
+            );
+            toast.success('Copy cancelled. Nothing was replaced.');
+        } catch (error) {
+            toast.error(
+                error instanceof Error
+                    ? error.message
+                    : 'The copy couldn’t be cancelled.',
             );
             void load();
         } finally {
@@ -260,6 +302,11 @@ export function MoveDataSection({
             at: run.createdAt ?? '',
             run,
         })),
+        ...data.copies.map((run) => ({
+            kind: 'copy' as const,
+            at: run.createdAt ?? '',
+            run,
+        })),
     ].sort((a, b) => b.at.localeCompare(a.at));
 
     return (
@@ -319,10 +366,19 @@ export function MoveDataSection({
                                 Download now
                             </Button>
                         )}
+                        {data.canCopy && data.importSupported && (
+                            <Button
+                                variant="ghost"
+                                onClick={() => setCopyTarget({ volume: null })}
+                            >
+                                <DatabaseBackup aria-hidden="true" />
+                                Copy from another environment…
+                            </Button>
+                        )}
                         {!data.importSupported && (
                             <p className="type-small text-muted-foreground">
-                                Importing into {data.engineLabel} isn’t
-                                supported; downloads work.
+                                Importing or copying {data.engineLabel} data
+                                isn’t supported; downloads work.
                             </p>
                         )}
                     </div>
@@ -377,6 +433,18 @@ export function MoveDataSection({
                                             Download
                                         </Button>
                                     )}
+                                    {data.canCopy && (
+                                        <Button
+                                            size="sm"
+                                            variant="ghost"
+                                            onClick={() =>
+                                                setCopyTarget({ volume })
+                                            }
+                                        >
+                                            <DatabaseBackup aria-hidden="true" />
+                                            Copy from…
+                                        </Button>
+                                    )}
                                 </div>
                             </li>
                         ))}
@@ -386,7 +454,23 @@ export function MoveDataSection({
                 {runs.length > 0 && (
                     <ul className="flex flex-col divide-y overflow-hidden rounded-xl border bg-card shadow-card">
                         {runs.map((entry) =>
-                            entry.kind === 'import' ? (
+                            entry.kind === 'copy' ? (
+                                <CopyRunRow
+                                    key={entry.run.id}
+                                    run={entry.run}
+                                    cancelling={
+                                        busy === `cancel-copy:${entry.run.id}`
+                                    }
+                                    canRestore={
+                                        canRestore &&
+                                        onRestoreSnapshot !== undefined
+                                    }
+                                    onCancel={() => void cancelCopy(entry.run)}
+                                    onRestore={(snapshot) =>
+                                        onRestoreSnapshot?.(snapshot)
+                                    }
+                                />
+                            ) : entry.kind === 'import' ? (
                                 <ImportRow
                                     key={entry.run.id}
                                     run={entry.run}
@@ -416,6 +500,16 @@ export function MoveDataSection({
                         )}
                     </ul>
                 )}
+
+                <CopySheet
+                    data={data}
+                    target={copyTarget}
+                    onClose={() => setCopyTarget(null)}
+                    onStarted={() => {
+                        setCopyTarget(null);
+                        void load();
+                    }}
+                />
 
                 <ImportSheet
                     data={data}

@@ -6,6 +6,7 @@ namespace App\Http\Controllers\Api\V1;
 
 use App\Data\Api\ApiTeamData;
 use App\Data\Api\ApiTokenData;
+use App\Data\Api\ApiTokenScopeData;
 use App\Data\Api\ApiUserData;
 use App\Data\Api\MeData;
 use App\Http\Api\ApiOperation;
@@ -32,6 +33,7 @@ final class MeController extends Controller
             token: ApiTokenData::fromToken($token),
             user: new ApiUserData($user->name, $user->email),
             team: new ApiTeamData($team->public_id, $team->name, $user->roleIn($team)),
+            scope: ApiTokenScopeData::fromToken($token),
         ));
     }
 }

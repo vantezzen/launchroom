@@ -14,7 +14,7 @@ use Illuminate\Http\RedirectResponse;
 /**
  * Where "/" lands (docs/08 §2): instance owners see the recovery checklist
  * while recovery mode is on (docs/14 §5.2), else the first-run checklist
- * until it is complete or dismissed; everyone else, and owners afterwards,
+ * until nothing but skipped steps is left, or it is dismissed; everyone else, and owners afterwards,
  * the team's projects. Acts on the signed-in user only.
  */
 final class DashboardController extends Controller
@@ -27,7 +27,7 @@ final class DashboardController extends Controller
 
         $progress = $checklist->progressFor($user);
 
-        if ($progress instanceof OnboardingProgressData && ! $progress->complete && ! $progress->dismissed) {
+        if ($progress instanceof OnboardingProgressData && ! $progress->settled && ! $progress->dismissed) {
             return to_route('onboarding.show');
         }
 

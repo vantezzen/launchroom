@@ -3,7 +3,6 @@ import { GitCommitHorizontal, MoreHorizontal } from 'lucide-react';
 import { CommitAvatar } from '@/components/commit-avatar';
 import { Duration } from '@/components/elapsed';
 import { Logo } from '@/components/logo';
-import { Status } from '@/components/status';
 import { TimeAgo } from '@/components/time-ago';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -18,15 +17,14 @@ import type { PendingAction } from '@/features/deployments/deployment-actions';
 import { deploymentUrl } from '@/features/deployments/deployment-actions';
 import {
     deploymentSeconds,
-    deploymentStatusState,
     deploymentTitle,
-    deploymentWord,
     isInProgress,
     startedBy,
 } from '@/features/deployments/format';
 import { useNow } from '@/hooks/use-now';
 import { cn } from '@/lib/utils';
 import { formatDuration, shortSha } from '@/lib/format';
+import { DeploymentStatus } from './deployment-status';
 
 type Summary = App.Data.Deployments.DeploymentSummaryData;
 
@@ -266,10 +264,7 @@ export function CommitGroupCard({
                             className="group relative flex min-h-12 items-center gap-3 border-b px-4 py-2 transition-colors duration-fast last:border-b-0 hover:bg-(--hover)/50"
                         >
                             <span className="w-28 shrink-0 max-sm:w-auto">
-                                <Status
-                                    state={deploymentStatusState(deployment)}
-                                    label={deploymentWord(deployment)}
-                                />
+                                <DeploymentStatus deployment={deployment} />
                             </span>
                             <span className="flex min-w-0 flex-1 flex-col gap-0.5">
                                 <Link

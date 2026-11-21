@@ -6,6 +6,7 @@ namespace App\Http\Controllers\Projects;
 
 use App\Data\Analytics\AnalyticsData;
 use App\Data\Analytics\AnalyticsQueryData;
+use App\Data\Analytics\TrafficReadinessData;
 use App\Data\Metrics\MetricsServiceData;
 use App\Enums\AnalyticsView;
 use App\Http\Controllers\Controller;
@@ -15,6 +16,7 @@ use App\Models\Project;
 use App\Models\Service;
 use App\Queries\ProjectShell;
 use App\Queries\RequestAnalytics;
+use App\Queries\TrafficReadiness;
 use App\Support\Canvas\ServiceGlyph;
 use Illuminate\Contracts\Database\Query\Builder;
 use Illuminate\Http\Request;
@@ -75,6 +77,8 @@ final class ProjectAnalyticsController extends Controller
             'services' => $services,
             // ?service= (public id or slug) preselects a service of this environment.
             'initialService' => $initial?->id,
+            // Why there would be no requests (D109): the empty Traffic view names it.
+            'readiness' => fn (): TrafficReadinessData => resolve(TrafficReadiness::class)->in([$environment->setRelation('project', $project)]),
         ]);
     }
 }

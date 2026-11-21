@@ -69,6 +69,7 @@ var probed = []string{
 	"index.js", "index.ts", "server.js", "server.ts", "src/index.js", "src/index.ts", "src/server.js", "src/server.ts",
 	"next.config.js", "next.config.mjs", "next.config.ts", "vite.config.js", "vite.config.ts", "vite.config.mjs",
 	"Dockerfile", "Containerfile", "Procfile", "railpack.json", "go.mod", "Gemfile",
+	".pnp.cjs",
 }
 
 func readSmall(fsys fs.FS, name string) (string, bool) {

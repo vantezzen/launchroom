@@ -21,6 +21,7 @@ final class VariableRowData extends Data
      * @param  list<string>  $references
      * @param  list<string>  $errors
      * @param  list<VariableTargetChipData>  $targets
+     * @param  list<ReferenceFixData>  $fixes
      */
     public function __construct(
         public string $id,
@@ -43,5 +44,7 @@ final class VariableRowData extends Data
         public bool $managedByFile = false,
         /** Workers and crons: the app whose variable or connection it is (read-only here). */
         public ?string $inheritedFrom = null,
+        /** Each broken reference with the valid ones it most likely meant. */
+        public array $fixes = [],
     ) {}
 }

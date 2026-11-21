@@ -11,6 +11,8 @@ type EmptyStateProps = {
     title?: ReactNode;
     /** One line: what will be here + how it gets here. */
     children: ReactNode;
+    /** Content between the line and the action, as wide as the frame allows (a short list of rows). */
+    body?: ReactNode;
     /** One action (usually a Button). */
     action?: ReactNode;
     /** Optional quiet secondary link. */
@@ -29,6 +31,7 @@ export function EmptyState({
     ghost,
     title,
     children,
+    body,
     action,
     secondary,
     variant = 'framed',
@@ -55,6 +58,11 @@ export function EmptyState({
                 {title && <p className="type-heading">{title}</p>}
                 <p className="type-body text-muted-foreground">{children}</p>
             </div>
+            {body && (
+                <div className="flex w-full max-w-[520px] min-w-0 flex-col">
+                    {body}
+                </div>
+            )}
             {(action || secondary) && (
                 <div className="flex flex-wrap items-center justify-center gap-3">
                     {action}

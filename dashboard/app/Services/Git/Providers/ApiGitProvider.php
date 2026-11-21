@@ -6,7 +6,9 @@ namespace App\Services\Git\Providers;
 
 use App\Contracts\Git\ApiConnectionProvider;
 use App\Contracts\Git\OpensPullRequests;
+use App\Contracts\Git\ReadsCommitChecks;
 use App\Contracts\Git\SourceRepository;
+use App\Data\Git\CommitCheckData;
 use App\Data\Git\CommitData;
 use App\Data\Git\DeploymentStatusReport;
 use App\Data\Git\FilePullRequest;
@@ -17,6 +19,7 @@ use App\Data\Git\RepositoryRef;
 use App\Data\Git\RepositoryTree;
 use App\Enums\Git\DeploymentReportState;
 use App\Enums\Git\GitConnectionStatus;
+use App\Exceptions\CommitChecksUnavailable;
 use App\Exceptions\DomainRuleViolation;
 use App\Exceptions\Git\GitConnectionUnusable;
 use App\Exceptions\Git\GitProviderRequestFailed;
@@ -47,7 +50,7 @@ use Throwable;
  * team-scoped lookups, commit statuses, the PR/MR comment, preview statuses
  * and webhook registration. Subclasses supply paths and payload shapes.
  */
-abstract class ApiGitProvider implements ApiConnectionProvider, OpensPullRequests
+abstract class ApiGitProvider implements ApiConnectionProvider, OpensPullRequests, ReadsCommitChecks
 {
     public function __construct(
         protected readonly GitProviderApi $api,
@@ -150,6 +153,20 @@ abstract class ApiGitProvider implements ApiConnectionProvider, OpensPullRequest
     abstract protected function statusRequest(GitRepository $repository, string $sha, string $context, string $state, string $description, ?string $url): array;
 
     abstract protected function statusState(DeploymentReportState $state): string;
+
+    /**
+     * The path that lists a commit's latest status per name (D111).
+     *
+     * @return array{string, array<string, string|int>} path + query
+     */
+    abstract protected function checksRequest(GitRepository $repository, string $sha): array;
+
+    /**
+     * The commit's checks in the provider's answer, launchroom's own included.
+     *
+     * @return list<CommitCheckData>
+     */
+    abstract protected function parseChecks(string $body): array;
 
     abstract protected function commentCreatePath(GitRepository $repository, int $number): string;
 
@@ -480,6 +497,30 @@ abstract class ApiGitProvider implements ApiConnectionProvider, OpensPullRequest
 
             return null;
         }
+    }
+
+    public function commitChecks(RepositoryRef $repository, string $sha): array
+    {
+        $row = $this->row($repository);
+        $label = $this->kind()->label();
+
+        if (! $row instanceof GitRepository || ! $row->gitConnection->isActive()) {
+            throw new CommitChecksUnavailable("launchroom can't access {$repository->fullName}. Check its connection in Settings → Git.");
+        }
+
+        if (! GitRef::isSha($sha)) {
+            throw new CommitChecksUnavailable('This deployment has no commit to read checks for.');
+        }
+
+        [$path, $query] = $this->checksRequest($row, $sha);
+
+        try {
+            $checks = $this->parseChecks($this->api->send($row->gitConnection, 'GET', $path, query: $query)->body());
+        } catch (Throwable) {
+            throw new CommitChecksUnavailable("{$label} didn’t answer with the checks of this commit.");
+        }
+
+        return array_values(array_filter($checks, static fn (CommitCheckData $check): bool => ! str_starts_with($check->name, self::OWN_PREFIX)));
     }
 
     public function reportDeployment(DeploymentStatusReport $report): void

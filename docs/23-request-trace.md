@@ -210,6 +210,12 @@ All three are dropped for servers without the feature (`NodeStateField`, `DropFi
   `input?`): with `t` the server decodes it and passes `RequestTraceData` as props, so a link to a ray can be shared
   with a teammate. Without `t` it shows the paste field ("Paste a ray"); a decoded ray is always titled "Ray" (§7). The server computes the summary sentence, the request class and where
   the path ends (`TraceStop`: edge, firewall, app server, service); the page renders them.
+- **API and CLI** (D111): `POST /api/v1/traces/decode {value}` (ability `read`, `Api\V1\TraceController`) runs the same
+  decode and access check for the token's team and gives the same single answer as a `rule_violation`; it answers
+  `ApiTraceData` (the page's facts without its links and device renders, plus `logsFrom`/`logsTo`, the ±60 s window of
+  the service's logs). `launchroom ray <value | ->` picks the ray out of any text (a whole `curl -i` output on stdin),
+  prints the request, edge time against app time, the firewall's decision and rules, the servers on the path and where
+  it ended, then the service's log lines that mention its request id (docs/16 §2.2).
 - **Entry points**: a "Paste a ray" button in the log explorer's toolbar (team and project logs, not the service
   panel) that opens a paste popover and goes to the page; "Paste a ray" in ⌘K (Navigate; while searching in its own
   group first), and a pasted ray in ⌘K offers "Open this ray".

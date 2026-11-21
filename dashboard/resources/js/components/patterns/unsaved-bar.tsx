@@ -260,13 +260,14 @@ export function UnsavedBar({
 
 type StagedBarProps = {
     count: number;
+    /** Replaces "2 changes" ("4 changes in 2 services"). */
+    countLabel?: string;
     /** Consequence in a few words: "api will restart". */
     summary?: string;
-    onDiscard: () => void;
-    /** What Discard drops, when it isn't everything counted ("Discard web’s changes"). */
-    discardLabel?: string;
+    /** Left out where discarding happens in the review instead. */
+    onDiscard?: () => void;
     /** Opens the full review (the staged changes sheet). */
-    onDetails?: () => void;
+    onReview?: () => void;
     /** Applies the staged changes (the affected services redeploy). */
     onDeploy: () => void;
     deploying?: boolean;
@@ -277,15 +278,16 @@ type StagedBarProps = {
 };
 
 /**
- * "2 changes, api will restart, Details, Discard, Apply" for staged changes
- * (direction §5.7, D75). The count uses the staged (dashed) cue.
+ * "4 changes in 2 services, api will restart, Review, Apply" for staged
+ * changes (direction §5.7, D75, D109). The count uses the staged (dashed)
+ * cue and says Apply's scope.
  */
 export function StagedBar({
     count,
+    countLabel,
     summary,
     onDiscard,
-    discardLabel = 'Discard',
-    onDetails,
+    onReview,
     onDeploy,
     deploying = false,
     deployLabel = 'Apply',
@@ -304,7 +306,8 @@ export function StagedBar({
                     className="size-2 shrink-0 rounded-full border-[1.5px] border-dashed border-background"
                 />
                 <span className="type-label whitespace-nowrap tabular-nums">
-                    {count === 1 ? '1 change' : `${count} changes`}
+                    {countLabel ??
+                        (count === 1 ? '1 change' : `${count} changes`)}
                 </span>
                 {summary && (
                     <span className="hidden min-w-0 items-center gap-2 type-body text-background/70 sm:inline-flex">
@@ -313,14 +316,14 @@ export function StagedBar({
                     </span>
                 )}
             </span>
-            {onDetails && (
-                <FloatingBarButton onClick={onDetails}>
-                    Details
+            {onReview && (
+                <FloatingBarButton onClick={onReview}>Review</FloatingBarButton>
+            )}
+            {onDiscard && (
+                <FloatingBarButton onClick={onDiscard} disabled={deploying}>
+                    Discard
                 </FloatingBarButton>
             )}
-            <FloatingBarButton onClick={onDiscard} disabled={deploying}>
-                {discardLabel}
-            </FloatingBarButton>
             <FloatingBarButton
                 variant="primary"
                 onClick={onDeploy}

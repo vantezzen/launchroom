@@ -16,10 +16,11 @@ Your launchroom serves the full interactive reference at **`/docs/api`** on your
 Create a token under **Settings → API tokens** (in the **You** group) with **Create token**.
 
 - **One team.** A token acts as you inside the team that was current when you created it. Everything in your other teams answers `404`, as if it didn't exist.
-- **Access** narrows what the token can do. Pick **Deploy** (the default: `read`, `deploy`, `env:read` and `env:write`), **Read only**, **Everything** (every ability your role allows) or **Custom** to tick [abilities](#abilities) one by one. A choice that would grant the same as a smaller one is left out, so a viewer sees only Read only and Custom. The effective rights are your role in the team **and** the token's abilities, whichever is less.
+- **Access** narrows what the token can do. Pick **Deploy** (the default: `read`, `deploy`, `env:read`, `env:write` and `fix`), **Read only**, **Full access** or **Custom** to tick [abilities](#abilities) one by one. The effective rights are your role in the team **and** the token's abilities, whichever is less.
+- **Full access** gives the token everything your role allows, including permissions launchroom adds in later versions. It never goes beyond your role, and if your role changes, the token follows. Because a full-access token gains new powers when you update launchroom, give CI jobs and AI agents a **Custom** token (or a robot token limited to one project) with only what they need. `GET /me` answers `fullAccess: true` and lists what that means today in `abilities`.
 - **Expiry** is mandatory: 7 days, 30 days, 90 days or 1 year. Each option shows the date the token stops working.
 - **Shown once.** Copy the token when it's shown. launchroom only keeps a hash. Tokens look like `<id>|lr_pat_…`. In CI, store it as `LAUNCHROOM_TOKEN`, which the [CLI](/docs/reference/cli) uses without `launchroom login`.
-- The token list shows each token's hint (its prefix and last four characters, such as `lr_pat_…a1b2`, so you can match it with the one in your CI settings), its access ("Full access", "Deploy", "Read only" or "Custom, 4 permissions"), when and from which IP it was last used, and when it expires. **Revoke** ends a token at once. Tokens created before hints existed show none.
+- The token list shows each token's hint (its prefix and last four characters, such as `lr_pat_…a1b2`, so you can match it with the one in your CI settings), its access ("Full access", "Deploy", "Read only" or "Custom, 4 permissions"; a custom token stays custom even when it has every permission today), when and from which IP it was last used, and when it expires. **Revoke** ends a token at once. Tokens created before hints existed show none.
 - Removing someone from the team deletes their tokens for that team.
 
 ### Abilities
@@ -33,10 +34,23 @@ Create a token under **Settings → API tokens** (in the **You** group) with **C
 | `secrets:read` | Secret values, each read audited | `env pull` and `run` with secrets |
 | `domains:write` | Add and remove custom domains | Automation |
 | `data:transfer` | Import into databases and volumes, export and download their data, each audited | `launchroom db import`, `db export` |
+| `run` | Run one-off commands in a service's live version, follow and cancel them, each audited | `launchroom exec`, migrations in CI |
+| `fix` | Apply the fix launchroom suggests for a failed deployment and redeploy. Needs `deploy` too | `launchroom fix` |
+| `update` | Update an app to a newer release launchroom found, after a backup of its data. Needs `deploy` too | `launchroom updates apply` |
 
-**Deploy** grants `read`, `deploy`, `env:read` and `env:write`. `secrets:read` and `data:transfer` are opt-in and only work for owners and admins. No token can manage servers, members, the team, backup settings or Console and Data sessions.
+**Deploy** grants `read`, `deploy`, `env:read`, `env:write` and `fix` (tokens made before `fix` existed keep their abilities). `secrets:read`, `data:transfer`, `run` and `update` are opt-in. `secrets:read` and `data:transfer` only work for owners and admins, `run` for people with Console access. No token can manage servers, members, the team, backup settings or open Console and Data sessions.
 
 Actions taken with a token appear in the [audit log](/docs/teams-and-security/audit-log) like the same action in the dashboard, marked as done through that token.
+
+### Robot tokens
+
+A personal token stops working when its owner leaves the team. For CI, create a **robot token** under **Settings → Robot tokens** (in the **Team** group) instead: it belongs to the team and keeps working whoever comes and goes.
+
+- Owners and admins create, rotate and revoke them. Everyone in the team sees them, with who created each one, when it was last used and from where.
+- Access and expiry work like a personal token's. A robot never gets more than its abilities: it can't manage servers, members or the team. A full-access robot gets later permissions too, still only inside what it **Reaches**.
+- **Reaches** limits a robot to **All projects**, **One project**, or **One service** of a project. A limited token answers `403` with the code `token_scope` for anything outside its project or service, and for team-wide endpoints such as servers. Endpoints that take a `service` (such as `POST /environments/{environment}/deployments` or listing deployments) must name the robot's service. Lists only show what it reaches. Each operation in the OpenAPI document says the narrowest reach it serves in `x-launchroom-scope` (`team`, `project`, `service`, or `own` for `/me`). `GET /me` answers the reach as `scope` (`projectId`, `projectName`, `serviceId`, `serviceName`; `null` when the token reaches every project).
+- **Rotate** makes a new secret with the same name, access, reach and lifetime. The old one stops at once, so update your CI secret right after.
+- Deployments and audit entries show the robot's name. Creating, rotating and revoking are audited.
 
 ## Basics
 
@@ -156,6 +170,63 @@ curl -sN https://launchroom.example.com/api/v1/deployments/$DEPLOYMENT_ID/logs/s
 
 A `: ping` comment arrives every 15 seconds. `GET /environments/{environment}/logs/stream` follows the runtime logs of a whole environment the same way, like **Live** in the Logs explorer, and `GET /environments/{environment}/logs` runs a search with `range` (`15m`, `1h`, `24h`, `7d`, `30d`) or a fixed window (`from` and `to`, epoch seconds, within the last 30 days), `source` (`all`, `runtime`, `build`), `service` and `q`. Its `markers` are the deploys of the window, each with a link to the deployment.
 
+## Explain and fix a failed deployment
+
+`GET /deployments/{deployment}/failure` answers what the deployment's page says when it fails: the outcome (`title`, `message`, `hint`), the `explanation` of a known failure (`cause` and `fix` in plain words), the build's `hints`, the `failingStep` with its last lines (`excerpt`, numbered like the deployment's log, secrets masked, the line that reads like the error marked with `error: true`) and the `fixes`.
+
+```json
+{
+  "data": {
+    "title": "Health check timed out",
+    "explanation": { "key": "health_not_http", "title": "Your app doesn’t answer HTTP on its port", "cause": "…", "fix": "…" },
+    "failingStep": "health",
+    "errorLine": 41,
+    "fixes": [
+      { "code": "use_tcp_healthcheck", "label": "Check over TCP and redeploy", "oneClick": true,
+        "command": "launchroom fix use_tcp_healthcheck --deployment dpl_…" }
+    ]
+  }
+}
+```
+
+A fix with `oneClick: true` is applied with `POST /deployments/{deployment}/fixes/{code}`. It needs the `deploy` and `fix` abilities and your role's right to change the service's settings, the same as **Fix and redeploy** on the page. Only the fix launchroom suggests for that deployment is accepted. The answer says what happened: `deploying` (with the new deployment), `staged` (other changes were staged too, so review and deploy them together) or `freeing_disk`. Other fixes name the CLI command or dashboard page that applies them.
+
+## Previews
+
+`GET /projects/{project}/previews?pr=42` returns the preview of pull request 42 (without `pr`, the newest previews, open ones first): its `status`, `health` (`building`, `live`, `failed`, `stopped` or `none`), the full `headSha`, its `urls` and the current deployment of each service. A preview is ready for a commit when every deployment is `finished` and built from that commit. [`launchroom preview wait`](/docs/reference/cli) does this for you in CI.
+
+## Decode a ray
+
+`POST /traces/decode` with `{"value": "…"}` (the `X-Launchroom-Ray` header value or the whole header line) returns what the [Ray page](/docs/observability/request-trace) shows: status, path, the time spent at the edge and in the app, the firewall's decision with its rules, the servers on the way and where the request ended, plus `requestId` with `logsFrom` and `logsTo` to search the service's logs for it. A ray that isn't from one of your team's services gets one answer, whatever the reason.
+
+After a production rollback, auto-deploy is paused. `POST /environments/{environment}/auto-deploy/resume` (ability `deploy`) turns it back on.
+
+## Run a command
+
+[Commands](/docs/projects/run-a-command) need the `run` ability and Console access.
+
+| Request | What it does |
+|---|---|
+| `GET /environments/{environment}/services/{service}/commands` | The service's listed commands: its framework's and the ones `launchroom.json` names |
+| `POST …/services/{service}/command-runs` | Runs `{"argv": ["php", "artisan", "migrate:status"]}` or `{"name": "migrate"}`, optional `timeoutSeconds` (10 to 3600). `201` with the run |
+| `GET …/services/{service}/command-runs` | Recent runs, newest first |
+| `GET /command-runs/{run}` | One run: `status`, `exitCode`, `error`, who ran it and when |
+| `GET /command-runs/{run}/output/stream` | The output as server-sent events: `lines`, `status`, then `end` with the status and exit code |
+| `POST /command-runs/{run}/cancel` | Stops it (the container gets 10 seconds to exit) |
+
+A run's `status` is `queued`, `running`, `succeeded`, `failed` (with `exitCode`), `timed_out`, `cancelled` or `error` (it couldn't run, `error` says why). `argv` runs without a shell.
+
+## Update an app
+
+[App updates](/docs/projects/keep-apps-up-to-date) of apps that run an image:
+
+| Request | What it does |
+|---|---|
+| `GET /app-updates` | Apps with a newer release or an update in progress, `?project=prj_…` for one project: what runs, the `candidates` launchroom found (biggest change first), the `recommended` one, a `major` with its `releaseNotesUrl`, the update in progress (`run`) and why an update can't start now (`blocker`) |
+| `POST /environments/{environment}/services/{service}/update` | Updates to `{"tag": "v6.3.0"}`, one of the `candidates`. A major needs `"releaseNotesRead": true`. `202` with the app's updates and the new `run` |
+
+It needs the `deploy` and `update` abilities and your role's right to change the app's settings. The update works like the **Update** button: a backup of the app's data first, then the new version, and back to the old one if it fails. It's refused while other changes are staged or a deployment is running.
+
 ## What the API covers
 
 | Area | Endpoints |
@@ -163,7 +234,10 @@ A `: ping` comment arrives every 15 seconds. `GET /environments/{environment}/lo
 | Who am I | `GET /me` |
 | Projects and environments | List and read projects, their environments and services |
 | Services | Deploy the latest version, restart, stop, start |
-| Deployments | List, create, read; redeploy, roll back, cancel; logs and log streams |
+| Deployments | List, create, read; redeploy, roll back, cancel; logs and log streams; why one failed and its fix |
+| Previews | A project's previews, or one pull request's |
+| Rays | Decode an `X-Launchroom-Ray` header |
+| App updates | List available updates, update an app |
 | Variables | List, create, change, delete; read one value; the resolved env of a service (`?secrets=1` to include secrets when allowed) |
 | Domains | List, add, remove |
 | Servers | List and read |

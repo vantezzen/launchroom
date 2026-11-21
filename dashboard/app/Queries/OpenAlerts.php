@@ -110,6 +110,7 @@ final class OpenAlerts
             AlertRule::CronFailed => 'Cron failed',
             AlertRule::ControlPlaneDegraded => 'launchroom degraded',
             AlertRule::QueueBacklog => 'Jobs waiting',
+            AlertRule::UpdateAvailable => 'Update available',
         };
     }
 

@@ -1,9 +1,9 @@
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { Link, usePage } from '@inertiajs/react';
 import { Info, RefreshCw, ShieldCheck } from 'lucide-react';
-import { useMemo, useState } from 'react';
+import { useState } from 'react';
 import { toast } from 'sonner';
-import { TimeRangeSelect } from '@/components/charts/time-range-select';
+import { RangeSelect } from '@/components/charts/time-range-select';
 import { Callout } from '@/components/patterns/callout';
 import { EmptyState } from '@/components/patterns/empty-state';
 import { PageHeader } from '@/components/patterns/page';
@@ -17,7 +17,7 @@ import {
 } from '@/components/ui/tooltip';
 import { requestJson } from '@/lib/http';
 import { useObserveScope } from '@/hooks/use-observe-scope';
-import { RANGE_SETS, rangeOptions } from '@/lib/observe-scope';
+import { RANGE_SETS } from '@/lib/observe-scope';
 import { cn } from '@/lib/utils';
 import { edit as instanceSecurity } from '@/routes/instance-security';
 import { investigate as investigateRoute } from '@/routes/security/findings';
@@ -27,24 +27,21 @@ import {
     index as indexRoute,
 } from '@/routes/security';
 import { FindingSheet } from './finding-detail';
-import { ActionNeededList } from './action-needed';
+import { FixGroupList } from './action-needed';
 import { FirewallSection } from './firewall-section';
 import { card } from './format';
 import { HowItWorks } from './how-it-works';
 import { InventorySection } from './inventory-section';
 import { SecurityHero } from './security-hero';
-import { groupActionNeeded } from './shape';
 import { PastFindings } from './past-findings';
 import { WorthKnowing } from './worth-knowing';
-import { relativeTime, plural } from '@/lib/format';
+import { relativeTime } from '@/lib/format';
 import { securityKeys } from './query-keys';
 import { ChannelEvents } from '@/components/channel-events';
 import { channelName } from '@/lib/realtime';
 
 type PageData = App.Data.Security.SecurityPageData;
-type Finding = App.Data.Security.FindingCardData;
-
-const RANGES = rangeOptions(RANGE_SETS.analytics);
+type FixService = App.Data.Security.FixGroupServiceData;
 
 /**
  * The Security page (docs/22 §9.2): what runs, what affects it, what the
@@ -105,9 +102,9 @@ export function SecurityOverview({
         }
     };
 
-    const investigate = async (target: Finding) => {
+    const investigate = async (target: FixService) => {
         try {
-            await requestJson('post', investigateRoute(target.id).url);
+            await requestJson('post', investigateRoute(target.lead).url);
             toast.success(`Checking ${target.service.name}`);
             refresh();
         } catch (error) {
@@ -115,10 +112,7 @@ export function SecurityOverview({
         }
     };
 
-    const groups = useMemo(
-        () => groupActionNeeded(data?.actionNeeded ?? []),
-        [data],
-    );
+    const groups = data?.fixGroups ?? [];
     const scope = data?.scope ?? null;
     const scoped = service !== null || project !== null;
     const scopeName = scope
@@ -177,10 +171,10 @@ export function SecurityOverview({
                                 </Link>
                             </Button>
                         )}
-                        <TimeRangeSelect
+                        <RangeSelect
+                            page="analytics"
                             value={range}
                             onChange={setRange}
-                            options={RANGES}
                         />
                     </div>
                 }
@@ -227,13 +221,14 @@ export function SecurityOverview({
                         <Section id="action-needed" title="Action needed">
                             <div className="flex flex-col gap-4">
                                 {groups.length > 0 ? (
-                                    <ActionNeededList
+                                    <FixGroupList
                                         groups={groups}
-                                        onOpen={(f) => setFinding(f.id)}
-                                        onInvestigate={(f) =>
-                                            void investigate(f)
+                                        onOpen={setFinding}
+                                        onInvestigate={(s) =>
+                                            void investigate(s)
                                         }
-                                        canInvestigate={data.canManage}
+                                        onChanged={refresh}
+                                        canManage={data.canManage}
                                     />
                                 ) : (
                                     <EmptyState
@@ -271,11 +266,6 @@ export function SecurityOverview({
                     />
 
                     <InventorySection
-                        description={
-                            data.summary.packages > 0
-                                ? `${plural(data.summary.packages, 'package')} in ${plural(data.summary.servicesChecked, 'service')}`
-                                : undefined
-                        }
                         runtimes={data.runtimes}
                         baseImages={data.baseImages}
                         initialQuery={inventoryQuery}

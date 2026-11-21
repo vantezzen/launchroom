@@ -50,7 +50,7 @@ final class ApiTokenController extends Controller
         $team = $user->currentTeam ?? throw new DomainRuleViolation('Pick a team first.');
         Gate::authorize('create', [ApiToken::class, $team]);
 
-        $new = $create->handle($user, $team, $input->name, $input->abilityList(), $input->expiresInDays, ApiTokenClient::Dashboard, $this->auditActor($request, $user));
+        $new = $create->handle($user, $team, $input->name, $input->abilityList(), $input->expiresInDays, ApiTokenClient::Dashboard, $this->auditActor($request, $user), $input->fullAccess);
 
         return response()
             ->json(new CreatedApiTokenData(ApiTokenData::fromToken($new->token), $new->plainText)->toArray(), 201)

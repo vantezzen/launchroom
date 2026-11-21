@@ -4,12 +4,14 @@ declare(strict_types=1);
 
 namespace App\Services\Git\Providers;
 
+use App\Data\Git\CommitCheckData;
 use App\Data\Git\CommitData;
 use App\Data\Git\FilePullRequest;
 use App\Data\Git\GitBranchData;
 use App\Data\Git\PushPayload;
 use App\Data\Git\RepositoryRef;
 use App\Data\Git\RepositoryTree;
+use App\Enums\Git\CommitCheckState;
 use App\Enums\Git\DeploymentReportState;
 use App\Enums\Git\GitProviderKind;
 use App\Enums\Git\GitServerKind;
@@ -383,6 +385,35 @@ final class GiteaProvider extends ApiGitProvider
             'description' => $description,
             ...($url === null ? [] : ['target_url' => $url]),
         ]];
+    }
+
+    protected function checksRequest(GitRepository $repository, string $sha): array
+    {
+        // The combined status: the latest status per context.
+        return [$this->repositoryPath($repository).'/commits/'.$sha.'/status', ['limit' => 50]];
+    }
+
+    protected function parseChecks(string $body): array
+    {
+        $checks = [];
+
+        foreach (JsonObject::decode($body)->objects('statuses') as $status) {
+            $name = $status->stringOrNull('context') ?? '';
+
+            if ($name === '') {
+                continue;
+            }
+
+            $state = match ($status->stringOrNull('status') ?? $status->stringOrNull('state')) {
+                'success', 'warning' => CommitCheckState::Passed,
+                'failure', 'error' => CommitCheckState::Failed,
+                default => CommitCheckState::Pending,
+            };
+
+            $checks[] = new CommitCheckData(mb_substr($name, 0, 255), $state, CommitCheckData::link($status->stringOrNull('target_url')));
+        }
+
+        return $checks;
     }
 
     protected function statusState(DeploymentReportState $state): string

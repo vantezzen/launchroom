@@ -153,15 +153,32 @@ function Overview({
     );
 }
 
+/** Catalogue rows shown before "Show N more" (D107: no endless page). */
+const CATALOGUE_ROWS = 5;
+
 function Catalogue({ title, items }: { title: string; items: Runtime[] }) {
+    const [all, setAll] = useState(false);
+    const shown = all ? items : items.slice(0, CATALOGUE_ROWS);
+
     return (
         <div className="flex flex-col gap-2.5">
             <h3 className="type-label text-muted-foreground">{title}</h3>
-            <ul className={cn(card, 'divide-y overflow-hidden')}>
-                {items.map((runtime) => (
-                    <RuntimeRow key={runtime.key} runtime={runtime} />
-                ))}
-            </ul>
+            <div className={cn(card, 'overflow-hidden')}>
+                <ul className="divide-y">
+                    {shown.map((runtime) => (
+                        <RuntimeRow key={runtime.key} runtime={runtime} />
+                    ))}
+                </ul>
+                {items.length > shown.length && (
+                    <button
+                        type="button"
+                        onClick={() => setAll(true)}
+                        className="w-full border-t px-5 py-2.5 text-left type-small text-muted-foreground hover:bg-hover hover:text-foreground focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-signal"
+                    >
+                        Show {items.length - shown.length} more
+                    </button>
+                )}
+            </div>
         </div>
     );
 }

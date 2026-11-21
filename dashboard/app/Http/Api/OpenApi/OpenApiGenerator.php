@@ -6,15 +6,19 @@ namespace App\Http\Api\OpenApi;
 
 use App\Data\Api\Events\StreamReconnectEvent;
 use App\Enums\ApiAbility;
+use App\Enums\TokenScopeLevel;
 use App\Http\Api\ApiOperation;
 use App\Http\Api\EventStream;
+use App\Http\Api\TokenScopes;
 use App\Http\Middleware\IdempotentRequest;
 use App\Http\Middleware\RequireTokenAbility;
+use BackedEnum;
 use Illuminate\Auth\Middleware\Authenticate;
 use Illuminate\Routing\Route;
 use Illuminate\Routing\Router;
 use LogicException;
 use ReflectionMethod;
+use ReflectionNamedType;
 
 /**
  * Builds the OpenAPI 3.1 document of /api/v1 from the routes and their
@@ -78,6 +82,33 @@ final readonly class OpenApiGenerator
         ];
     }
 
+    /**
+     * Path parameters bound to a backed enum (implicit enum binding): their values.
+     *
+     * @return array<string, list<string|int>>
+     */
+    private function enumParameters(Route $route): array
+    {
+        $action = $route->getActionName();
+        [$class, $method] = str_contains($action, '@') ? explode('@', $action) : [$action, '__invoke'];
+        $enums = [];
+
+        if (! class_exists($class) || ! method_exists($class, $method)) {
+            return [];
+        }
+
+        foreach (new ReflectionMethod($class, $method)->getParameters() as $parameter) {
+            $type = $parameter->getType();
+            $name = $type instanceof ReflectionNamedType ? $type->getName() : null;
+
+            if ($name !== null && enum_exists($name) && is_subclass_of($name, BackedEnum::class)) {
+                $enums[$parameter->getName()] = array_map(static fn (BackedEnum $case): string|int => $case->value, $name::cases());
+            }
+        }
+
+        return $enums;
+    }
+
     private function attribute(Route $route): ApiOperation
     {
         $action = $route->getActionName();
@@ -103,13 +134,17 @@ final readonly class OpenApiGenerator
     {
         $middleware = array_values(array_filter($route->gatherMiddleware(), is_string(...)));
         $authenticated = array_any($middleware, static fn (string $m): bool => $m === 'auth:sanctum' || str_starts_with($m, Authenticate::class));
-        $ability = null;
+        $abilities = [];
 
         foreach ($middleware as $m) {
             if (str_starts_with($m, RequireTokenAbility::class.':')) {
-                $ability = ApiAbility::from(substr($m, strlen(RequireTokenAbility::class) + 1));
+                $abilities[] = ApiAbility::from(substr($m, strlen(RequireTokenAbility::class) + 1));
             }
         }
+
+        // The route's own ability (the most specific) names the operation; a route that needs two lists both.
+        $ability = $abilities === [] ? null : $abilities[count($abilities) - 1];
+        $enums = $this->enumParameters($route);
 
         $parameters = [];
 
@@ -123,7 +158,9 @@ final readonly class OpenApiGenerator
                 'name' => $name,
                 'in' => 'path',
                 'required' => true,
-                'schema' => array_filter(['type' => 'string', 'pattern' => is_string($pattern) ? '^'.$pattern.'$' : null]),
+                'schema' => isset($enums[$name])
+                    ? ['type' => 'string', 'enum' => $enums[$name]]
+                    : array_filter(['type' => 'string', 'pattern' => is_string($pattern) ? '^'.$pattern.'$' : null]),
             ];
         }
 
@@ -143,7 +180,11 @@ final readonly class OpenApiGenerator
 
         $description = trim(implode("\n\n", array_filter([
             $operation->description,
-            $ability === null ? null : "Requires the `{$ability->value}` ability.",
+            match (count($abilities)) {
+                0 => null,
+                1 => "Requires the `{$abilities[0]->value}` ability.",
+                default => 'Requires the '.implode(' and ', array_map(static fn (ApiAbility $a): string => "`{$a->value}`", $abilities)).' abilities.',
+            },
         ])));
 
         return array_filter([
@@ -152,6 +193,9 @@ final readonly class OpenApiGenerator
             'description' => $description === '' ? null : $description,
             'tags' => [$operation->tag],
             'x-launchroom-ability' => $ability?->value,
+            // The narrowest token scope the route serves (docs/16 §1.4).
+            'x-launchroom-scope' => $authenticated ? (TokenScopes::of($route->getName()) ?? TokenScopeLevel::Team)->value : null,
+            'x-launchroom-abilities' => count($abilities) > 1 ? array_map(static fn (ApiAbility $a): string => $a->value, $abilities) : null,
             'security' => $authenticated ? [['token' => []]] : [],
             'parameters' => $parameters === [] ? null : $parameters,
             'requestBody' => $operation->request === null ? null : [

@@ -1,8 +1,10 @@
-import { useState } from 'react';
+import { useMemo, useState } from 'react';
 import type { ReactNode } from 'react';
 import { cn } from '@/lib/utils';
 import { formatTooltipTime } from './format';
+import { findGaps, gapAt, gapLabel } from './gaps';
 import { Sparkline } from './sparkline';
+import { useMeasuredHeight } from './use-measure';
 
 export type StatDelta = {
     label: string;
@@ -27,6 +29,8 @@ type StatTileProps = {
         min?: number;
         max?: number;
         format?: (value: number) => string;
+        /** Server metrics (needs `times`): stretches without reports show as bands. */
+        markGaps?: boolean;
     };
     /** Optional action/link slot in the header row. */
     action?: ReactNode;
@@ -41,7 +45,8 @@ const deltaTone = {
 
 /**
  * Metric tile (design-system §5.3, §9): label, value in the `stat` role with
- * a muted unit, an optional delta chip and a 40 px area sparkline. Hovering
+ * a muted unit, an optional delta chip and an area sparkline that fills the
+ * tile's free height (48 to 120 px), so tiles in a row line their charts up. Hovering
  * or arrowing through the sparkline swaps the hint for that point's time and
  * value. Without series data the tile is just the number.
  */
@@ -56,18 +61,35 @@ export function StatTile({
     className,
 }: StatTileProps) {
     const [active, setActive] = useState<number | null>(null);
-    const points = series?.values ?? [];
+    const [chartRef, chartHeight] = useMeasuredHeight<HTMLDivElement>();
+    // The line starts at the first report: a server that joined (or a
+    // metric that started) partway through the range fills the tile instead
+    // of sitting in a corner. No axes, so nothing claims the empty part.
+    const first = Math.max(
+        0,
+        (series?.values ?? []).findIndex((value) => value !== null),
+    );
+    const points = useMemo(
+        () => (series?.values ?? []).slice(first),
+        [series, first],
+    );
+    const times = useMemo(() => series?.times?.slice(first), [series, first]);
     const activeValue = active !== null ? points[active] : null;
-    const times = series?.times;
     const span =
         times && times.length > 1 ? times[times.length - 1] - times[0] : 0;
+    const gaps = useMemo(
+        () => (series?.markGaps && times ? findGaps(times, [points]) : []),
+        [series, times, points],
+    );
+    const activeGap = active !== null ? gapAt(gaps, active) : null;
 
-    const readout =
-        active !== null && activeValue !== null && activeValue !== undefined
-            ? `${times?.[active] ? formatTooltipTime(times[active], span) + ': ' : ''}${
-                  series?.format ? series.format(activeValue) : activeValue
-              }`
-            : null;
+    const readout = activeGap
+        ? gapLabel(activeGap)
+        : active !== null && activeValue !== null && activeValue !== undefined
+          ? `${times?.[active] ? formatTooltipTime(times[active], span) + ': ' : ''}${
+                series?.format ? series.format(activeValue) : activeValue
+            }`
+          : null;
 
     return (
         <div
@@ -103,15 +125,24 @@ export function StatTile({
                 )}
             </div>
             {series && (
-                <Sparkline
-                    values={points}
-                    min={series.min}
-                    max={series.max}
-                    height={40}
-                    area
-                    label={`${label} trend`}
-                    onActiveChange={setActive}
-                />
+                // Fills the room a taller neighbour in the row leaves; out of
+                // the flow, so the chart never makes the tile taller itself.
+                <div ref={chartRef} className="relative min-h-12 flex-1">
+                    <Sparkline
+                        values={points}
+                        min={series.min}
+                        max={series.max}
+                        height={Math.max(
+                            48,
+                            Math.min(120, Math.floor(chartHeight)),
+                        )}
+                        area
+                        gaps={gaps}
+                        label={`${label} trend${gaps.length > 0 ? `. ${gaps.map(gapLabel).join('. ')}` : ''}`}
+                        onActiveChange={setActive}
+                        className="absolute inset-x-0 bottom-0"
+                    />
+                </div>
             )}
             {(readout || hint) && (
                 <p

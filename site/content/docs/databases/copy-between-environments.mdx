@@ -1,0 +1,68 @@
+---
+title: Copy production data to staging
+description: Fill staging, another environment or a preview with the data of the same database or volume in production, from a backup or as it is right now.
+---
+
+Testing a change against real data is the fastest way to find out whether it works. launchroom copies a database or a volume from one environment of a project into another: production into staging, staging into a preview, one test environment into the next. The copy replaces what the target holds, takes a safety snapshot first, and stops the apps that use the data only while it is loaded.
+
+## Start a copy
+
+Open the service in the environment that should **receive** the data, for example `postgres` in **staging**, and go to **Settings → Backups**. Under **Move data**, choose **Copy from another environment…**. For a service with volumes, each volume has its own **Copy from…**.
+
+<Steps>
+<Step>
+### Pick the environment
+
+The list shows every other environment of the project. launchroom matches the same service there for you, so you only pick where the data comes from. An environment that can't be used says why: the service isn't there, it runs an engine version that is newer than the target's, or you don't have the permission.
+</Step>
+<Step>
+### Pick the data
+
+- **Latest backup** (the default when there is one): reads the newest backup, so the source has no extra load.
+- **A specific backup**: any of the last 20 backups, for example the state before yesterday's incident.
+- **Fresh copy now**: dumps the data as it is right now, without stopping the source. Use it when you need the last few minutes too.
+</Step>
+<Step>
+### Check what happens
+
+launchroom looks at the target first and tells you whether it holds data, how big the copy is, which versions are involved and which apps stop while the data is loaded, with an estimate of how long. When the target holds data, type the target environment's name to confirm.
+</Step>
+</Steps>
+
+## What happens during a copy
+
+The copy shows its progress as steps on the same page:
+
+1. **Copy the data** from the source environment. The target keeps running.
+2. **Safety snapshot** of the target, so you can go back. It needs [backup storage](/docs/databases/backups); without it the dialog warns you before you start.
+3. **Stop the apps** that use the data, together with their workers and crons.
+4. **Load the data** into the target. This replaces everything that was there.
+5. **Start the apps again**, also when loading failed.
+
+Until the data starts loading you can **Cancel copy**, and nothing in the target changes. If loading fails, the copy offers **Restore the snapshot from before**, which puts the target back as it was.
+
+## Copying into production
+
+Copying into a production environment asks twice: tick **Replace production's data**, then type `production`. Only owners and admins can do it.
+
+## Who can copy
+
+| Copy | Who |
+|---|---|
+| Out of production, or into production | Owners and admins |
+| Between other environments, such as staging into a preview | Developers, admins and owners |
+
+Production data is the most sensitive data you have. Once it is copied, everyone who can open the target environment can read it there, so copying it out needs an owner or admin. Previews of pull requests from forks never receive copied data.
+
+## Supported engines
+
+| Engine | Copy |
+|---|---|
+| PostgreSQL | Yes. The source's major version must not be newer than the target's. |
+| MySQL, MariaDB | Yes |
+| MongoDB | Yes |
+| Volumes | Yes, matched by mount path |
+| Redis, Valkey | Not yet. [Restore a backup](/docs/databases/restore-and-disaster-recovery) into the database instead. |
+| ClickHouse | Not yet |
+
+A copy is an exact copy. Personal data in production stays personal data in staging; masking it on the way is planned. Previews that start as a **Copy of a database** can run a sanitize command after the restore ([Databases in previews](/docs/projects/previews#databases-in-previews)). To refresh an existing preview, copy into it like into any other environment.

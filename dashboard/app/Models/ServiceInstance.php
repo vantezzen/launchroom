@@ -4,14 +4,17 @@ declare(strict_types=1);
 
 namespace App\Models;
 
+use App\Data\AppUpdates\UpdateWindowData;
 use App\Data\Canvas\PlacementIssueData;
 use App\Data\Services\BuildSettings;
 use App\Data\Services\DeploySettings;
 use App\Data\Services\ScalingSettings;
 use App\Data\Services\ServicePlanData;
 use App\Data\Specs\ServiceSpec;
+use App\Enums\AppUpdates\AutoUpdateMode;
 use App\Enums\PreviewStrategy;
 use App\Enums\Security\WafMode;
+use App\Models\AppUpdates\AppUpdateCheck;
 use App\Models\Concerns\BelongsToTeam;
 use App\Models\Concerns\HasPublicId;
 use Illuminate\Database\Eloquent\Attributes\Fillable;
@@ -21,6 +24,7 @@ use Illuminate\Database\Eloquent\Collection;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
+use Illuminate\Database\Eloquent\Relations\HasOne;
 use Illuminate\Support\Carbon;
 
 /**
@@ -53,6 +57,8 @@ use Illuminate\Support\Carbon;
  * @property Carbon|null $stopped_at stopped in launchroom (D68): keeps its config, domains, volumes and deployments, runs nothing
  * @property int|null $stopped_by_id
  * @property Carbon|null $last_auto_rollback_at launchroom rolled it back by itself (at most once an hour, CheckProbation)
+ * @property AutoUpdateMode $auto_update which updates launchroom installs by itself (docs/04 §14.3)
+ * @property UpdateWindowData|null $auto_update_window when it may
  * @property-read Deployment|null $activeDeployment
  */
 #[Fillable(['team_id', 'environment_id', 'service_id', 'enabled', 'branch_override', 'build', 'deploy', 'scaling', 'preview_strategy', 'waf_mode', 'waf_paranoia', 'waf_inspect_body_kib'])]
@@ -69,6 +75,7 @@ final class ServiceInstance extends Model
         'waf_mode' => 'block',
         'waf_paranoia' => 1,
         'waf_inspect_body_kib' => 32,
+        'auto_update' => 'off',
     ];
 
     public static function publicIdPrefix(): string
@@ -124,6 +131,14 @@ final class ServiceInstance extends Model
     public function service(): BelongsTo
     {
         return $this->belongsTo(Service::class);
+    }
+
+    /**
+     * @return HasOne<AppUpdateCheck, $this>
+     */
+    public function updateCheck(): HasOne
+    {
+        return $this->hasOne(AppUpdateCheck::class);
     }
 
     /**
@@ -262,6 +277,8 @@ final class ServiceInstance extends Model
             'waf_mode_changed_at' => 'datetime',
             'stopped_at' => 'datetime',
             'last_auto_rollback_at' => 'datetime',
+            'auto_update' => AutoUpdateMode::class,
+            'auto_update_window' => UpdateWindowData::class,
         ];
     }
 }

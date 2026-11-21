@@ -61,8 +61,10 @@ test('every member sees the Security page and its data', function (User $user): 
 
     $data = $this->actingAs($user)->getJson('/security/-/data?range=7d')->assertOk();
     expect($data->json('summary.actionNeeded'))->toBe(1)
-        ->and($data->json('actionNeeded.0.package'))->toBe('lodash')
-        ->and($data->json('actionNeeded.0.title'))->toBe('Command injection in lodash')
+        ->and($data->json('fixGroups.0.package'))->toBe('lodash')
+        ->and($data->json('fixGroups.0.fixedVersion'))->toBe('4.17.21')
+        ->and($data->json('fixGroups.0.headline'))->toBe('Command injection in lodash')
+        ->and($data->json('fixGroups.0.services.0.findings'))->toBe([$this->finding->public_id])
         ->and($data->json('firewall.recent.0.path'))->toBe('/api/products/:id')
         ->and($data->json('firewall.recent.0.rules.0.message'))->toBe('SQL Injection Attack Detected via libinjection')
         ->and($data->json('runtimes.0.label'))->toBe('Node.js');
@@ -219,7 +221,7 @@ test('the finding page has its place in the open list, and a dismissed finding s
     $this->actingAs($this->developer)->postJson("/security/findings/{$this->finding->public_id}/dismiss", ['reason' => 'not_used'])->assertOk();
 
     $data = $this->actingAs($this->viewer)->getJson('/security/-/data')->assertOk();
-    expect($data->json('actionNeeded'))->toBe([])
+    expect($data->json('fixGroups'))->toBe([])
         ->and($data->json('dismissedFindings.0.package'))->toBe('lodash')
         ->and($data->json('fixedFindings'))->toBe([]);
 

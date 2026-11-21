@@ -9,6 +9,7 @@ use App\Actions\Deployments\DeployEnvironment;
 use App\Actions\Deployments\DeployRef;
 use App\Actions\Deployments\RedeployService;
 use App\Actions\Deployments\RollbackDeployment;
+use App\Actions\Deployments\SkipDeploymentChecks;
 use App\Data\Api\CreateDeploymentInput;
 use App\Data\Api\DeployEnvironmentInput;
 use App\Data\Api\DeployEnvironmentResultData;
@@ -104,6 +105,14 @@ final class DeploymentController extends Controller
         $created = $rollback->handle($deployment, $user, $this->auditActor($request, $user));
 
         return ApiResponse::item($resources->deployment($created), 202);
+    }
+
+    #[ApiOperation(id: 'skipDeploymentChecks', summary: 'Deploy a push now without waiting for its checks', tag: 'Deployments', response: DeploymentResource::class, description: 'Only while `checks.state` is `waiting` (deploy after checks pass). Audited.')]
+    public function skipChecks(Request $request, Deployment $deployment, #[CurrentUser] User $user, SkipDeploymentChecks $skip, ApiResources $resources): JsonResponse
+    {
+        Gate::authorize('skipChecks', $deployment);
+
+        return ApiResponse::item($resources->deployment($skip->handle($deployment, $user, $this->auditActor($request, $user))));
     }
 
     #[ApiOperation(id: 'cancelDeployment', summary: 'Cancel a queued, building or staged deployment', tag: 'Deployments', response: DeploymentResource::class)]

@@ -50,13 +50,35 @@ final readonly class RunOnceTasks
      */
     public function command(Deployment $deployment, ServiceSpec $spec, array $command, Server $server, DaemonTaskPurpose $purpose, ?int $deploymentId, array $mounts = []): ?DaemonTask
     {
+        return $this->inImage($deployment, $spec, $command, $server, $purpose, config()->integer('launchroom.deployments.release_timeout_seconds'), $deploymentId, $mounts);
+    }
+
+    /**
+     * A one-off command someone ran (D105, docs/03 §7.5): like a release
+     * command, with its own timeout and its output bounded at $outputLimit
+     * bytes (feature `commandRuns`). It belongs to no deployment's
+     * timeline, so it never advances one.
+     *
+     * @param  list<string>  $argv
+     * @param  list<RunOnceMount>  $mounts
+     */
+    public function oneOff(Deployment $deployment, ServiceSpec $spec, array $argv, Server $server, int $timeoutSeconds, int $outputLimit, array $mounts = []): ?DaemonTask
+    {
+        return $this->inImage($deployment, $spec, $argv, $server, DaemonTaskPurpose::CommandRun, $timeoutSeconds, null, $mounts, $outputLimit);
+    }
+
+    /**
+     * @param  list<string>  $command
+     * @param  list<RunOnceMount>  $mounts
+     */
+    private function inImage(Deployment $deployment, ServiceSpec $spec, array $command, Server $server, DaemonTaskPurpose $purpose, int $timeout, ?int $deploymentId, array $mounts, ?int $outputLimit = null): ?DaemonTask
+    {
         $deployment->loadMissing(['environment.project', 'serviceInstance.service', 'revision']);
 
         if ($deployment->image === null || $deployment->revision === null) {
             return null;
         }
 
-        $timeout = config()->integer('launchroom.deployments.release_timeout_seconds');
         $mask = $this->resolver->taint($deployment->environment->project, $deployment->revision->spec)->taintedKeys($spec->slug);
         $argv = EffectiveDeploy::for($spec, $deployment)->argv($command);
 
@@ -74,6 +96,7 @@ final readonly class RunOnceTasks
                 args: $argv['args'],
                 maskEnv: $mask === [] ? null : array_slice($mask, 0, 1024),
                 mounts: $mounts === [] ? null : $mounts,
+                outputLimit: $outputLimit,
             ),
             $timeout + 120,
             pin: $server,

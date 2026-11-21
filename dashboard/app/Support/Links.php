@@ -208,6 +208,14 @@ final class Links
         ]).($fragment === null ? '' : '#'.rawurlencode($fragment));
     }
 
+    /**
+     * The Projects page's App updates (D106).
+     */
+    public static function appUpdates(): string
+    {
+        return self::path('projects.index', []).'#app-updates';
+    }
+
     public static function finding(SecurityFinding $finding): string
     {
         return self::path('security.findings.show', ['finding' => $finding->public_id]);

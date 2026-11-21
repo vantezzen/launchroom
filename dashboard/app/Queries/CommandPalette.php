@@ -4,15 +4,18 @@ declare(strict_types=1);
 
 namespace App\Queries;
 
+use App\Data\Canvas\NodeStatusData;
 use App\Data\CommandPalette\PaletteData;
 use App\Data\CommandPalette\PaletteItemData;
 use App\Enums\AnalyticsView;
+use App\Enums\NodeStatusReason;
 use App\Enums\Sessions\InteractiveSessionKind;
 use App\Models\Deployment;
 use App\Models\Environment;
 use App\Models\Project;
 use App\Models\Server;
 use App\Models\Service;
+use App\Models\ServiceInstance;
 use App\Models\Sessions\InteractiveSession;
 use App\Models\Team;
 use App\Models\User;
@@ -124,6 +127,8 @@ final readonly class CommandPalette
                 projectId: $projectIds[$deployment->environment->project_id] ?? null,
                 environmentId: $deployment->environment->public_id,
                 status: $deployment->status->value,
+                // The live deployment of a service that isn't serving says what the service does (D108).
+                nodeStatus: self::notServing($deployment, $index),
             ))->all()),
             servers: array_values($servers->map(static fn (Server $server): PaletteItemData => new PaletteItemData(
                 kind: 'server',
@@ -135,6 +140,25 @@ final readonly class CommandPalette
             canWriteVariables: $gate->allows('writeAny', [Variable::class, $team]),
             canData: $gate->allows('viewAny', [InteractiveSession::class, $team, InteractiveSessionKind::Data]),
         );
+    }
+
+    /**
+     * The service's status when this is its live deployment and the service
+     * is stopped or doesn't serve, else null (the deployment's own word).
+     *
+     * @param  array<int, array<int, array{status: NodeStatusData, instance: ServiceInstance}>>  $index  ServiceStatusIndex::in()
+     */
+    private static function notServing(Deployment $deployment, array $index): ?NodeStatusData
+    {
+        $entry = $index[$deployment->environment_id][$deployment->serviceInstance->service_id] ?? null;
+
+        if ($entry === null || $entry['instance']->active_deployment_id !== $deployment->id) {
+            return null;
+        }
+
+        $reason = $entry['status']->reason;
+
+        return $reason === NodeStatusReason::Stopped || $reason->isNotServing() ? $entry['status'] : null;
     }
 
     /**

@@ -14,6 +14,11 @@ import { PreviewCanvasBanner } from '@/features/previews/preview-canvas-banner';
 import { DegradedServicesBanner } from '@/features/scheduling/degraded-services-banner';
 import { openAddService } from '@/features/add-service/store';
 import { EnvironmentLiveUpdates } from '@/features/projects/environment-live-updates';
+import { withLiveStatuses } from '@/features/service-status/live-status';
+import { useLiveStatus } from '@/features/service-status/store';
+import { ChannelEvents } from '@/components/channel-events';
+import { liveReload } from '@/lib/live-reload';
+import { channelName } from '@/lib/realtime';
 import { FirstLiveCard } from '@/features/projects/first-live-card';
 import { usePanelNavigation } from '@/features/service-panel/use-panel-navigation';
 import { ServicePanel } from '@/features/service-panel/service-panel';
@@ -39,7 +44,7 @@ type Props = App.Data.Canvas.ProjectShellPropsData & {
 export default function ProjectCanvas({
     project,
     environment,
-    nodes,
+    nodes: pageNodes,
     edges,
     volumes,
     panel,
@@ -50,6 +55,9 @@ export default function ProjectCanvas({
     deployments,
 }: Props) {
     const queryClient = useQueryClient();
+    // The props bring the nodes, the live-status store their status (D108):
+    // node, phone list, panel header and top bar read the same snapshot.
+    const nodes = withLiveStatuses(pageNodes, useLiveStatus(environment.id));
     // A deep link to the Deployments tab brought its list along (B2).
     useState(() => {
         if (deployments && panel) {
@@ -125,6 +133,20 @@ export default function ProjectCanvas({
                 environments={[environment.id]}
                 only={['nodes', 'edges', 'volumes', 'panel']}
             />
+            {shownPanel && (
+                // The open service's restart count and last exit change
+                // with its status (the store has the status itself).
+                <ChannelEvents
+                    channel={channelName('environments', environment.id)}
+                    event="service.status"
+                    pollMs={3_600_000}
+                    onEvent={(event) => {
+                        if (event?.serviceIds.includes(shownPanel.serviceId)) {
+                            liveReload(['panel']);
+                        }
+                    }}
+                />
+            )}
 
             <Page size="full">
                 <ReactFlowProvider>

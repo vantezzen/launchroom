@@ -319,3 +319,105 @@ func (f portsFunc) Listeners(pid int) ([]health.Listener, error) {
 	}
 	return out, nil
 }
+
+// fixedLogs is the fake Docker with a container output of its own.
+type fixedLogs struct {
+	*dockerfake.Fake
+	lines []docker.LogLine
+}
+
+func (f fixedLogs) StreamLogs(ctx context.Context, id string, opts docker.LogsOptions, fn func(docker.LogLine) error) error {
+	for _, l := range f.lines {
+		if err := fn(l); err != nil {
+			return err
+		}
+	}
+	return f.Fake.StreamLogs(ctx, id, opts, fn)
+}
+
+func TestRunOnceOutputLimit(t *testing.T) {
+	priv, err := ecdh.X25519().GenerateKey(rand.Reader)
+	if err != nil {
+		t.Fatal(err)
+	}
+	line := strings.Repeat("x", 400)
+	lines := []docker.LogLine{
+		{Stream: "stdout", Text: line}, {Stream: "stderr", Text: "secret postgres://u:p@db/x " + line},
+		{Stream: "stdout", Text: line}, {Stream: "stdout", Text: "short"},
+	}
+	for _, tc := range []struct {
+		limit     int64
+		shipped   int
+		truncated bool
+	}{
+		{limit: 0, shipped: 4},
+		{limit: 1 << 20, shipped: 4},
+		// 400 + 405 (masked) fit 1024; the third line would pass it, and
+		// "short" after it is dropped too.
+		{limit: 1024, shipped: 2, truncated: true},
+	} {
+		d := dockerfake.New(string(bServer))
+		d.ExitOnStart[names.RunOnceContainer(bTask)] = 2
+		cp := &taskstest.ControlPlane{}
+		h := RunOnceHandler(RunOnceOptions{ServerID: bServer, SealingKey: priv, Docker: fixedLogs{Fake: d, lines: lines}, Client: cp, Policy: policy.DefaultConfig(), PollEvery: 10 * time.Millisecond})
+		task := runOnceTask(t, priv.PublicKey(), "1m")
+		spec := task.Spec.(*state.RunOnceSpec)
+		spec.OutputLimit = tc.limit
+		spec.MaskEnv = []state.EnvName{"DATABASE_URL"}
+		res, err := h(context.Background(), task)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if res.RunOnce == nil || res.RunOnce.ExitCode != 2 || res.RunOnce.OutputTruncated != tc.truncated {
+			t.Fatalf("limit %d: result = %+v", tc.limit, res.RunOnce)
+		}
+		var app, notices []string
+		for _, l := range cp.ShippedLines() {
+			switch {
+			case l.Stream != state.StreamSystem:
+				app = append(app, l.Text)
+			case strings.HasPrefix(l.Text, "Output stopped"):
+				notices = append(notices, l.Text)
+			}
+		}
+		if len(app) != tc.shipped {
+			t.Fatalf("limit %d: shipped %d container lines, want %d", tc.limit, len(app), tc.shipped)
+		}
+		if len(app) > 1 && !strings.HasPrefix(app[1], "secret *** ") {
+			t.Fatalf("limit %d: line not masked: %q", tc.limit, app[1][:20])
+		}
+		wantNotices := 0
+		if tc.truncated {
+			wantNotices = 1
+		}
+		if len(notices) != wantNotices || (tc.truncated && notices[0] != "Output stopped after 1 KiB. The command keeps running.") {
+			t.Fatalf("limit %d: notices = %q", tc.limit, notices)
+		}
+		// The exit line still ships after the cut.
+		if shipped := cp.ShippedLines(); shipped[len(shipped)-1].Text != "Exited with code 2" {
+			t.Fatalf("limit %d: last line = %q", tc.limit, shipped[len(shipped)-1].Text)
+		}
+	}
+}
+
+func TestOutputSizeLabel(t *testing.T) {
+	for n, want := range map[int64]string{1024: "1 KiB", 1536: "1.5 KiB", 5 << 20: "5 MiB", 64 << 20: "64 MiB", 1<<20 + 1<<19: "1.5 MiB", 1<<20 - 1: "1023.9 KiB"} {
+		if got := sizeLabel(n); got != want {
+			t.Errorf("sizeLabel(%d) = %q, want %q", n, got, want)
+		}
+	}
+}
+
+func TestRunOnceSpecValidatesOutputLimit(t *testing.T) {
+	priv, err := ecdh.X25519().GenerateKey(rand.Reader)
+	if err != nil {
+		t.Fatal(err)
+	}
+	spec := runOnceTask(t, priv.PublicKey(), "1m").Spec.(*state.RunOnceSpec)
+	for limit, ok := range map[int64]bool{0: true, 1024: true, 64 << 20: true, 1023: false, 64<<20 + 1: false, -1: false} {
+		spec.OutputLimit = limit
+		if err := spec.Validate(); (err == nil) != ok {
+			t.Errorf("outputLimit %d: err = %v", limit, err)
+		}
+	}
+}

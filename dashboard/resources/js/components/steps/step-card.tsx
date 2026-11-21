@@ -9,7 +9,8 @@ export type GuidedStepStatus = 'done' | 'pending' | 'skipped';
  * A step of a guided checklist (get started, recovery, the move checklist;
  * direction §9.12):
  * collapsed it's one row (marker, title, result) that opens on click; the
- * open step is the one card with a ring and its body.
+ * open step is the one card with a ring and its body. A skipped step keeps
+ * a muted title and a "Skipped" chip, never a check or a number.
  */
 export function StepCard({
     id,
@@ -49,14 +50,18 @@ export function StepCard({
                 >
                     <StepMarker status={marker} number={number} />
                     <span className="flex min-w-0 flex-1 flex-col gap-0.5">
-                        <span
-                            id={headingId}
-                            className={cn(
-                                'type-body font-medium',
-                                status === 'pending' && 'text-muted-foreground',
-                            )}
-                        >
-                            {title}
+                        <span className="flex min-w-0 items-center gap-2">
+                            <span
+                                id={headingId}
+                                className={cn(
+                                    'truncate type-body font-medium',
+                                    status !== 'done' &&
+                                        'text-muted-foreground',
+                                )}
+                            >
+                                {title}
+                            </span>
+                            {status === 'skipped' && <SkippedChip />}
                         </span>
                         {line && (
                             <span className="truncate type-small text-muted-foreground">
@@ -86,9 +91,12 @@ export function StepCard({
             <div className="flex items-start gap-4">
                 <StepMarker status={marker} number={number} />
                 <div className="flex min-w-0 flex-col gap-1 pt-1">
-                    <h2 id={headingId} className="type-heading">
-                        {title}
-                    </h2>
+                    <div className="flex flex-wrap items-center gap-2">
+                        <h2 id={headingId} className="type-heading">
+                            {title}
+                        </h2>
+                        {status === 'skipped' && <SkippedChip />}
+                    </div>
                     {line && (
                         <p className="type-body text-muted-foreground">
                             {line}
@@ -100,6 +108,15 @@ export function StepCard({
                 {children}
             </div>
         </li>
+    );
+}
+
+/** A skipped step is neither done nor to do (D109): the word says so. */
+function SkippedChip() {
+    return (
+        <span className="shrink-0 rounded-full border border-dashed border-border-strong px-2 py-0.5 type-small text-muted-foreground">
+            Skipped
+        </span>
     );
 }
 

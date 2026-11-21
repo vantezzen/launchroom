@@ -27,6 +27,9 @@ Route::middleware(['web', 'auth', 'verified'])->group(function (): void {
         ->middleware('throttle:120,1')
         ->name('security.inventory.search');
 
+    Route::post('security/findings/dismiss', [FindingController::class, 'dismissMany'])
+        ->middleware('throttle:30,1')
+        ->name('security.findings.dismiss-many');
     Route::get('security/findings/{finding}', [FindingController::class, 'show'])
         ->name('security.findings.show');
     Route::get('security/findings/{finding}/-/data', [FindingController::class, 'data'])

@@ -1,9 +1,9 @@
 import { useState } from 'react';
-import { TimeRangeSelect } from '@/components/charts/time-range-select';
+import { RangeSelect } from '@/components/charts/time-range-select';
 import { TimeSeriesChart } from '@/components/charts/time-series-chart';
 import { useFleetMetrics } from '@/features/servers/use-server-metrics';
 import { useObserveScope } from '@/hooks/use-observe-scope';
-import { RANGE_SETS, rangeOptions, rangeWords } from '@/lib/observe-scope';
+import { RANGE_SETS, rangeWords } from '@/lib/observe-scope';
 import { cn } from '@/lib/utils';
 import { formatMemory } from '@/lib/format';
 
@@ -96,10 +96,10 @@ export function FleetLoad({
                         How much of {servers} is in use.
                     </p>
                 </div>
-                <TimeRangeSelect
+                <RangeSelect
+                    page="resources"
                     value={range}
                     onChange={setRange}
-                    options={rangeOptions(RANGE_SETS.resources)}
                 />
             </div>
 
@@ -147,6 +147,7 @@ export function FleetLoad({
             <div role="tabpanel" aria-label={active.label} className="mt-auto">
                 <TimeSeriesChart
                     key={`${metric}-${range}`}
+                    markGaps
                     title={`${active.label} in use, ${rangeWords(range)}`}
                     height={170}
                     yMax={100}

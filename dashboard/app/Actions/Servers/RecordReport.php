@@ -37,6 +37,7 @@ use App\Enums\ProbeHint;
 use App\Enums\WorkloadFailureCode;
 use App\Enums\WorkloadPhase;
 use App\Events\Broadcasts\DeploymentUpdated;
+use App\Events\Broadcasts\ServiceStatusChanged;
 use App\Events\NodeStateInvalidated;
 use App\Exceptions\DomainRuleViolation;
 use App\Jobs\AdvanceDeploymentJob;
@@ -173,7 +174,7 @@ final readonly class RecordReport
                 dispatch(new RenderServerNodeState($server->id))->afterCommit();
             }
 
-            [$deployments, $progressed] = $this->recordWorkloads($server, $report->workloads);
+            [$deployments, $progressed, $instances] = $this->recordWorkloads($server, $report->workloads);
 
             if ($report->ingress instanceof IngressStatus) {
                 $this->certificates->handle($server, $report->ingress);
@@ -193,7 +194,7 @@ final readonly class RecordReport
 
             $advance = array_values(array_unique(array_map(static fn (mixed $id): int => is_numeric($id) ? (int) $id : 0, $deployments)));
 
-            return ['advance' => $advance, 'progressed' => array_values(array_diff($progressed, $advance))];
+            return ['advance' => $advance, 'progressed' => array_values(array_diff($progressed, $advance)), 'instances' => $instances];
         });
 
         // Usage minutes are idempotent upserts: stored even when the report
@@ -232,6 +233,10 @@ final readonly class RecordReport
         }
 
         $this->broadcastProgress($result['progressed']);
+
+        // A container started, exited or turned unhealthy: every surface
+        // that shows these services' status refetches it (D108).
+        ServiceStatusChanged::forInstances($result['instances']);
 
         return true;
     }
@@ -312,12 +317,12 @@ final readonly class RecordReport
 
     /**
      * @param  list<WorkloadStatus>  $statuses
-     * @return array{0: list<int>, 1: list<int>} deployments whose workloads changed, and those where only an image pull progressed
+     * @return array{0: list<int>, 1: list<int>, 2: list<int>} deployments whose workloads changed, those where only an image pull progressed, and the service instances whose workloads changed
      */
     private function recordWorkloads(Server $server, array $statuses): array
     {
         if ($statuses === []) {
-            return [[], []];
+            return [[], [], []];
         }
 
         $byId = [];
@@ -384,9 +389,11 @@ final readonly class RecordReport
                 // kept like an exit, so the rollout fails at once and says why (AdvanceDeployment::failFast).
                 $placement->forceFill(['last_exit' => $exit]);
                 $changed[] = $placement->deployment_id;
+                $instances[] = $placement->service_instance_id;
             }
 
             $placement->forceFill([
+                'phase_changed_at' => $placement->phase !== $phase || $placement->phase_changed_at === null ? $observedAt : $placement->phase_changed_at,
                 'phase' => $phase,
                 'health' => $health,
                 'container_id' => $status->containerId instanceof Optional ? $placement->container_id : $status->containerId,
@@ -399,6 +406,8 @@ final readonly class RecordReport
             ])->save();
         }
 
+        $instances = array_values(array_unique($instances));
+
         if ($instances !== []) {
             // A stateful rollout waits for its predecessor's workload to stop.
             $waiting = Deployment::query()
@@ -409,7 +418,7 @@ final readonly class RecordReport
             $changed = [...$changed, ...array_map(static fn (mixed $id): int => is_numeric($id) ? (int) $id : 0, $waiting)];
         }
 
-        return [array_values($changed), array_values(array_unique(array_diff($progressed, $changed)))];
+        return [array_values($changed), array_values(array_unique(array_diff($progressed, $changed))), $instances];
     }
 
     /**

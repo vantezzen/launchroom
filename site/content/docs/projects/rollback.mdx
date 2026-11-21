@@ -1,0 +1,64 @@
+---
+title: Roll back
+description: Put a previous version of a service back live in seconds, from the dashboard or the CLI, and resume auto-deploy when the fix is ready.
+---
+
+A rollback puts an earlier version of a service back live. launchroom starts the image that version ran with, with the
+variables it had then, and switches traffic to it once it answers its health check. Nothing is built again and the
+release command doesn't run, so a rollback takes about as long as a restart.
+
+You can roll back to any earlier deployment that was live and has since been replaced. Servers keep the running image
+plus the previous two, so the usual rollback needs no download.
+
+<Callout type="warn">
+  Database migrations are not reverted. If the newer version changed the schema, check that the older one still works
+  with it before you roll back, or roll the migration back yourself with a [command](/docs/projects/run-a-command).
+</Callout>
+
+## In the dashboard
+
+Open the service's **Deployments**, pick the version you want back and choose **Roll back**. The new deployment is
+marked as a rollback and links to the one it restored.
+
+## With the CLI
+
+```sh
+launchroom rollback
+```
+
+Without an argument, `rollback` restores the version that was live before the current one and asks before it starts.
+Name a deployment to go further back. `launchroom deployments` lists them, newest first:
+
+```sh
+launchroom deployments
+launchroom rollback dpl_2xk9w4mq8r
+```
+
+In a script, pass `--yes`: without a terminal, `rollback` refuses to start unless you confirm it that way. The command
+follows the rollout like `launchroom deploy` and exits with code 10 when it fails.
+
+## Auto-deploy pauses in production
+
+After a rollback in production, auto-deploy is paused. New pushes don't go live until someone resumes it, so the
+version you chose keeps running while you fix the problem. The dashboard shows a banner
+under the project tabs with **Resume auto-deploy**. From the CLI:
+
+```sh
+launchroom rollback --resume
+```
+
+Resuming deploys nothing by itself. The next push to the tracked branch goes live as usual. Rollbacks in other
+environments don't pause anything.
+
+launchroom also rolls back by itself when a new production version keeps crashing in its first 10 minutes. See
+[Health checks](/docs/troubleshooting/health-checks) for when that happens.
+
+## Related commands
+
+| Command | |
+|---|---|
+| `launchroom deployments` | The linked service's deployments, newest first (`--all` for the whole environment) |
+| `launchroom redeploy [DEPLOYMENT]` | Deploy the same commit again (default: the live one) |
+| `launchroom cancel [DEPLOYMENT]` | Stop a deployment that hasn't gone live yet |
+
+You need the Deploy permission (owners, admins and developers) or a token with the `deploy` ability.

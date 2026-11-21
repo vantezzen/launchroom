@@ -6,6 +6,7 @@ namespace App\Queries;
 
 use App\Data\Deployments\DeploymentSummaryData;
 use App\Data\Deployments\ServiceStoppedData;
+use App\Enums\CheckGateState;
 use App\Enums\DeploymentFilter;
 use App\Models\Deployment;
 use App\Models\Domain;
@@ -141,7 +142,8 @@ final class DeploymentSummaries
         return new DeploymentSummaryData(
             id: $deployment->public_id,
             status: $deployment->status,
-            statusLabel: $deployment->status->stage(),
+            // A queued push waiting for its commit's checks says so (D111).
+            statusLabel: $deployment->waitsForChecks() ? CheckGateState::Waiting->label() : $deployment->status->stage(),
             trigger: $deployment->trigger,
             projectId: $service->project->public_id,
             serviceId: $service->public_id,

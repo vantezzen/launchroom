@@ -24,6 +24,8 @@ final class ApiTokenData extends Data
         /** `lr_pat_…a1b2`, not secret; null for tokens older than the hint. */
         public ?string $hint,
         public array $abilities,
+        /** Every ability the holder's role allows, including ones added later (D113); `abilities` is what that is now. */
+        public bool $fullAccess,
         public ApiTokenClient $client,
         public string $teamId,
         public string $teamName,
@@ -41,7 +43,8 @@ final class ApiTokenData extends Data
             id: $token->public_id,
             name: $token->name,
             hint: $token->hint,
-            abilities: array_values(array_filter(array_map(ApiAbility::tryFrom(...), $token->abilities))),
+            abilities: $token->effectiveAbilities(),
+            fullAccess: $token->full_access,
             client: $token->client,
             teamId: $token->team->public_id,
             teamName: $token->team->name,

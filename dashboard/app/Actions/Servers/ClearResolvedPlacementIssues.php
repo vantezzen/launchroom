@@ -7,6 +7,7 @@ namespace App\Actions\Servers;
 use App\Enums\PlacementIssueKind;
 use App\Enums\ServerStatus;
 use App\Enums\WorkloadRole;
+use App\Events\Broadcasts\ServiceStatusChanged;
 use App\Models\Placement;
 use App\Models\Server;
 use App\Models\ServiceInstance;
@@ -39,6 +40,8 @@ final readonly class ClearResolvedPlacementIssues
 
             if ($resolved) {
                 $instance->forceFill(['placement_issue' => null])->save();
+                // "Degraded" or "Server down" ends (D108).
+                ServiceStatusChanged::forInstances([$instance->id]);
                 $cleared++;
             }
         }

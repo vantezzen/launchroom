@@ -68,7 +68,7 @@ test('the manifest asks for the minimal permissions and our callback URLs', func
             'deployments' => 'write',
             'statuses' => 'write',
         ])
-        ->and($manifest['default_events'])->toBe(['push', 'pull_request'])
+        ->and($manifest['default_events'])->toBe(['push', 'pull_request', 'check_run', 'check_suite', 'status'])
         ->and($manifest['hook_attributes']['url'])->toBe(route('git.github.webhook'))
         ->and($manifest['redirect_url'])->toBe(route('git.github.manifest.callback'))
         ->and($manifest['setup_url'])->toBe(route('git.github.setup'))

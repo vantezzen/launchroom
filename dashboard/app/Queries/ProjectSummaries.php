@@ -71,8 +71,8 @@ final readonly class ProjectSummaries
             ->orderBy('id')
             ->get();
 
-        $latest = CanvasGraph::latestDeployments($instances);
-        $placements = CanvasGraph::activePlacements($instances);
+        $latest = ServiceStatusIndex::latestDeployments($instances);
+        $serviceStatuses = ServiceStatusIndex::statuses($instances, $latest);
         $byEnvironment = $instances->groupBy('environment_id');
 
         /** @var array<int, Environment> $production project id => production environment */
@@ -101,17 +101,17 @@ final readonly class ProjectSummaries
         $requests = $this->requests($production, $grouped);
         $alerts = (new OpenAlerts)->forProjects($team->id, $projectIds);
 
-        $summaries = array_values($projects->map(static function (Project $project) use ($byEnvironment, $latest, $placements, $domains, $lastDeployments, $deploys, $thumbnails, $requests, $alerts): ProjectSummaryData {
+        $summaries = array_values($projects->map(static function (Project $project) use ($byEnvironment, $latest, $serviceStatuses, $domains, $lastDeployments, $deploys, $thumbnails, $requests, $alerts): ProjectSummaryData {
             $logos = [];
             $updated = $project->updated_at;
 
-            $environments = array_values($project->environments->map(static function (Environment $environment) use ($project, $byEnvironment, $latest, $placements, &$logos, &$updated): EnvironmentSummaryData {
+            $environments = array_values($project->environments->map(static function (Environment $environment) use ($project, $byEnvironment, $latest, $serviceStatuses, &$logos, &$updated): EnvironmentSummaryData {
                 $statuses = [];
                 $problems = [];
 
                 foreach ($byEnvironment->get($environment->id, []) as $instance) {
                     /** @var ServiceInstance $instance */
-                    $status = NodeStatus::for($instance, $latest[$instance->id] ?? null, $placements[$instance->id] ?? []);
+                    $status = $serviceStatuses[$instance->id];
                     $statuses[] = $status;
                     $problem = ServiceProblems::for($project->public_id, $environment->public_id, $instance->service->public_id, $instance->service->name, $status);
 
@@ -119,7 +119,7 @@ final readonly class ProjectSummaries
                         $problems[] = $problem;
                     }
 
-                    $logos[$instance->service->public_id] ??= ServiceGlyph::logo($instance->service);
+                    $logos[$instance->service->public_id] ??= ServiceGlyph::forInstance($instance, $latest[$instance->id] ?? null);
                     $deployedAt = ($latest[$instance->id] ?? null)?->queued_at;
 
                     if ($deployedAt !== null && ($updated === null || $deployedAt->greaterThan($updated))) {
@@ -430,7 +430,7 @@ final readonly class ProjectSummaries
             $nodes[] = new CanvasThumbnailNodeData(
                 id: $service->public_id,
                 kind: $service->kind,
-                logo: ServiceGlyph::logo($service),
+                logo: ServiceGlyph::forInstance($instance),
                 x: round(($x - $minX + self::NODE_WIDTH / 2) / $width, 4),
                 y: round(($y - $minY + self::NODE_HEIGHT / 2) / $height, 4),
                 name: $service->name,

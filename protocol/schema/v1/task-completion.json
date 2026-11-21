@@ -409,6 +409,21 @@
             }
           ]
         },
+        "commands": {
+          "oneOf": [
+            {
+              "items": {
+                "$ref": "#/$defs/CommandSuggestion"
+              },
+              "type": "array",
+              "maxItems": 16,
+              "description": "Commands are the framework's standard one-off commands (D105, unique names)."
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
         "healthPath": {
           "type": "string",
           "maxLength": 1024,
@@ -680,6 +695,48 @@
         "count"
       ],
       "description": "CollapsedChanges counts the changes under one cache location."
+    },
+    "CommandSuggestion": {
+      "properties": {
+        "name": {
+          "type": "string",
+          "pattern": "^[a-z0-9][a-z0-9-]{0,62}$",
+          "description": "Name is a stable id per framework (\"migrate\", \"migrate-status\")."
+        },
+        "label": {
+          "type": "string",
+          "maxLength": 64,
+          "minLength": 1,
+          "description": "Label is a short title (\"Run migrations\")."
+        },
+        "description": {
+          "type": "string",
+          "maxLength": 200,
+          "description": "Description is one sentence about what the command does."
+        },
+        "args": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array",
+          "maxItems": 64,
+          "minItems": 1,
+          "description": "Args is the argv to run in the image (never a shell string)."
+        },
+        "danger": {
+          "type": "boolean",
+          "description": "Danger: the command changes data or state, so the dashboard asks to confirm."
+        }
+      },
+      "additionalProperties": false,
+      "type": "object",
+      "required": [
+        "name",
+        "label",
+        "description",
+        "args"
+      ],
+      "description": "CommandSuggestion is a standard one-off command of the detected framework (D105): shown in the dashboard's Commands tab, run as a run_once task in the live deployment's image."
     },
     "ContainerChange": {
       "properties": {
@@ -1971,6 +2028,10 @@
               "type": "null"
             }
           ]
+        },
+        "outputTruncated": {
+          "type": "boolean",
+          "description": "OutputTruncated: the output passed the spec's outputLimit and the rest\nwas not shipped (daemon feature \"commandRuns\")."
         }
       },
       "additionalProperties": false,

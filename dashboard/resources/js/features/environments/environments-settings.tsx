@@ -27,6 +27,7 @@ import {
 } from '@/components/ui/dropdown-menu';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
+import { Switch } from '@/components/ui/switch';
 import {
     Select,
     SelectContent,
@@ -57,6 +58,11 @@ function triggerSummary(
     return parts.length === 0 ? null : parts.join(' and ');
 }
 
+/** ", after checks pass" beside the trigger summary (D111). */
+function afterChecks(triggers: App.Data.Environments.EnvironmentTriggers) {
+    return triggers.waitForChecks ? ' after checks pass' : '';
+}
+
 function EditEnvironmentDialog({
     project,
     environment,
@@ -68,6 +74,13 @@ function EditEnvironmentDialog({
     open: boolean;
     onOpenChange: (open: boolean) => void;
 }) {
+    const [waitForChecks, setWaitForChecks] = useState(
+        environment.triggers.waitForChecks,
+    );
+    const [checksTimeout, setChecksTimeout] = useState(
+        environment.triggers.checksTimeoutMinutes,
+    );
+
     return (
         <Dialog open={open} onOpenChange={onOpenChange}>
             <DialogContent>
@@ -84,6 +97,9 @@ function EditEnvironmentDialog({
                             branch: data.branch === '' ? null : data.branch,
                             tagPattern:
                                 data.tagPattern === '' ? null : data.tagPattern,
+                            pullRequests: environment.triggers.pullRequests,
+                            waitForChecks,
+                            checksTimeoutMinutes: checksTimeout,
                         },
                     })}
                     options={{ preserveScroll: true }}
@@ -160,6 +176,17 @@ function EditEnvironmentDialog({
                                             .
                                         </p>
                                     </div>
+                                    <ChecksTrigger
+                                        enabled={waitForChecks}
+                                        onEnabledChange={setWaitForChecks}
+                                        timeout={checksTimeout}
+                                        onTimeoutChange={setChecksTimeout}
+                                        error={
+                                            errors[
+                                                'triggers.checksTimeoutMinutes'
+                                            ]
+                                        }
+                                    />
                                 </>
                             )}
                             <DialogFooter className="gap-2">
@@ -177,6 +204,94 @@ function EditEnvironmentDialog({
                 </Form>
             </DialogContent>
         </Dialog>
+    );
+}
+
+/** "Give up after" choices in minutes (EnvironmentTriggers allows 5 to 240). */
+const CHECKS_TIMEOUTS = [15, 30, 60, 120, 240];
+
+function timeoutLabel(minutes: number): string {
+    return minutes < 60
+        ? `${minutes} minutes`
+        : minutes === 60
+          ? '1 hour'
+          : `${minutes / 60} hours`;
+}
+
+/**
+ * Deploy after checks pass (D111, docs/06 §2.5): a push here waits for the
+ * commit's CI checks, and gives up after the chosen time.
+ */
+function ChecksTrigger({
+    enabled,
+    onEnabledChange,
+    timeout,
+    onTimeoutChange,
+    error,
+}: {
+    enabled: boolean;
+    onEnabledChange: (enabled: boolean) => void;
+    timeout: number;
+    onTimeoutChange: (minutes: number) => void;
+    error?: string;
+}) {
+    const choices = CHECKS_TIMEOUTS.includes(timeout)
+        ? CHECKS_TIMEOUTS
+        : [...CHECKS_TIMEOUTS, timeout].sort((a, b) => a - b);
+
+    return (
+        <div className="flex flex-col gap-3 rounded-lg border p-3">
+            <div className="flex items-start justify-between gap-4">
+                <div className="flex min-w-0 flex-col gap-0.5">
+                    <Label htmlFor="environment-edit-checks">
+                        Wait for checks to pass
+                    </Label>
+                    <p className="type-small text-muted-foreground">
+                        A push deploys once its CI checks on GitHub, GitLab or
+                        Gitea passed. A failed check keeps the current version.
+                    </p>
+                </div>
+                <Switch
+                    id="environment-edit-checks"
+                    checked={enabled}
+                    onCheckedChange={onEnabledChange}
+                />
+            </div>
+            {enabled && (
+                <div className="flex items-center justify-between gap-4">
+                    <Label
+                        htmlFor="environment-edit-checks-timeout"
+                        className="font-normal text-muted-foreground"
+                    >
+                        Give up after
+                    </Label>
+                    <Select
+                        value={String(timeout)}
+                        onValueChange={(value) =>
+                            onTimeoutChange(Number(value))
+                        }
+                    >
+                        <SelectTrigger
+                            id="environment-edit-checks-timeout"
+                            className="w-36"
+                        >
+                            <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent>
+                            {choices.map((minutes) => (
+                                <SelectItem
+                                    key={minutes}
+                                    value={String(minutes)}
+                                >
+                                    {timeoutLabel(minutes)}
+                                </SelectItem>
+                            ))}
+                        </SelectContent>
+                    </Select>
+                </div>
+            )}
+            <InputError message={error} />
+        </div>
     );
 }
 
@@ -330,6 +445,7 @@ function EnvironmentRow({
                                 <span className="type-mono-small text-foreground">
                                     {triggers}
                                 </span>
+                                {afterChecks(environment.triggers)}
                             </>
                         ) : (
                             'Deploys only when you deploy'

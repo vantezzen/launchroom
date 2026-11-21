@@ -543,6 +543,10 @@ return [
         'probation_seconds' => (int) env('LAUNCHROOM_PROBATION_SECONDS', 600),
         'probation_down_seconds' => 120,
         'auto_rollback_cooldown_seconds' => 3600,
+        // Deploy after checks pass (D111, docs/06 §2.5): a push whose commit
+        // shows no check this long after it was pushed deploys without
+        // waiting (a repository without CI would otherwise never deploy).
+        'checks_grace_seconds' => 120,
     ],
 
     /*
@@ -947,6 +951,24 @@ return [
         'sample_retention_days' => max(1, (int) env('LAUNCHROOM_WAF_SAMPLE_RETENTION_DAYS', 7)),
         'hourly_retention_days' => max(1, (int) env('LAUNCHROOM_WAF_HOURLY_RETENTION_DAYS', 90)),
         'event_retention_days' => max(1, min(7, (int) env('LAUNCHROOM_WAF_EVENT_RETENTION_DAYS', 7))),
+    ],
+
+    /*
+    | One-off commands (D105, docs/03 §7.5): a run_once task in the live
+    | deployment's image. LAUNCHROOM_COMMANDS=false refuses new runs.
+    */
+    'commands' => [
+        'enabled' => (bool) env('LAUNCHROOM_COMMANDS', true),
+        'default_timeout_seconds' => 600,
+        'max_timeout_seconds' => 3600,
+        // Open (queued or running) runs per service and per person.
+        'max_open_per_service' => 3,
+        'max_open_per_user' => 5,
+        // Output beyond this is not shipped (launchroomd, feature commandRuns).
+        'output_limit_bytes' => 5 * 1024 * 1024,
+        // Finished runs and their output are kept this long, and at most this many per service.
+        'retention_days' => max(1, (int) env('LAUNCHROOM_COMMAND_RETENTION_DAYS', 30)),
+        'keep_per_service' => 100,
     ],
 
     /*

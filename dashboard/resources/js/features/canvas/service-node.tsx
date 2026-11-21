@@ -28,16 +28,12 @@ import { cn } from '@/lib/utils';
 import { NODE_WIDTH } from './auto-layout';
 import { useServiceMetrics } from './canvas-metrics';
 import type { ServiceFlowNode } from './types';
-import {
-    compactAge,
-    formatCompact,
-    formatMemory,
-    formatShare,
-} from '@/lib/format';
+import { formatCompact, formatMemory, formatShare } from '@/lib/format';
 import { ServiceGlyph } from '@/components/service-glyph';
 import { StagedChip } from '@/features/staged-changes/effects';
 import { openStagedChanges } from '@/features/staged-changes/staged-changes-sheet';
 import { describeCron, parseCron } from '@/features/service-settings/cron';
+import { statusDetail } from '@/features/service-status/live-status';
 
 /**
  * What a node's toolbar can do, provided by the canvas (service-canvas.tsx):
@@ -196,11 +192,7 @@ export const ServiceNode = memo(function ServiceNode({
                         <Status
                             state={data.status.state}
                             label={data.status.label}
-                            detail={
-                                data.status.since
-                                    ? compactAge(data.status.since)
-                                    : undefined
-                            }
+                            detail={statusDetail(data.status) ?? undefined}
                             className="min-w-0 type-small"
                         />
                         {data.openAlerts.length > 0 && (

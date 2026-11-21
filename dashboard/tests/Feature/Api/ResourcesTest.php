@@ -25,6 +25,7 @@ test('GET /me describes the token, its user and team', function (): void {
         ->assertJsonPath('data.team.role', 'developer')
         ->assertJsonPath('data.token.abilities', ['read', 'deploy'])
         ->assertJsonPath('data.token.client', 'dashboard')
+        ->assertJsonPath('data.scope', null)
         ->assertJsonMissingPath('data.token.token');
 });
 

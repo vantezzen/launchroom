@@ -19,7 +19,8 @@
         },
         "network": { "id": "net_01J9Z8X7W6V5T4S3R2Q1P0N9N4", "name": "lr-e_6d1f0c3a9b2e4f57", "subnet": "10.231.4.0/24" },
         "timeout": "10m",
-        "resources": { "cpus": 1, "memoryMb": 512, "pids": 512 }
+        "resources": { "cpus": 1, "memoryMb": 512, "pids": 512 },
+        "outputLimit": 5242880
       }
     }
   ]

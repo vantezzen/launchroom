@@ -6,6 +6,7 @@ namespace App\Queries;
 
 use App\Data\Servers\FleetStatusData;
 use App\Data\Servers\HealthCheckData;
+use App\Enums\Alerts\AlertRule;
 use App\Enums\Alerts\AlertStatus;
 use App\Enums\HealthCheckState;
 use App\Enums\ServerStatus;
@@ -15,12 +16,13 @@ use App\Models\Security\SecurityFinding;
 use App\Models\Server;
 use App\Models\Team;
 use App\Models\User;
+use App\Queries\Security\FixGroups;
 use Illuminate\Support\Facades\Gate;
 
 /**
  * What the app shell says on every page (docs/08 §1): the Activity count
  * (open alerts), the Security badge (vulnerabilities that need action,
- * counted per advisory group like the Security page's hero) and the
+ * counted per package to fix like the Security page's hero) and the
  * servers' line under the team name. Each one is authorized for the
  * viewer and counts the current team only (the caller passes the user's
  * current team, read through their memberships).
@@ -29,7 +31,10 @@ final readonly class ShellSignals
 {
     public function __construct(private ServerHealth $health) {}
 
-    /** Firing alerts of the current team (docs/15 §3). */
+    /**
+     * Firing alerts of the current team (docs/15 §3). An available update
+     * (D106) is news, not a problem: it isn't counted.
+     */
     public function openAlerts(?User $user, ?Team $team): int
     {
         if (! $user instanceof User || ! $team instanceof Team || ! Gate::forUser($user)->allows('viewAny', [Alert::class, $team])) {
@@ -39,12 +44,13 @@ final readonly class ShellSignals
         return Alert::query()
             ->where('team_id', $team->id)
             ->where('status', AlertStatus::Firing->value)
+            ->where('rule', '!=', AlertRule::UpdateAvailable->value)
             ->count();
     }
 
     /**
-     * "Action needed" vulnerabilities of the current team, one per advisory
-     * group however many services carry it (docs/22 §9.1).
+     * Things to fix on the Security page: open "Action needed" packages,
+     * however many advisories and services each has (docs/22 §9.1).
      */
     public function securityActionNeeded(?User $user, ?Team $team): int
     {
@@ -52,11 +58,7 @@ final readonly class ShellSignals
             return 0;
         }
 
-        return SecurityFinding::query()
-            ->where('team_id', $team->id)
-            ->actionNeeded()
-            ->distinct()
-            ->count('group_key');
+        return FixGroups::count($team->id);
     }
 
     /**

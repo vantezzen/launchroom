@@ -13,6 +13,7 @@ use App\Data\Api\EnvironmentResource;
 use App\Data\Api\ProjectResource;
 use App\Data\Api\ServerResource;
 use App\Data\Api\ServiceResource;
+use App\Data\Deployments\DeploymentFailureData;
 use App\Data\Transfers\TransferVolumeData;
 use App\Enums\DeploymentStatus;
 use App\Enums\DomainKind;
@@ -132,13 +133,21 @@ final class ApiResources
                 ref: $deployment->git_ref,
             ),
             failure: $deployment->status === DeploymentStatus::Failed
-                ? new ApiFailureData($deployment->failure_class, $deployment->failure_message)
+                ? $this->failure($deployment)
                 : null,
             queuedAt: $deployment->queued_at->toIso8601String(),
             startedAt: $deployment->started_at?->toIso8601String(),
             finishedAt: $deployment->finished_at?->toIso8601String(),
             dashboardUrl: route('deployments.show', [$environment->project->public_id, $environment->public_id, $deployment->public_id]),
+            checks: $deployment->checks,
         );
+    }
+
+    private function failure(Deployment $deployment): ApiFailureData
+    {
+        $general = $deployment->failure_class === null ? null : DeploymentFailureData::for($deployment->failure_class, $deployment->failure_message);
+
+        return new ApiFailureData($deployment->failure_class, $deployment->failure_message, $general?->title, $general?->hint);
     }
 
     public function server(Server $server): ServerResource

@@ -1,5 +1,5 @@
 import { expect, test } from 'vitest';
-import { effectSummary } from './use-staged-changes';
+import { effectSummary, stagedCountLabel } from './use-staged-changes';
 import type { StagedChanges } from './use-staged-changes';
 
 const group = (name: string, effect: App.Enums.ChangeEffect) =>
@@ -32,4 +32,21 @@ test('names the services applying redeploys, most disruptive first', () => {
 
 test('says nothing when no service restarts', () => {
     expect(effectSummary(changes(group('db', 'none')))).toBe('');
+});
+
+test('the bar counts changes and names the services when there are several', () => {
+    const counted = (count: number, ...groups: StagedChanges['groups']) =>
+        ({ count, groups }) as StagedChanges;
+
+    expect(stagedCountLabel(counted(1, group('web', 'restart')))).toBe(
+        '1 change',
+    );
+    expect(stagedCountLabel(counted(2, group('web', 'restart')))).toBe(
+        '2 changes',
+    );
+    expect(
+        stagedCountLabel(
+            counted(4, group('web', 'restart'), group('api', 'rebuild')),
+        ),
+    ).toBe('4 changes in 2 services');
 });

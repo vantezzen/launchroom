@@ -73,6 +73,14 @@ export function accountSettingsIndex(
         },
 
         {
+            target: 'ai-agents',
+            label: 'Connect your editor',
+            hint: 'Let an AI agent deploy and fix',
+            keywords: ['mcp', 'ai', 'agent', 'cursor', 'claude', 'editor'],
+            anchor: 'connect',
+        },
+
+        {
             target: 'appearance',
             label: 'Theme',
             hint: 'Light, dark or system',
@@ -97,6 +105,13 @@ export function accountSettingsIndex(
             hint: 'Record console sessions',
             keywords: ['transcript', 'audit', 'console'],
             anchor: 'console-recording',
+        },
+        {
+            target: 'robot-tokens',
+            label: 'Robot tokens',
+            hint: 'Team tokens for CI',
+            keywords: ['robot', 'ci', 'github actions', 'rotate', 'bot'],
+            anchor: 'robots',
         },
 
         {

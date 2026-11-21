@@ -61,6 +61,9 @@ Set what deploys each environment in **Settings → Environments → Rename and 
 A push is matched against every environment of the project, so `develop` → staging and `main` → production work side by
 side. Commits with `[skip deploy]` or `[skip ci]` in their message don't deploy.
 
+Switch on **Wait for checks to pass** in the same dialog and a push deploys only once the commit's CI checks passed. See
+[Deploy after checks pass](/docs/projects/deploy-after-checks).
+
 After a rollback in production, auto-deploy is paused. New pushes don't go live until someone presses **Resume
 auto-deploy** in the banner under the project tabs.
 

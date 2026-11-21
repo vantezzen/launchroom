@@ -58,7 +58,7 @@ test('the whole team is the default scope', function (): void {
     expect($data->json('scope'))->toBeNull()
         ->and($data->json('summary.blocked'))->toBe(8)
         ->and($data->json('firewall.recent'))->toHaveCount(2)
-        ->and($data->json('actionNeeded'))->toHaveCount(1);
+        ->and($data->json('fixGroups'))->toHaveCount(1);
 });
 
 test('a service scope narrows every section to that service', function (): void {
@@ -68,7 +68,7 @@ test('a service scope narrows every section to that service', function (): void 
         ->and($data->json('summary.blocked'))->toBe(3)
         ->and(array_column($data->json('firewall.recent'), 'path'))->toBe(['/p3'])
         ->and($data->json('firewall.services.0.service.name'))->toBe('site')
-        ->and($data->json('actionNeeded'))->toBe([]);
+        ->and($data->json('fixGroups'))->toBe([]);
 });
 
 test('a project scope narrows to its services', function (): void {
@@ -77,7 +77,7 @@ test('a project scope narrows to its services', function (): void {
     expect($data->json('scope'))->toMatchArray(['kind' => 'project', 'name' => 'Shop'])
         ->and($data->json('summary.blocked'))->toBe(5)
         ->and(array_column($data->json('firewall.recent'), 'path'))->toBe(['/p5'])
-        ->and($data->json('actionNeeded.0.package'))->toBe('lodash');
+        ->and($data->json('fixGroups.0.package'))->toBe('lodash');
 });
 
 test('another team\'s ids are a 404 on the data and ignored on the page', function (): void {

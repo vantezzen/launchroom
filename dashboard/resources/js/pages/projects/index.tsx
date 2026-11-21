@@ -47,6 +47,7 @@ import {
 } from '@/features/deployments/format';
 import { EnvironmentLiveUpdates } from '@/features/projects/environment-live-updates';
 import { StartEmptyDialog } from '@/features/projects/start-empty-dialog';
+import { AppUpdatesSection } from '@/features/app-updates/app-updates-section';
 import { logsHref } from '@/lib/links';
 import { cn } from '@/lib/utils';
 import { index as activity } from '@/routes/activity';
@@ -867,6 +868,7 @@ export default function ProjectsIndex({
                     project.environments.map((environment) => environment.id),
                 )}
                 only={['projects', 'attention', 'recentDeployments']}
+                statuses
             />
 
             <Page>
@@ -1009,6 +1011,7 @@ export default function ProjectsIndex({
                                 )}
                             </div>
                         )}
+                        {query === '' && <AppUpdatesSection />}
                     </>
                 )}
             </Page>

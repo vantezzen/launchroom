@@ -14,6 +14,9 @@ type PackageJSON struct {
 	Scripts map[string]string `json:"scripts"`
 	// Deps merges dependencies and devDependencies (name → version range).
 	Deps map[string]string `json:"-"`
+	// Dependencies are only the dependencies (kept when Railpack prunes
+	// devDependencies).
+	Dependencies map[string]string `json:"-"`
 }
 
 // Dep returns the version range of a dependency and whether it exists.
@@ -42,7 +45,7 @@ func parsePackageJSON(s string) *PackageJSON {
 	if json.Unmarshal([]byte(s), &raw) != nil {
 		return nil
 	}
-	p := &PackageJSON{Name: raw.Name, Main: raw.Main, Scripts: raw.Scripts, Deps: map[string]string{}}
+	p := &PackageJSON{Name: raw.Name, Main: raw.Main, Scripts: raw.Scripts, Deps: map[string]string{}, Dependencies: raw.Dependencies}
 	for k, v := range raw.DevDependencies {
 		p.Deps[k] = v
 	}

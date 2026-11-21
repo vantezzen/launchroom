@@ -1,0 +1,61 @@
+---
+title: Wait for a preview in CI
+description: Hold a pull request's job until its preview is live, then run end-to-end tests against the preview's address.
+---
+
+Every pull request gets its own [preview](/docs/projects/previews). Your CI can wait until the preview for the pull
+request's latest commit is live and then test it.
+
+## GitHub Actions
+
+```yaml title=".github/workflows/preview-e2e.yml"
+name: Preview tests
+
+on:
+  pull_request:
+
+jobs:
+  e2e:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Wait for the preview
+        id: preview
+        uses: vantezzen/launchroom/deploy/actions/launchroom@v0.2.0
+        with:
+          url: https://launchroom.example.com
+          token: ${{ secrets.LAUNCHROOM_TOKEN }}
+          project: shop
+          command: preview-wait
+          pr: ${{ github.event.pull_request.number }}
+          sha: ${{ github.event.pull_request.head.sha }}
+          timeout: 20m
+
+      - run: npx playwright test
+        env:
+          BASE_URL: ${{ steps.preview.outputs.url }}
+```
+
+`pr` and `sha` default to the event's pull request and its head commit, so on `pull_request` events you can leave them
+out. Use the head commit, not `github.sha`: for pull requests that's a merge commit the preview never builds.
+
+The step waits until every service of the preview runs that commit:
+
+- **Live**: the step succeeds, and `url` is the preview's first address.
+- **Failed**: the step fails with exit code 10 and prints why the deployment failed, like `launchroom deploy` does.
+  `deployment` names the failed deployment.
+- **Waiting for approval**: a pull request from a fork waits until a maintainer approves it. The step keeps waiting
+  until the timeout.
+- **Timed out**: the step fails with its own exit code (see the [CLI reference](/docs/reference/cli#exit-codes)).
+
+A read-only token is enough for waiting.
+
+## Any other CI
+
+```sh
+launchroom preview wait --project shop --pr "$PR_NUMBER" --sha "$HEAD_SHA" --timeout 20m --json > preview.json
+BASE_URL="$(jq -r '.urls[0].url' preview.json)" npm run test:e2e
+```
+
+Without `--json`, `preview wait` prints each preview address on its own line.

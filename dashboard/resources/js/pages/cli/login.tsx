@@ -18,7 +18,7 @@ import {
 import { Spinner } from '@/components/ui/spinner';
 import {
     AbilityFields,
-    defaultAbilities,
+    startingAbilities,
     lifetimeEnd,
     lifetimeLabel,
 } from '@/features/api-tokens/ability-fields';
@@ -32,6 +32,8 @@ type Props = {
     teamOptions: App.Data.Api.ApiTeamOptionData[];
     lifetimes: number[];
     defaultLifetime: number;
+    suggestedAbilities: App.Enums.ApiAbility[];
+    suggestedFullAccess: boolean;
 };
 
 function Outcome({
@@ -72,6 +74,8 @@ export default function CliLogin({
     teamOptions: teams,
     lifetimes,
     defaultLifetime,
+    suggestedAbilities,
+    suggestedFullAccess,
 }: Props) {
     if (login === null) {
         return <EnterCode code={code} />;
@@ -132,6 +136,8 @@ export default function CliLogin({
             teams={teams}
             lifetimes={lifetimes}
             defaultLifetime={defaultLifetime}
+            suggested={suggestedAbilities}
+            suggestedFullAccess={suggestedFullAccess}
         />
     );
 }
@@ -177,17 +183,23 @@ function Approve({
     teams,
     lifetimes,
     defaultLifetime,
+    suggested,
+    suggestedFullAccess,
 }: {
     login: App.Data.Api.CliLoginRequestData;
     teams: App.Data.Api.ApiTeamOptionData[];
     lifetimes: number[];
     defaultLifetime: number;
+    suggested: App.Enums.ApiAbility[];
+    /** `launchroom login --full-access`. */
+    suggestedFullAccess: boolean;
 }) {
     const initial = teams.find((team) => team.current) ?? teams[0];
 
     const form = useForm({
         team: initial?.id ?? '',
-        abilities: defaultAbilities(initial),
+        abilities: startingAbilities(initial, suggested),
+        fullAccess: suggestedFullAccess,
         expiresInDays: defaultLifetime,
     });
     const [denying, setDenying] = useState(false);
@@ -252,7 +264,10 @@ function Approve({
                                         form.setData({
                                             ...form.data,
                                             team: value,
-                                            abilities: defaultAbilities(next),
+                                            abilities: startingAbilities(
+                                                next,
+                                                suggested,
+                                            ),
                                         });
                                     }}
                                 >
@@ -312,6 +327,10 @@ function Approve({
                         value={form.data.abilities}
                         onChange={(abilities) =>
                             form.setData('abilities', abilities)
+                        }
+                        fullAccess={form.data.fullAccess}
+                        onFullAccessChange={(fullAccess) =>
+                            form.setData('fullAccess', fullAccess)
                         }
                     >
                         <InputError message={form.errors.abilities} />

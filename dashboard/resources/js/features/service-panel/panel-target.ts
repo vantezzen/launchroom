@@ -56,11 +56,16 @@ export function placeholderPanel(
         canData:
             node.kind === 'database' &&
             (current?.canData ?? pending.tab === 'data'),
+        // The Console's permission; databases have no Commands tab.
+        canCommands:
+            node.kind !== 'database' &&
+            (current?.canConsole ?? pending.tab === 'commands'),
         actionNeeded: same?.actionNeeded ?? 0,
         actionNeededFinding: same?.actionNeededFinding ?? null,
         controls: same?.controls ?? null,
         origin: same?.origin ?? null,
         runtime: same?.runtime ?? null,
         cronRuns: same?.cronRuns ?? [],
+        update: same?.update ?? null,
     };
 }

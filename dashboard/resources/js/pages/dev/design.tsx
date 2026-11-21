@@ -34,6 +34,18 @@ import { Progress } from '@/components/ui/progress';
 import { Switch } from '@/components/ui/switch';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Textarea } from '@/components/ui/textarea';
+import ChecksStates from '@/features/design-gallery/checks-states';
+import CommandStates from '@/features/design-gallery/command-states';
+import RobotTokenStates from '@/features/design-gallery/robot-token-states';
+import AiAgentStates from '@/features/design-gallery/ai-agent-states';
+import { DomainVariableStates } from '@/features/design-gallery/domain-variable-states';
+import ErrorStates from '@/features/design-gallery/error-states';
+import {
+    AnalyticsEmptyStates,
+    OnboardingProgressStates,
+} from '@/features/design-gallery/onboarding-analytics-states';
+import SecurityStates from '@/features/design-gallery/security-states';
+import StatusStates from '@/features/design-gallery/status-states';
 import VisualPrimitives from '@/features/design-gallery/visual-primitives';
 
 function Swatch({ name, token }: { name: string; token: string }) {
@@ -617,6 +629,46 @@ export default function DesignSheet() {
 
                 <Section title="Visual primitives">
                     <VisualPrimitives />
+                </Section>
+
+                <Section title="Security: things to fix">
+                    <SecurityStates />
+                </Section>
+
+                <Section title="Service status">
+                    <StatusStates />
+                </Section>
+
+                <Section title="Commands">
+                    <CommandStates />
+                </Section>
+
+                <Section title="Deploy after checks pass">
+                    <ChecksStates />
+                </Section>
+
+                <Section title="Robot tokens">
+                    <RobotTokenStates />
+                </Section>
+
+                <Section title="AI agents" id="ai-agents">
+                    <AiAgentStates />
+                </Section>
+
+                <Section title="Get started progress">
+                    <OnboardingProgressStates />
+                </Section>
+
+                <Section title="Analytics empty states">
+                    <AnalyticsEmptyStates />
+                </Section>
+
+                <Section title="Error pages">
+                    <ErrorStates />
+                </Section>
+
+                <Section title="Domains and variables: live checks and fixes">
+                    <DomainVariableStates />
                 </Section>
             </Page>
 

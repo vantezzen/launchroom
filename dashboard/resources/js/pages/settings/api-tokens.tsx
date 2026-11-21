@@ -167,13 +167,7 @@ export default function ApiTokens({
                     </SettingsBody>
                 ) : (
                     tokens.map((token) => (
-                        <TokenRow
-                            key={token.id}
-                            token={token}
-                            team={teams.find(
-                                (entry) => entry.id === token.teamId,
-                            )}
-                        />
+                        <TokenRow key={token.id} token={token} />
                     ))
                 )}
             </SettingsCard>
@@ -200,14 +194,8 @@ function IconTile({ icon: Icon }: { icon: typeof KeyRound }) {
     );
 }
 
-function AccessChip({
-    token,
-    team,
-}: {
-    token: App.Data.Api.ApiTokenData;
-    team: App.Data.Api.ApiTeamOptionData | undefined;
-}) {
-    const summary = abilitySummary(token.abilities, team);
+function AccessChip({ token }: { token: App.Data.Api.ApiTokenData }) {
+    const summary = abilitySummary(token);
     const chip = (
         <Badge variant="secondary" tabIndex={summary.custom ? 0 : undefined}>
             {summary.label}
@@ -230,13 +218,7 @@ function AccessChip({
     );
 }
 
-function TokenRow({
-    token,
-    team,
-}: {
-    token: App.Data.Api.ApiTokenData;
-    team: App.Data.Api.ApiTeamOptionData | undefined;
-}) {
+function TokenRow({ token }: { token: App.Data.Api.ApiTokenData }) {
     const expiry = expiryLine(token.expiresAt);
 
     return (
@@ -253,7 +235,7 @@ function TokenRow({
                     {token.client === 'cli' && (
                         <Badge variant="outline">CLI</Badge>
                     )}
-                    <AccessChip token={token} team={team} />
+                    <AccessChip token={token} />
                 </span>
             }
             description={
@@ -333,6 +315,7 @@ function CreateTokenDialog({
     const [days, setDays] = useState(String(defaultLifetime));
     const [abilities, setAbilities] =
         useState<App.Enums.ApiAbility[]>(defaults);
+    const [fullAccess, setFullAccess] = useState(false);
     const [error, setError] = useState<string | null>(null);
     const [busy, setBusy] = useState(false);
     const [created, setCreated] =
@@ -341,6 +324,7 @@ function CreateTokenDialog({
     const reset = () => {
         setName('');
         setAbilities(defaults);
+        setFullAccess(false);
         setError(null);
         setCreated(null);
     };
@@ -370,6 +354,7 @@ function CreateTokenDialog({
                     name: name.trim() === '' ? 'API token' : name.trim(),
                     expiresInDays: Number(days),
                     abilities,
+                    fullAccess,
                 },
             );
             setCreated(result);
@@ -462,6 +447,8 @@ function CreateTokenDialog({
                             team={team}
                             value={abilities}
                             onChange={setAbilities}
+                            fullAccess={fullAccess}
+                            onFullAccessChange={setFullAccess}
                             explainUnavailable
                         />
 

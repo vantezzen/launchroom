@@ -1,6 +1,7 @@
 import { usePage } from '@inertiajs/react';
 import {
     Bell,
+    Bot,
     Container,
     FileCode2,
     Fingerprint,
@@ -11,6 +12,7 @@ import {
     LockKeyhole,
     Network,
     Palette,
+    Plug,
     RefreshCw,
     ShieldCheck,
     Truck,
@@ -27,6 +29,7 @@ import AppLayout from '@/features/app-shell/app-layout';
 import { useCurrentUrl } from '@/hooks/use-current-url';
 import type { BreadcrumbItem } from '@/types';
 import { accountSettingsIndex } from './settings-index';
+import { aiAgents as editAiAgents } from '@/routes';
 import { index as editApiTokens } from '@/routes/api-tokens';
 import { edit as editAppearance } from '@/routes/appearance';
 import { edit as editDashboardDomain } from '@/routes/dashboard-domain';
@@ -39,6 +42,7 @@ import { edit as editNotifications } from '@/routes/notifications';
 import { edit as editProfile } from '@/routes/profile';
 import { index as editRegistryCredentials } from '@/routes/registry-credentials';
 import { edit as editRegistry } from '@/routes/registry-settings';
+import { index as editRobotTokens } from '@/routes/robot-tokens';
 import { edit as editSecurity } from '@/routes/security';
 import { index as settingsIndex } from '@/routes/settings';
 import { show as showSystem } from '@/routes/system';
@@ -50,8 +54,10 @@ const routes = {
     profile: editProfile,
     security: editSecurity,
     'api-tokens': editApiTokens,
+    'ai-agents': editAiAgents,
     appearance: editAppearance,
     team: editTeam,
+    'robot-tokens': editRobotTokens,
     git: editGit,
     registries: editRegistryCredentials,
     notifications: editNotifications,
@@ -72,8 +78,11 @@ const descriptions: Partial<Record<AccountPage, string>> = {
     profile: 'Your name and the email you sign in with.',
     security: 'How you sign in: two-factor, passkeys and your password.',
     'api-tokens': 'Tokens for the CLI and the API, each bound to one team.',
+    'ai-agents':
+        'Let the coding agent in your editor deploy and fix things here.',
     appearance: 'How the dashboard looks in this browser.',
     team: 'Who is in this team and what they may do.',
+    'robot-tokens': 'Team tokens for CI that don’t belong to one person.',
     git: 'Where your repositories come from.',
     registries: 'Sign-in details for registries that hold your private images.',
     notifications: 'Where launchroom tells you when something needs you.',
@@ -132,6 +141,22 @@ export default function SettingsLayout({ children }: PropsWithChildren) {
                     summary: 'CLI and API access',
                     keywords: ['cli', 'token', 'api'],
                 },
+                // docs/16 §7: `launchroom mcp` for coding agents.
+                {
+                    id: 'ai-agents',
+                    label: 'AI agents',
+                    icon: Plug,
+                    summary: 'Connect your editor',
+                    keywords: [
+                        'mcp',
+                        'ai',
+                        'agent',
+                        'cursor',
+                        'claude',
+                        'copilot',
+                        'editor',
+                    ],
+                },
                 {
                     id: 'appearance',
                     label: 'Appearance',
@@ -151,6 +176,14 @@ export default function SettingsLayout({ children }: PropsWithChildren) {
                     icon: Users,
                     summary: 'People and roles',
                     keywords: ['team', 'invite', 'people', 'roles'],
+                },
+                // docs/16 §1.4: team-owned tokens for CI.
+                {
+                    id: 'robot-tokens',
+                    label: 'Robot tokens',
+                    icon: Bot,
+                    summary: 'Tokens for CI',
+                    keywords: ['robot', 'ci', 'token', 'github actions', 'bot'],
                 },
                 {
                     id: 'git',

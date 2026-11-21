@@ -8,6 +8,7 @@ use App\Data\Templates\TemplateSummaryData;
 use App\Drivers\DatabaseEngines\DatabaseEngines;
 use App\Support\Blueprints\BlueprintPreview;
 use App\Support\Git\PublicRepositoryUrl;
+use App\Support\Images\CuratedPin;
 use App\Support\Templates\TemplateCompiler;
 use App\Support\Templates\TemplateDefinition;
 use App\Support\Templates\TemplateInvalid;
@@ -73,6 +74,27 @@ final class TemplateCatalog
         $canonical = $url->canonical();
 
         return array_find($this->all(), static fn (TemplateDefinition $template): bool => in_array($canonical, $template->repositories, true));
+    }
+
+    /**
+     * Template pins of one image repository (docs/04 §14.1): newer pins are
+     * update candidates for services running that image.
+     *
+     * @return list<CuratedPin>
+     */
+    public function pinsFor(string $registry, string $repository): array
+    {
+        $pins = [];
+
+        foreach ($this->all() as $template) {
+            foreach ($template->pins() as $pin) {
+                if ($pin->registry === $registry && $pin->repository === $repository) {
+                    $pins[] = $pin;
+                }
+            }
+        }
+
+        return $pins;
     }
 
     /**

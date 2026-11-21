@@ -45,7 +45,7 @@ final readonly class ApproveCliLogin
             }
 
             $name = 'CLI'.($request->client_hostname !== null ? ' on '.$request->client_hostname : '');
-            $new = $this->createToken->handle($user, $team, $name, $input->abilityList(), $input->expiresInDays, ApiTokenClient::Cli, $actor);
+            $new = $this->createToken->handle($user, $team, $name, $input->abilityList(), $input->expiresInDays, ApiTokenClient::Cli, $actor, $input->fullAccess);
 
             $request->approve($user, $team, $new->token->id, Crypt::encryptString($new->plainText));
 

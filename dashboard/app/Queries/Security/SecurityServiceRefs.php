@@ -4,7 +4,6 @@ declare(strict_types=1);
 
 namespace App\Queries\Security;
 
-use App\Data\Canvas\DetectedPlanData;
 use App\Data\Security\SecurityServiceRefData;
 use App\Models\ServiceInstance;
 use App\Support\Canvas\ServiceGlyph;
@@ -54,13 +53,11 @@ final class SecurityServiceRefs
         $service = $instance->service;
         $environment = $instance->environment;
         $project = $environment->project;
-        $detected = $instance->activeDeployment?->plan?->summary->framework ?? $instance->plan?->summary?->framework;
-        $framework = $detected !== null && $detected !== '' ? DetectedPlanData::frameworkLabel($detected) : null;
 
         return new SecurityServiceRefData(
             id: $service->public_id,
             name: $service->name,
-            logo: ServiceGlyph::logo($service, $framework),
+            logo: ServiceGlyph::forInstance($instance),
             kind: $service->kind->value,
             projectId: $project->public_id,
             projectName: $project->name,

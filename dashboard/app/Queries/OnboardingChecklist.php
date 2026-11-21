@@ -7,9 +7,11 @@ namespace App\Queries;
 use App\Data\Backups\RecoveryKitStatusData;
 use App\Data\Instance\FirstAppData;
 use App\Data\Instance\OnboardingData;
+use App\Data\Instance\OnboardingNextData;
 use App\Data\Instance\OnboardingProgressData;
 use App\Data\Instance\OnboardingStepData;
 use App\Data\Servers\ServerData;
+use App\Enums\DomainKind;
 use App\Enums\Instance\OnboardingStep;
 use App\Enums\Instance\OnboardingStepStatus;
 use App\Enums\ServerStatus;
@@ -19,11 +21,14 @@ use App\Models\Git\GitHubInstallation;
 use App\Models\InstanceSettings;
 use App\Models\Project;
 use App\Models\Server;
+use App\Models\ServiceInstance;
 use App\Models\Team;
+use App\Models\TeamInvitation;
 use App\Models\User;
 use App\Services\Dns\EdgeAddresses;
 use App\Support\GeneratedHostname;
 use App\Support\Network\ServerAddress;
+use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Support\Facades\Gate;
 use Laravel\Fortify\Features;
 
@@ -36,7 +41,8 @@ use Laravel\Fortify\Features;
  * address, first app, backup). Each step is derived from real state; the address step is done
  * once the owner continued after the DNS check (`domainConfirmed`), not when
  * the domain is saved. "Skipped" (domain, GitHub, backups) and "dismissed"
- * live in `instance_settings.onboarding`.
+ * live in `instance_settings.onboarding`; a skipped step never counts as
+ * done (D109).
  */
 final readonly class OnboardingChecklist
 {
@@ -77,6 +83,32 @@ final readonly class OnboardingChecklist
             appsDomainVerified: $settings->onboarding?->verified($settings->apps_domain),
             smallServerHint: $team instanceof Team ? $this->smallServer->for($user, $team) : null,
             firstApp: $firstApp,
+            whatsNext: $this->whatsNext($user, $team, $firstApp),
+        );
+    }
+
+    /**
+     * What's next (D109): offered only to someone who may do it, and only
+     * while it isn't done.
+     */
+    private function whatsNext(User $user, ?Team $team, ?FirstAppData $firstApp): OnboardingNextData
+    {
+        $gate = Gate::forUser($user);
+        $instance = $firstApp?->state === 'live'
+            ? ServiceInstance::query()
+                ->whereHas('service', static fn (Builder $query) => $query->where('public_id', $firstApp->serviceId))
+                ->whereHas('environment', static fn (Builder $query) => $query->where('public_id', $firstApp->environmentId))
+                ->with('service')
+                ->first()
+            : null;
+
+        return new OnboardingNextData(
+            customDomain: $instance instanceof ServiceInstance
+                && $gate->allows('update', $instance->service)
+                && ! $instance->domains()->where('kind', DomainKind::Custom)->exists(),
+            invite: $team instanceof Team
+                && $gate->allows('create', [TeamInvitation::class, $team])
+                && $team->memberships()->count() <= 1,
         );
     }
 
@@ -172,11 +204,15 @@ final readonly class OnboardingChecklist
      */
     private function progress(InstanceSettings $settings, array $steps): OnboardingProgressData
     {
-        $done = count(array_filter($steps, static fn (OnboardingStepData $step): bool => $step->status !== OnboardingStepStatus::Pending));
+        $count = static fn (OnboardingStepStatus $status): int => count(array_filter($steps, static fn (OnboardingStepData $step): bool => $step->status === $status));
+        $done = $count(OnboardingStepStatus::Done);
+        $skipped = $count(OnboardingStepStatus::Skipped);
 
         return new OnboardingProgressData(
             done: $done,
+            skipped: $skipped,
             total: count($steps),
+            settled: $done + $skipped === count($steps),
             complete: $done === count($steps),
             dismissed: $settings->onboarding?->dismissedAt !== null,
         );

@@ -105,6 +105,8 @@ use Throwable;
  *   holds the instance, a queued deployment waits, and one that has started
  *   (building up to health checking) is cancelled with the reason and
  *   cleaned up like a failure. Ready and routing deployments are left alone.
+ * - checks (D111, docs/06 §2.5): a push deployment waiting for its commit's
+ *   CI checks stays queued until EvaluateDeploymentChecks settles the gate.
  *
  * Slow lookups (tag → digest through the registry, branch → head commit
  * through GitHub) run BEFORE the row lock (prefetch()); under the lock the
@@ -408,11 +410,12 @@ final readonly class AdvanceDeployment
 
     /**
      * Another deployment of the instance is in flight, or an older one is
-     * queued, or an import or restore holds the instance.
+     * queued, or an import or restore holds the instance, or it waits for
+     * its commit's checks (D111, EvaluateDeploymentChecks lets it go).
      */
     private function isBlocked(Deployment $deployment): bool
     {
-        if (Holds::blocking($deployment->service_instance_id) instanceof Hold) {
+        if ($deployment->waitsForChecks() || Holds::blocking($deployment->service_instance_id) instanceof Hold) {
             return true;
         }
 

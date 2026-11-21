@@ -27,6 +27,20 @@ final class UpstreamAuth
     ) {}
 
     /**
+     * No sign-in details: public images (tag lists and manifests of Docker
+     * Hub and GHCR still need an anonymous token from the registry's realm).
+     */
+    public static function anonymous(string $host): self
+    {
+        return new self($host, '', '');
+    }
+
+    public function isAnonymous(): bool
+    {
+        return $this->username === '' && $this->secret === '';
+    }
+
+    /**
      * The registry's API origin: Docker Hub's API is not at docker.io.
      */
     public function baseUrl(): string
@@ -52,7 +66,7 @@ final class UpstreamAuth
     public function authorization(string $scope): ?string
     {
         return match (true) {
-            $this->basic => $this->basicHeader(),
+            $this->basic && ! $this->isAnonymous() => $this->basicHeader(),
             isset($this->tokens[$scope]) => 'Bearer '.$this->tokens[$scope],
             default => null,
         };

@@ -44,6 +44,7 @@ services:
                 ]
             start_period: 90s
         x-launchroom:
+            releases: https://github.com/TryGhost/Ghost/releases
             name: Ghost
             logo: ghost
             domain: ${input.domain}

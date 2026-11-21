@@ -19,6 +19,8 @@ enum DeploymentTrigger: string
     case Restart = 'restart';
     /** Start of a stopped service (D68). */
     case Start = 'start';
+    /** An app update to a newer release of its image (D106). */
+    case Update = 'update';
 
     /**
      * Deployments that run an image again as it is: no build and no

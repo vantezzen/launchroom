@@ -1,26 +1,19 @@
 import { describe, expect, test } from 'vite-plus/test';
-import { groupActionNeeded, verdictOf } from './shape';
+import { fixTitle, splitByProduction, verdictOf, worstVerdict } from './shape';
 
-type Finding = App.Data.Security.FindingCardData;
+type FixGroup = App.Data.Security.FixGroupData;
+type FixService = App.Data.Security.FixGroupServiceData;
+type Investigation = App.Data.Security.FindingInvestigationData;
 
-const finding = (over: Partial<Finding> = {}): Finding => ({
-    id: 'fnd_1',
-    href: '/security/findings/fnd_1',
-    advisory: 'GHSA-aaaa',
-    title: 'Command injection in lodash template',
-    severity: 'high',
-    cvss: 7.2,
-    knownExploited: false,
-    knownExploitedSince: null,
-    public: true,
-    ecosystem: 'npm',
-    package: 'lodash',
-    version: '4.17.20',
-    fixedVersion: '4.17.21',
-    level: 'action_needed',
-    reasons: [],
-    status: 'open',
-    firstSeenAt: '2026-10-25T10:00:00Z',
+const done = (summary: string[]): Investigation => ({
+    id: 'ivg_1',
+    status: 'completed',
+    startedAt: '2026-10-25T10:00:00Z',
+    finishedAt: '2026-10-25T10:01:00Z',
+    summary,
+});
+
+const service = (over: Partial<FixService> = {}): FixService => ({
     service: {
         id: 'svc_1',
         name: 'web',
@@ -32,67 +25,100 @@ const finding = (over: Partial<Finding> = {}): Finding => ({
         environmentName: 'production',
         href: '/p/prj_1/env_1/s/svc_1',
     },
+    production: true,
+    version: '4.17.20',
+    fixedVersion: '4.17.21',
+    severity: 'high',
+    knownExploited: false,
+    findings: ['fnd_1'],
+    lead: 'fnd_1',
     investigation: null,
     ...over,
 });
 
-describe('groupActionNeeded', () => {
-    test('one group per advisory with every affected service', () => {
-        const groups = groupActionNeeded([
-            finding({ id: 'a' }),
-            finding({ id: 'b', version: '4.17.19' }),
-            finding({ id: 'c', advisory: 'GHSA-bbbb', title: null }),
-        ]);
+const group = (over: Partial<FixGroup> = {}): FixGroup => ({
+    key: 'fix_0123456789abcdef',
+    ecosystem: 'npm',
+    package: 'lodash',
+    versions: ['4.17.20'],
+    fixedVersion: '4.17.21',
+    severity: 'high',
+    cvss: 7.2,
+    knownExploited: false,
+    knownExploitedSince: null,
+    impact: 'Attackers could run code on the server.',
+    headline: 'Command injection in lodash',
+    production: true,
+    services: [service()],
+    advisories: [],
+    lead: 'fnd_1',
+    ...over,
+});
 
-        expect(groups.map((g) => g.advisory)).toEqual([
-            'GHSA-aaaa',
-            'GHSA-bbbb',
-        ]);
-        expect(groups[0].findings.map((f) => f.id)).toEqual(['a', 'b']);
-        expect(groups[0].versions).toEqual(['4.17.20', '4.17.19']);
-        expect(groups[1].title).toBe('GHSA-bbbb');
+describe('fixTitle', () => {
+    test('says the update, or that there is none yet', () => {
+        expect(fixTitle(group())).toBe('Update lodash to 4.17.21');
+        expect(fixTitle(group({ fixedVersion: null }))).toBe(
+            'No fixed version of lodash yet',
+        );
     });
+});
 
-    test('known exploited first, then severity, then reach', () => {
-        const groups = groupActionNeeded([
-            finding({ id: 'a', advisory: 'A', severity: 'high' }),
-            finding({ id: 'b', advisory: 'B', severity: 'critical' }),
-            finding({ id: 'c', advisory: 'C', severity: 'high' }),
-            finding({ id: 'd', advisory: 'C', severity: 'high' }),
-            finding({
-                id: 'e',
-                advisory: 'D',
-                severity: 'high',
-                knownExploited: true,
-                knownExploitedSince: '2026-10-03',
+describe('splitByProduction', () => {
+    test('keeps the server order inside each part', () => {
+        const groups = [
+            group({ key: 'a' }),
+            group({ key: 'b', production: false }),
+            group({ key: 'c' }),
+        ];
+        const { production, other } = splitByProduction(groups);
+
+        expect(production.map((g) => g.key)).toEqual(['a', 'c']);
+        expect(other.map((g) => g.key)).toEqual(['b']);
+    });
+});
+
+describe('worstVerdict', () => {
+    test('names the service with concerning findings first', () => {
+        const verdict = worstVerdict([
+            service({
+                investigation: done([
+                    'Checked the container: 1 thing worth a look.',
+                ]),
+            }),
+            service({
+                service: { ...service().service, name: 'api' },
+                investigation: done([
+                    'Checked the container: 2 concerning findings.',
+                ]),
             }),
         ]);
 
-        expect(groups.map((g) => g.advisory)).toEqual(['D', 'B', 'C', 'A']);
+        expect(verdict).toEqual({
+            state: 'failed',
+            text: '2 concerning findings in api',
+            more: 0,
+        });
     });
 
-    test('takes the worst severity and the highest score of a group', () => {
-        const [group] = groupActionNeeded([
-            finding({ id: 'a', severity: 'high', cvss: 7.2 }),
-            finding({ id: 'b', severity: 'critical', cvss: 9.1 }),
-        ]);
-
-        expect(group.severity).toBe('critical');
-        expect(group.cvss).toBe(9.1);
+    test('stays quiet when checks were clean, failed to run or never ran', () => {
+        expect(
+            worstVerdict([
+                service(),
+                service({
+                    investigation: done(['The container couldn’t be checked.']),
+                }),
+                service({
+                    investigation: done([
+                        'Checked the container: nothing unusual.',
+                    ]),
+                }),
+            ]),
+        ).toBeNull();
     });
 });
 
 describe('verdictOf', () => {
-    const done = (
-        summary: string[],
-    ): App.Data.Security.FindingInvestigationData => ({
-        id: 'inv_1',
-        status: 'completed',
-        startedAt: '2026-10-25T10:00:00Z',
-        finishedAt: '2026-10-25T10:01:00Z',
-        summary,
-    });
-
     test('no investigation and a running one', () => {
         expect(verdictOf(null).title).toBe('Not investigated yet');
         expect(

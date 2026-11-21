@@ -1,0 +1,65 @@
+---
+title: Deploy after checks pass
+description: Let a push deploy only once its CI checks passed on GitHub, GitLab or Gitea, with a time limit and a manual override.
+---
+
+By default a push to a tracked branch deploys right away. Turn on **Wait for checks to pass** for an environment, and a
+push there waits until the commit's CI checks have passed. A failed check keeps the version that is live now, so a red
+build never reaches production.
+
+## Turn it on
+
+In the project's **Settings → Environments**, open the environment's menu, choose **Rename and triggers** and switch on
+**Wait for checks to pass**. **Give up after** sets how long a push waits for its checks (30 minutes by default, up to
+4 hours). The environment's row then reads "Deploys on push to main after checks pass".
+
+It applies to deployments that a push or a tag starts. Deploying by hand, Redeploy, Roll back, promoting, the API and
+the CLI deploy right away: someone chose that version.
+
+## What counts as a check
+
+Every check on the commit, except launchroom's own reports:
+
+| Provider | Checks |
+|---|---|
+| GitHub | Check runs (GitHub Actions jobs and other apps) and commit statuses. Neutral and skipped runs count as passed. |
+| GitLab | Pipeline jobs and external statuses. Jobs allowed to fail and manual jobs count as passed. |
+| Gitea and Forgejo | Commit statuses, Gitea Actions included. Warnings count as passed. |
+
+A repository on a plain git server has no checks: its pushes deploy right away and the deployment says so.
+
+## While it waits
+
+The deployment shows **Waiting for checks** in lists, on the canvas and on its page. The page lists every check with
+its state and a link to it, and when the push gives up. The list updates as checks finish.
+
+**Deploy now** starts the deployment without waiting. It needs permission to deploy, and the audit log records who
+chose it.
+
+## How it ends
+
+- **Every check passed**: the deployment starts.
+- **A check failed**: the deployment is cancelled with "Not deployed: the check “test” failed". Nothing was built or
+  started, and the live version keeps serving. Push a fix and the new commit deploys once its checks pass.
+- **Checks still running at the time limit**: cancelled with the checks that hadn't finished. Redeploy deploys the
+  commit anyway.
+- **No check appears** within two minutes of the push: the deployment starts and says "No checks reported", so a
+  repository without CI still deploys.
+- **A newer push** replaces a waiting deployment, like any queued one.
+
+If launchroom can't read the checks (GitHub doesn't answer, an expired connection), it keeps waiting and tries again
+every minute. It never deploys without the checks it was told to wait for: at the time limit the deployment is
+cancelled with the reason.
+
+## GitHub App events
+
+launchroom hears about finished checks through the GitHub App's webhooks and also looks every minute, so it works
+either way. A GitHub App created before this feature isn't subscribed to the events that report checks: in the App's
+settings on GitHub (**Permissions & events**), tick **Check run**, **Check suite** and **Status**. Without them a
+deployment starts up to a minute after its last check passed. The App already has the permissions it needs.
+
+## From the CLI and the API
+
+`launchroom deploy` shows "Waiting for checks" and the checks still running. The API's deployment has a `checks` object
+with the state (`waiting`, `passed`, `none`, `unsupported`, `skipped`, `failed`, `timed_out`), the deadline and every
+check; `POST /api/v1/deployments/{id}/skip-checks` is Deploy now. See the [API reference](/docs/reference/api).

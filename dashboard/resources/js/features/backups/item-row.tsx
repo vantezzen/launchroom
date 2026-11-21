@@ -65,6 +65,13 @@ function ItemMedia({ item }: { item: BackupItem }) {
 }
 
 /**
+ * Row actions show on hover or keyboard focus where there is a pointer, and
+ * always on touch; a running backup or an open menu stays visible.
+ */
+const rowAction =
+    'transition-opacity duration-fast pointer-fine:opacity-0 pointer-fine:group-focus-within/row:opacity-100 pointer-fine:group-hover/row:opacity-100 data-[state=open]:opacity-100';
+
+/**
  * The row's one action: "Back up now", or while a run is queued or in
  * flight the run itself ("Uploading 412 MB", "Waiting for hel-1"),
  * disabled, so a second click can't happen. Nothing when the action is
@@ -98,6 +105,7 @@ function BackUpButton({ item }: { item: BackupItem }) {
             size="sm"
             variant="outline"
             disabled={starting}
+            className={cn(!starting && rowAction)}
             onClick={() =>
                 router.post(
                     url,
@@ -190,7 +198,7 @@ export function BackupItemRow({
     return (
         <li
             id={`backup-${item.id}`}
-            className="flex scroll-mt-24 flex-col gap-3 px-4 py-4 sm:px-5"
+            className="group/row flex scroll-mt-24 flex-col gap-3 px-4 py-4 sm:px-5"
         >
             <div className="flex flex-wrap items-start gap-x-3.5 gap-y-3">
                 <ItemMedia item={item} />
@@ -283,6 +291,7 @@ export function BackupItemRow({
                                         variant="ghost"
                                         size="icon-sm"
                                         aria-label={`More for ${label}`}
+                                        className={cn(!turningOff && rowAction)}
                                     >
                                         <MoreHorizontal aria-hidden="true" />
                                     </Button>

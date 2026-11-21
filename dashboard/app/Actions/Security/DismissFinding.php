@@ -4,30 +4,29 @@ declare(strict_types=1);
 
 namespace App\Actions\Security;
 
-use App\Actions\Alerts\ResolveAlert;
 use App\Actions\Audit\RecordAuditEvent;
 use App\Data\Audit\AuditActor;
 use App\Data\Audit\AuditEntryData;
 use App\Data\Security\DismissFindingData;
-use App\Enums\Alerts\AlertRule;
 use App\Enums\AuditAction;
 use App\Enums\Security\SecurityFindingStatus;
 use App\Exceptions\DomainRuleViolation;
 use App\Models\Security\SecurityFinding;
 use App\Models\User;
+use App\Support\Security\DismissNote;
 use Illuminate\Support\Facades\DB;
 
 /**
  * "Not affected" (docs/22 §5.5): dismisses one finding of one service
  * instance with a reason and an optional note; audited. It reopens by
- * itself when it gets more urgent. The instance's alert resolves when no
- * open "Action needed" finding is left.
+ * itself when it gets more urgent. The package's alert resolves when no
+ * open "Action needed" finding of it is left.
  */
 final readonly class DismissFinding
 {
     public function __construct(
         private RecordAuditEvent $audit,
-        private ResolveAlert $resolve,
+        private ResolveVulnerabilityAlerts $settle,
     ) {}
 
     public function handle(SecurityFinding $finding, DismissFindingData $data, User $user, AuditActor $actor): SecurityFinding
@@ -39,13 +38,11 @@ final readonly class DismissFinding
                 throw DomainRuleViolation::conflict('Only open findings can be dismissed.');
             }
 
-            $note = $data->note === null ? null : trim((string) preg_replace('/\s+/u', ' ', (string) preg_replace('/[\x00-\x1f\x7f]+/u', '', $data->note)));
-
             $finding->forceFill([
                 'dismissed_at' => now(),
                 'dismissed_by' => $user->id,
                 'dismiss_reason' => $data->reason,
-                'dismiss_note' => $note === '' ? null : mb_substr((string) $note, 0, 500),
+                'dismiss_note' => DismissNote::clean($data->note),
             ]);
             $finding->transitionTo(SecurityFindingStatus::Dismissed);
 
@@ -61,14 +58,7 @@ final readonly class DismissFinding
             return $finding;
         });
 
-        $stillUrgent = SecurityFinding::query()
-            ->where('service_instance_id', $finding->service_instance_id)
-            ->actionNeeded()
-            ->exists();
-
-        if (! $stillUrgent) {
-            $this->resolve->handle($finding->team_id, AlertRule::Vulnerability, 'security:'.$finding->serviceInstance->public_id, 'The finding was marked as not affecting the service.');
-        }
+        $this->settle->handle($finding->team_id, [$finding]);
 
         return $finding;
     }
